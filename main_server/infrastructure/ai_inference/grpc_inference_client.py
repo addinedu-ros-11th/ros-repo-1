@@ -9,11 +9,11 @@ from main_server.core_layer.ai_inference.protocols import IAIInferenceService
 
 class AIInferenceService(IAIInferenceService):
     """
-    gRPC를 통해 원격 AI Inference 서버와 통신하는 클라이언트 서비스.
+    gRPC를 통해 원격 Vision 서버와 통신하는 클라이언트 서비스 (Legacy 호환용).
     """
-    def __init__(self, host: str = config.AI_INFERENCE_GRPC_HOST, port: int = config.AI_INFERENCE_GRPC_PORT):
+    def __init__(self, host: str = config.VISION_GRPC_HOST, port: int = config.VISION_GRPC_PORT):
         self.channel = grpc.aio.insecure_channel(f'{host}:{port}')
-        self.stub = ai_inference_pb2_grpc.AIInferenceStub(self.channel)
+        self.stub = ai_inference_pb2_grpc.VisionServiceStub(self.channel)
         print(f"AI Inference gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
 
     async def request_object_detection(self, image_id: str) -> Dict[str, Any]:
@@ -36,7 +36,7 @@ class AIInferenceService(IAIInferenceService):
 
     async def request_face_recognition(self, image_id: str) -> Dict[str, Any]:
         """
-        주어진 이미지 ID로 얼굴 인식을 요청합니다. (Unary)
+        주어진 이미지 ID로 얼굴 인식을 요청합니다.
         """
         request = ai_inference_pb2.ImageRequest(image_id=image_id)
         response = await self.stub.RecognizeFaces(request)
@@ -52,12 +52,11 @@ class AIInferenceService(IAIInferenceService):
 
     async def start_inference_stream(self, callback: Any):
         """
-        AI 서버로부터 실시간 추론 결과 스트림을 구독합니다. (Server Streaming)
-        결과가 수신될 때마다 전달된 콜백 함수를 호출합니다.
+        AI 서버로부터 실시간 추론 결과 스트림을 구독합니다.
         """
         print("AI 추론 결과 스트림 구독 시작...")
         try:
-            async for result in self.stub.StreamInferenceResults(ai_inference_pb2.Empty()):
+            async for result in self.stub.StreamVisionResults(ai_inference_pb2.Empty()):
                 # 스트림에서 받은 데이터 처리
                 data = {
                     "robot_id": result.robot_id,

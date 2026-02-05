@@ -17,7 +17,7 @@ from main_server.infrastructure.communication.protocols import IRobotCommunicato
 from main_server.infrastructure.communication.ros_bridge import ROSBridgeCommunicator
 
 # --- Core Service Instances ---
-from main_server.core_layer.ai_inference.grpc_inference_client import AIInferenceService
+from main_server.infrastructure.ai_inference import AIInferenceService, LLMServiceClient, VisionServiceClient
 from main_server.core_layer.office_iot.iot_controller import IoTController
 from main_server.core_layer.fleet_management.fleet_manager import FleetManager
 from main_server.core_layer.task_management.task_manager import TaskManager
@@ -35,6 +35,8 @@ class Container:
         self.task_repo = None
         self.robot_communicator = None
         self.ai_service = None
+        self.llm_service = None
+        self.vision_service = None
         self.iot_controller = None
         self.fleet_manager = None
         self.task_manager = None
@@ -58,6 +60,8 @@ class Container:
 
         # 2. Core Layer
         self.ai_service = AIInferenceService()
+        self.llm_service = LLMServiceClient()
+        self.vision_service = VisionServiceClient()
         self.iot_controller = IoTController()
         
         self.fleet_manager = FleetManager(

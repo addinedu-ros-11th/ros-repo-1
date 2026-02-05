@@ -24,25 +24,43 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n2main_server/infrastructure/grpc/ai_inference.proto\x12\x0c\x61i_inference\"\x07\n\x05\x45mpty\"\xb3\x01\n\x0fInferenceResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x41\n\x10object_detection\x18\x02 \x01(\x0b\x32%.ai_inference.ObjectDetectionResponseH\x00\x12\x41\n\x10\x66\x61\x63\x65_recognition\x18\x03 \x01(\x0b\x32%.ai_inference.FaceRecognitionResponseH\x00\x42\x08\n\x06result\" \n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\"j\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x03\x62ox\x18\x03 \x01(\x0b\x32\x19.ai_inference.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id2\x86\x02\n\x0b\x41IInference\x12R\n\rDetectObjects\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.ObjectDetectionResponse\x12S\n\x0eRecognizeFaces\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.FaceRecognitionResponse\x12N\n\x16StreamInferenceResults\x12\x13.ai_inference.Empty\x1a\x1d.ai_inference.InferenceResult0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n2main_server/infrastructure/grpc/ai_inference.proto\x12\x0c\x61i_inference\"Y\n\x0bTextRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nmax_length\x18\x02 \x01(\x05\x12\x18\n\x0btemperature\x18\x03 \x01(\x02H\x00\x88\x01\x01\x42\x0e\n\x0c_temperature\":\n\x0cTextResponse\x12\x16\n\x0egenerated_text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"d\n\x0b\x43hatRequest\x12+\n\x08messages\x18\x01 \x03(\x0b\x32\x19.ai_inference.ChatMessage\x12\x18\n\x0btemperature\x18\x02 \x01(\x02H\x00\x88\x01\x01\x42\x0e\n\x0c_temperature\",\n\x0b\x43hatMessage\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"4\n\x0c\x43hatResponse\x12\x10\n\x08response\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"\\\n\x0eIntentResponse\x12\x0e\n\x06intent\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x08\x65ntities\x18\x03 \x03(\x0b\x32\x14.ai_inference.Entity\"9\n\x06\x45ntity\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"\x07\n\x05\x45mpty\"H\n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\x12\x17\n\nimage_data\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\r\n\x0b_image_data\"j\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x03\x62ox\x18\x03 \x01(\x0b\x32\x19.ai_inference.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id\"V\n\x1cMultiObjectDetectionResponse\x12\x36\n\x07objects\x18\x01 \x03(\x0b\x32%.ai_inference.ObjectDetectionResponse\"\x88\x02\n\x0cVisionResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12\x41\n\x10object_detection\x18\x03 \x01(\x0b\x32%.ai_inference.ObjectDetectionResponseH\x00\x12\x41\n\x10\x66\x61\x63\x65_recognition\x18\x04 \x01(\x0b\x32%.ai_inference.FaceRecognitionResponseH\x00\x12\x43\n\rmulti_objects\x18\x05 \x01(\x0b\x32*.ai_inference.MultiObjectDetectionResponseH\x00\x42\x08\n\x06result2\xdc\x01\n\nLLMService\x12\x45\n\x0cGenerateText\x12\x19.ai_inference.TextRequest\x1a\x1a.ai_inference.TextResponse\x12=\n\x04\x43hat\x12\x19.ai_inference.ChatRequest\x1a\x1a.ai_inference.ChatResponse\x12H\n\rAnalyzeIntent\x12\x19.ai_inference.TextRequest\x1a\x1c.ai_inference.IntentResponse2\xe3\x02\n\rVisionService\x12R\n\rDetectObjects\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.ObjectDetectionResponse\x12S\n\x0eRecognizeFaces\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.FaceRecognitionResponse\x12_\n\x15\x44\x65tectMultipleObjects\x12\x1a.ai_inference.ImageRequest\x1a*.ai_inference.MultiObjectDetectionResponse\x12H\n\x13StreamVisionResults\x12\x13.ai_inference.Empty\x1a\x1a.ai_inference.VisionResult0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'main_server.infrastructure.grpc.ai_inference_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_EMPTY']._serialized_start=68
-  _globals['_EMPTY']._serialized_end=75
-  _globals['_INFERENCERESULT']._serialized_start=78
-  _globals['_INFERENCERESULT']._serialized_end=257
-  _globals['_IMAGEREQUEST']._serialized_start=259
-  _globals['_IMAGEREQUEST']._serialized_end=291
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=293
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=399
-  _globals['_BOUNDINGBOX']._serialized_start=401
-  _globals['_BOUNDINGBOX']._serialized_end=467
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=469
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=577
-  _globals['_AIINFERENCE']._serialized_start=580
-  _globals['_AIINFERENCE']._serialized_end=842
+  _globals['_TEXTREQUEST']._serialized_start=68
+  _globals['_TEXTREQUEST']._serialized_end=157
+  _globals['_TEXTRESPONSE']._serialized_start=159
+  _globals['_TEXTRESPONSE']._serialized_end=217
+  _globals['_CHATREQUEST']._serialized_start=219
+  _globals['_CHATREQUEST']._serialized_end=319
+  _globals['_CHATMESSAGE']._serialized_start=321
+  _globals['_CHATMESSAGE']._serialized_end=365
+  _globals['_CHATRESPONSE']._serialized_start=367
+  _globals['_CHATRESPONSE']._serialized_end=419
+  _globals['_INTENTRESPONSE']._serialized_start=421
+  _globals['_INTENTRESPONSE']._serialized_end=513
+  _globals['_ENTITY']._serialized_start=515
+  _globals['_ENTITY']._serialized_end=572
+  _globals['_EMPTY']._serialized_start=574
+  _globals['_EMPTY']._serialized_end=581
+  _globals['_IMAGEREQUEST']._serialized_start=583
+  _globals['_IMAGEREQUEST']._serialized_end=655
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=657
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=763
+  _globals['_BOUNDINGBOX']._serialized_start=765
+  _globals['_BOUNDINGBOX']._serialized_end=831
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=833
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=941
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_start=943
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_end=1029
+  _globals['_VISIONRESULT']._serialized_start=1032
+  _globals['_VISIONRESULT']._serialized_end=1296
+  _globals['_LLMSERVICE']._serialized_start=1299
+  _globals['_LLMSERVICE']._serialized_end=1519
+  _globals['_VISIONSERVICE']._serialized_start=1522
+  _globals['_VISIONSERVICE']._serialized_end=1877
 # @@protoc_insertion_point(module_scope)
