@@ -6,7 +6,7 @@ from main_server.domains.robots.robot import Robot, RobotStatus
 from main_server.domains.robots.robot_repository import IRobotRepository
 from main_server.domains.tasks.task import Task, TaskType
 from main_server.infrastructure.communication.protocols import IRobotCommunicator
-from main_server.core_layer.ai_inference.grpc_inference_client import AIInferenceService
+from main_server.core_layer.ai_inference.protocols import IAIInferenceService
 from main_server.web.connection_manager import ConnectionManager
 
 
@@ -19,7 +19,7 @@ class FleetManager:
     def __init__(self,
                  robot_repo: IRobotRepository,
                  robot_communicator: IRobotCommunicator,
-                 ai_service: AIInferenceService,
+                 ai_service: IAIInferenceService,
                  connection_manager: ConnectionManager):
         """
         리포지토리, 커뮤니케이터, AI 서비스, 웹소켓 연결 관리자를 주입받습니다.

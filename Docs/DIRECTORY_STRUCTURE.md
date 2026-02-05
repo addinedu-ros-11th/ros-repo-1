@@ -29,8 +29,8 @@ API 엔드포인트 정의 및 요청/응답 처리.
 
 ### 2. **`core_layer/` (Application Core)**
 비즈니스 로직 및 유스케이스 구현.
--   `ai_inference/`: AI 추론 관련 로직.
-    -   `grpc_inference_client.py`: AI 서버와 gRPC 통신을 담당하는 클라이언트.
+-   `ai_inference/`: AI 추론 관련 인터페이스 정의.
+    -   `protocols.py`: `IAIInferenceService` 인터페이스(Protocol) 정의.
 -   `fleet_management/`: 로봇 군집 관리.
     -   `fleet_manager.py`: 로봇 배차, 상태 관리, 트래픽 제어 로직.
 -   `task_management/`: 작업 처리 로직.
@@ -49,6 +49,8 @@ API 엔드포인트 정의 및 요청/응답 처리.
 
 ### 4. **`infrastructure/` (Infrastructure Layer)**
 외부 시스템과의 통신 및 데이터 저장소 구현.
+-   `ai_inference/`: AI 서버 통신 구현체.
+    -   `grpc_inference_client.py`: `IAIInferenceService` 인터페이스를 구현한 gRPC 클라이언트.
 -   `communication/`: 로봇 및 외부 통신.
     -   `ros_bridge.py`: **ROS Bridge**를 통한 로봇과의 통신 (명령/상태) 구현.
     -   `protocols.py`: 통신 인터페이스 정의.

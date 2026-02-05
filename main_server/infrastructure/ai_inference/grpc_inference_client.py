@@ -5,8 +5,9 @@ from main_server import config
 # Generated gRPC files
 from main_server.infrastructure.grpc import ai_inference_pb2
 from main_server.infrastructure.grpc import ai_inference_pb2_grpc
+from main_server.core_layer.ai_inference.protocols import IAIInferenceService
 
-class AIInferenceService:
+class AIInferenceService(IAIInferenceService):
     """
     gRPC를 통해 원격 AI Inference 서버와 통신하는 클라이언트 서비스.
     """
