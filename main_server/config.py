@@ -16,7 +16,9 @@ DB_NAME = os.getenv("DB_NAME", "office_robot_db")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 
 # Database URL (SQLAlchemy 등에서 필요할 경우 사용)
-DATABASE_URL = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = (
+    f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 
 # ROS Bridge configuration
 ROS_BRIDGE_HOST = os.getenv("ROS_BRIDGE_HOST", "localhost")
@@ -25,6 +27,14 @@ ROS_BRIDGE_PORT = int(os.getenv("ROS_BRIDGE_PORT", 9090))
 # AI Inference service configuration
 AI_INFERENCE_GRPC_HOST = os.getenv("AI_INFERENCE_GRPC_HOST", "localhost")
 AI_INFERENCE_GRPC_PORT = int(os.getenv("AI_INFERENCE_GRPC_PORT", 50051))
+
+# LLM Service configuration
+LLM_GRPC_HOST = os.getenv("LLM_GRPC_HOST", "localhost")
+LLM_GRPC_PORT = int(os.getenv("LLM_GRPC_PORT", 50051))
+
+# Vision Service configuration
+VISION_GRPC_HOST = os.getenv("VISION_GRPC_HOST", "localhost")
+VISION_GRPC_PORT = int(os.getenv("VISION_GRPC_PORT", 50052))
 
 # Video Stream configuration
 VIDEO_STREAM_HOST = os.getenv("VIDEO_STREAM_HOST", "0.0.0.0")
@@ -39,4 +49,3 @@ APP_VERSION = "3.0.0"
 STATIC_FILES_DIR = "main_server/web/static"
 ADMIN_DASHBOARD_PATH = "/web/admin"
 EMPLOYEE_APP_PATH = "/web/employee"
-
