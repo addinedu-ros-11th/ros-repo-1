@@ -7,9 +7,9 @@ import logging
 from typing import Optional
 import grpc
 
-# 일단 기존 proto 사용, 나중에 새 proto로 교체
-from ai_server.grpc_impl import ai_inference_pb2
-from ai_server.grpc_impl import ai_inference_pb2_grpc
+# ai_services.proto 기반 pb2 사용
+from ai_server.grpc_impl import ai_services_pb2
+from ai_server.grpc_impl import ai_services_pb2_grpc
 from ai_server.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -96,23 +96,62 @@ class LLMServicer:
 
     def AnalyzeIntent(self, request, context):
         """
-        의도 분석
+        의도 분석 및 엔티티 추출 (장소, 물품)
 
         Args:
             request: TextRequest
             context: gRPC context
 
         Returns:
-            IntentResponse
+            IntentResponse (intent, confidence, entities)
         """
-        logger.info(f"의도 분석 요청: {request.text[:50]}...")
+        logger.info(f"의도 분석 및 엔티티 추출 요청: {request.text[:50]}...")
 
         try:
-            # LLM 서비스를 통해 의도 분석
-            result = self.llm_service.analyze_intent(request.text)
+            # LLM 서비스를 통해 엔티티 추출
+            result = self.llm_service.extract_entities(request.text)
 
-            logger.info(f"의도 분석 완료: {result['intent']}")
-            return result
+            # IntentResponse 형식으로 변환
+            entities = []
+
+            # 장소 엔티티 추가
+            if result.get("location"):
+                entities.append(
+                    ai_services_pb2.Entity(
+                        type="location",
+                        value=result["location"],
+                        confidence=result.get("confidence", 0.9),
+                    )
+                )
+
+            # 물품 엔티티 추가
+            if result.get("item"):
+                entities.append(
+                    ai_services_pb2.Entity(
+                        type="item",
+                        value=result["item"],
+                        confidence=result.get("confidence", 0.9),
+                    )
+                )
+
+            # Intent 결정
+            if result.get("location") and result.get("item"):
+                intent = "deliver_item_to_location"
+            elif result.get("location"):
+                intent = "navigate_to_location"
+            elif result.get("item"):
+                intent = "find_item"
+            else:
+                intent = "unknown"
+
+            response = ai_services_pb2.IntentResponse(
+                intent=intent,
+                confidence=result.get("confidence", 0.9),
+                entities=entities,
+            )
+
+            logger.info(f"엔티티 추출 완료: intent={intent}, entities={len(entities)}")
+            return response
 
         except Exception as e:
             logger.error(f"의도 분석 중 오류: {e}")

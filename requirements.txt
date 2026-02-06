@@ -10,9 +10,8 @@ python-dotenv
 roslibpy
 
 # AI Server dependencies
-# LLM (Qwen3-4B) - 나중에 실제 모델 사용 시 추가
-# transformers
-# torch
+# LLM (Qwen3-4B with Ollama)
+ollama
 
 # Vision (YOLOv8n) - UDP 영상 수신 및 처리
 opencv-python

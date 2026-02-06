@@ -1,5 +1,5 @@
 """
-LLM Server - Qwen3-4B
+LLM Server - Qwen3-4B with Ollama
 자연어 처리 전용 gRPC 서버
 """
 
@@ -12,6 +12,7 @@ import grpc
 from ai_server import config
 from ai_server.services.llm_service import LLMService
 from ai_server.grpc_impl.llm_servicer import LLMServicer
+from ai_server.grpc_impl import ai_services_pb2_grpc
 
 # 로깅 설정
 logging.basicConfig(
@@ -41,8 +42,8 @@ async def serve():
 
     # Servicer 등록
     servicer = LLMServicer(llm_service=llm_service)
-    # TODO: ai_services_pb2_grpc.add_LLMServiceServicer_to_server(servicer, server)
-    # 현재는 스텁으로 등록하지 않음
+    ai_services_pb2_grpc.add_LLMServiceServicer_to_server(servicer, server)
+    logger.info("LLM Servicer 등록 완료")
 
     # 서버 주소 설정
     server_address = f"{config.LLM_GRPC_HOST}:{config.LLM_GRPC_PORT}"
