@@ -3,92 +3,285 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>직원용 로봇 서비스</title>
-    <link rel="stylesheet" href="/static/employee_style.css">
+    <title>Employee Workspace</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --ai-blue: #4285f4;
+            --user-gray: #e9ecef;
+            --text-main: #202124;
+            --border-color: #eee;
+            --logout-red: #ea4335;
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%; font-family: 'Pretendard', sans-serif;
+            background-color: var(--bg-color); color: var(--text-main);
+            overflow: hidden;
+        }
+
+        /* [1] 화면 레이아웃 구성 */
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr; /* 우측 채팅창 비중 소폭 확대 */
+            grid-template-rows: 2fr 1fr;
+            height: 100vh;
+            gap: 15px;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        /* [2] 구역 배치 설정 */
+        .reservation-panel { grid-area: 1 / 1 / 2 / 2; padding: 25px; overflow-y: auto; }
+        .combined-control-panel { grid-area: 2 / 1 / 3 / 2; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-panel { grid-area: 1 / 2 / 3 / 3; }
+
+        /* [3] 컴포넌트: 방문예약 폼 및 리스트 */
+        .res-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .res-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 13px; }
+        .full-width { grid-column: span 2; }
+        .btn-submit { grid-column: span 2; padding: 12px; background: var(--ai-blue); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+        /* [예약 현황 리스트 글자 크기 및 스타일 강화] */
+        .res-list-container { 
+            flex-grow: 1; 
+            border-top: 2px solid #f1f1f1; 
+            padding-top: 15px; 
+            overflow-y: auto; 
+        }
+        .res-list-container h4 {
+            font-size: 18px; /* 제목 크기 확대 */
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+
+        .res-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 14px; /* 표 전체 글자 크기 확대 (기존 12px -> 14px) */
+            text-align: left; 
+        }
+        .res-table th { 
+            background: #f8f9fa; 
+            padding: 12px 10px; 
+            border-bottom: 2px solid #eee; 
+            font-weight: 700;
+            color: #555;
+        }
+        .res-table td { 
+            padding: 14px 10px; /* 행 간격 확대 */
+            border-bottom: 1px solid #f0f0f0; 
+            color: #444;
+        }
+        .res-table tr:hover { background-color: #fcfcfc; } /* 마우스 오버 시 시각 효과 */
+
+        /* [4] 컴포넌트: 공조 및 로봇 제어 */
+        .control-section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #555; }
+        .remote-grid { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 8px; margin-bottom: 15px; }
+        .temp-display { 
+            background: #222; color: #0f0; font-family: monospace;
+            text-align: center; padding: 10px; border-radius: 8px; font-size: 16px;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+        }
+        .wind-bars { display: flex; gap: 3px; }
+        .bar { width: 6px; height: 12px; background: #444; border-radius: 1px; }
+        .bar.active { background: #0f0; box-shadow: 0 0 5px #0f0; }
+        .remote-btn { padding: 8px; border: none; border-radius: 6px; background: #f1f3f4; cursor: pointer; font-weight: bold; font-size: 12px; }
+        .btn-pwr { background: #ea4335; color: white; }
+        .robot-btn-group { display: flex; gap: 8px; }
+        .ctrl-btn { flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; font-size: 13px; }
+        .btn-call { background: #4285f4; }
+        .btn-cancel { background: #5f6368; }
+        .btn-receive { background: #34a853; }
+
+        /* [5] 컴포넌트: AI 채팅 및 로그아웃 */
+        .logout-wrapper { position: absolute; top: 15px; right: 20px; z-index: 100; }
+        .btn-logout { padding: 8px 15px; background: var(--logout-red); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; }
+        .chat-header { padding: 20px; font-weight: 600; border-bottom: 1px solid #f1f1f1; display: flex; align-items: center; gap: 10px; }
+        .ai-status { width: 10px; height: 10px; background: #34a853; border-radius: 50%; }
+        #chat-messages { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+        .message { max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
+        .message.ai { align-self: flex-start; background: #fff; border: 1px solid #eee; border-top-left-radius: 2px; }
+        .message.user { align-self: flex-end; background: var(--user-gray); border-top-right-radius: 2px; }
+        .chat-input-area { padding: 20px; border-top: 1px solid #f1f1f1; display: flex; gap: 10px; }
+        #user-input { flex-grow: 1; border: 1px solid #dfe1e5; border-radius: 25px; padding: 12px 20px; outline: none; }
+    </style>
 </head>
 <body>
+
     <div class="container">
-        <h1>오피스 로봇 서비스</h1>
-        
-        <div class="task-form">
-            <h2>작업 요청</h2>
-            <form id="task-request-form">
-                <div class="form-group">
-                    <label for="task-type">작업 종류:</label>
-                    <select id="task-type" name="task_type">
-                        <option value="snack_delivery">간식 심부름</option>
-                        <option value="item_delivery">사내 배달</option>
-                        <option value="guide_guest">방문자 안내</option>
-                    </select>
+        <div class="panel reservation-panel">
+            <h3 style="margin-top: 0;">📅 방문 예약 및 현황</h3>
+            <div class="res-form">
+                <input type="text" id="res-name" class="res-input" placeholder="성함">
+                <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
+                <input type="date" id="res-date" class="res-input full-width">
+                <input type="text" id="res-phone" class="res-input full-width" placeholder="전화번호 (010-0000-0000)">
+                <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
+            </div>
+
+            <div class="res-list-container">
+                <h4 style="margin: 0 0 10px 0;">📋 내 예약 현황</h4>
+                <table class="res-table">
+                    <thead>
+                        <tr><th>신청일</th><th>이름</th><th>목적</th><th>방문일</th><th>연락처</th></tr>
+                    </thead>
+                    <tbody id="res-table-body">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel combined-control-panel">
+            <div class="control-section-title">❄️ 공조 시스템 제어</div>
+            <div class="remote-grid">
+                <div class="temp-display">
+                    <span id="temp-val">24°C</span>
+                    <div class="wind-bars" id="wind-display">
+                        <div class="bar active"></div><div class="bar active"></div><div class="bar"></div><div class="bar"></div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="destination">목적지 (JSON 형식):</label>
-                    <input type="text" id="destination" name="destination" placeholder='예: {"x": 10.5, "y": 5.2}' value='{"x": 10.5, "y": 5.2}' required>
+                <button class="remote-btn btn-pwr" onclick="aiSpeak('공조 시스템 전원을 조작했습니다. 현재 상태를 확인하세요.')">전원</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <button class="remote-btn" onclick="tempChange(1)">온도 ▲</button>
+                    <button class="remote-btn" onclick="tempChange(-1)">온도 ▼</button>
+                    <button class="remote-btn" onclick="windChange(1)">바람 ▲</button>
+                    <button class="remote-btn" onclick="windChange(-1)">바람 ▼</button>
                 </div>
-                 <div class="form-group">
-                    <label for="details">상세 내용 (JSON 형식):</label>
-                    <input type="text" id="details" name="details" placeholder='예: {"item_name": "콜라"}' value='{"item_name": "콜라"}'>
-                </div>
-                <button type="submit">요청하기</button>
-            </form>
-            <div id="response-message"></div>
+            </div>
+
+            <div class="control-section-title">🤖 로봇 원격 제어</div>
+            <div class="robot-btn-group">
+                <button class="ctrl-btn btn-call" onclick="robotAction('call')">로봇 호출</button>
+                <button class="ctrl-btn btn-cancel" onclick="robotAction('cancel')">호출 취소</button>
+                <button class="ctrl-btn btn-receive" onclick="robotAction('receive')">수령 확인</button>
+            </div>
+        </div>
+
+        <div class="panel chat-panel">
+            <div class="logout-wrapper">
+                <button class="btn-logout" onclick="logout()">로그아웃</button>
+            </div>
+            <div class="chat-header">
+                <div class="ai-status"></div> AI Assistant
+            </div>
+            <div id="chat-messages">
+                <div class="message ai">무엇을 도와드릴까요? 기기 제어나 예약 등록을 도와드릴 수 있습니다.</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="user-input" placeholder="AI 비서와 대화하기..." onkeypress="if(event.key==='Enter')sendMessage()">
+                <button onclick="sendMessage()" style="border:none; background:none; color:var(--ai-blue); cursor:pointer; font-weight:bold;">전송</button>
+            </div>
         </div>
     </div>
 
-    <script>
-        document.getElementById('task-request-form').addEventListener('submit', function(event) {
-            event.preventDefault();
+<script>
+    // [1] 로그아웃 경로 수정
+    function logout() {
+        if(confirm("로그아웃 하시겠습니까?")) {
+            location.href = "http://127.0.0.1:8000/web"; 
+        }
+    }
 
-            const form = event.target;
-            const responseMessage = document.getElementById('response-message');
-            
-            let destination, details;
-            try {
-                destination = JSON.parse(form.elements.destination.value);
-                const detailsValue = form.elements.details.value;
-                details = detailsValue ? JSON.parse(detailsValue) : {};
-            } catch (e) {
-                responseMessage.textContent = '오류: 목적지 또는 상세 내용은 유효한 JSON 형식이어야 합니다.';
-                responseMessage.style.color = 'red';
-                return;
-            }
+    // [2] 공조 시스템 로직
+    let currentTemp = 24;
+    let windLevel = 2;
+    function tempChange(val) {
+        currentTemp += val;
+        document.getElementById('temp-val').innerText = `${currentTemp}°C`;
+        aiSpeak(`실내 온도를 ${currentTemp}도로 조정합니다.`);
+    }
+    function windChange(val) {
+        windLevel = Math.max(0, Math.min(4, windLevel + val));
+        const bars = document.getElementById('wind-display').children;
+        for(let i=0; i<4; i++) bars[i].className = i < windLevel ? 'bar active' : 'bar';
+        aiSpeak(`바람 세기를 ${windLevel}단계로 변경하였습니다.`);
+    }
 
-            // CreateTaskRequest 모델에 맞게 데이터 구조화
-            const data = {
-                task_type: form.elements.task_type.value,
-                requester_id: 1, // 실제 앱에서는 로그인된 사용자 ID를 사용해야 함
-                details: {
-                    ...details,
-                    destination: destination
-                }
-            };
-            
-            // API 엔드포인트를 통합된 FastAPI 경로로 수정
-            fetch('/api/v1/employee/tasks', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            })
-            .then(response => {
-                if (!response.ok) {
-                    // 서버가 에러 응답을 반환한 경우
-                    return response.json().then(err => {
-                        throw new Error(err.detail || 'Unknown server error');
-                    });
-                }
-                return response.json();
-            })
-            .then(result => {
-                responseMessage.textContent = `요청 성공! 작업 ID: ${result.id}, 로봇 ID: ${result.robot_id}이(가) 배정되었습니다.`;
-                responseMessage.style.color = 'green';
-            })
-            .catch(error => {
-                responseMessage.textContent = '오류 발생: ' + error.message;
-                responseMessage.style.color = 'red';
-            });
-        });
-    </script>
+    // [3] 방문 예약 등록 및 리스트 관리 (엑셀 스타일)
+    const reservations = [];
+    function submitReservation() {
+        const name = document.getElementById('res-name').value;
+        const purpose = document.getElementById('res-purpose').value;
+        const date = document.getElementById('res-date').value;
+        const phone = document.getElementById('res-phone').value;
+        const today = new Date().toISOString().split('T')[0];
+
+        if(!name || !date) {
+            aiSpeak("방문자 이름과 날짜는 필수 입력 항목입니다.");
+            return;
+        }
+
+        const newEntry = { today, name, purpose, date, phone };
+        reservations.push(newEntry);
+        updateReservationTable();
+        
+        aiSpeak(`${name} 고객님의 ${date} 방문 예약을 완료했습니다. 목록에서 확인하실 수 있습니다.`);
+        
+        // 입력창 초기화
+        document.querySelectorAll('.res-input').forEach(input => input.value = '');
+    }
+
+    function updateReservationTable() {
+        const body = document.getElementById('res-table-body');
+        // 방문객 이름 부분에 폰트 굵기를 주어 더 잘 보이게 수정
+        body.innerHTML = reservations.map(r => `
+            <tr>
+                <td style="color: #888;">${r.today}</td>
+                <td style="font-size: 15px; font-weight: bold; color: #222;">${r.name}</td>
+                <td>${r.purpose}</td>
+                <td style="color: #4285f4; font-weight: 600;">${r.date}</td>
+                <td>${r.phone}</td>
+            </tr>
+        `).join('');
+    }
+
+    // [4] 로봇 제어 및 AI 피드백
+    function robotAction(type) {
+        let msg = "";
+        if(type === 'call') msg = "알겠습니다. 로봇을 현재 위치로 호출하겠습니다. 잠시만 기다려 주세요.";
+        else if(type === 'cancel') msg = "로봇 호출을 취소했습니다. 로봇이 대기 장소로 복귀합니다.";
+        else msg = "수령 확인을 완료했습니다. 감사합니다.";
+        aiSpeak(msg);
+    }
+
+    // [5] AI Assistant 발화 (LLM 이식 포인트)
+    function aiSpeak(text) {
+        appendMessage('ai', text);
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('user-input');
+        const text = input.value.trim();
+        if (!text) return;
+        appendMessage('user', text);
+        
+        // 여기서 실제 LLM 서버와 통신하게 됩니다.
+        console.log("LLM 서버로 전송:", text);
+        
+        input.value = '';
+    }
+
+    function appendMessage(sender, text) {
+        const chatMessages = document.getElementById('chat-messages');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${sender}`;
+        msgDiv.innerText = text;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+</script>
+
 </body>
 </html>

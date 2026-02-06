@@ -75,7 +75,7 @@
             <li id="menu-visitor-res" onclick="showTab('visitor-res')">📅 방문객 예약 현황</li>
             <li id="menu-sys-logs" onclick="showTab('sys-logs')">📜 시스템 동작 로그</li>
         </ul>
-        <a href="/web" class="logout-btn">로그아웃</a>
+        <a href="javascript:void(0);" class="logout-btn" onclick="logout()">로그아웃</a>
     </div>
 
     <div class="main-content">
@@ -131,6 +131,13 @@
 
 <script>
     let isSetupMode = false, isDrawing = false, startX, startY, tempZone = null, zones = [], currentRobots = [];
+
+    // 로그아웃 처리 함수 (employee_app 로직 이식)
+    function logout() {
+        if(confirm("로그아웃 하시겠습니까?")) {
+            location.href = "http://127.0.0.1:8000/web"; 
+        }
+    }
 
     // [탭 전환 함수]
     function showTab(tabId) {
