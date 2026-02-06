@@ -1,0 +1,5 @@
+office_robot_executor:
+  ros__parameters:
+    robot_name: robot_a
+    mock_mode: true
+    execution_delay_sec: 1.5
