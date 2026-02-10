@@ -184,3 +184,6 @@ cython_debug/
 *.backup
 *.bak
 *~
+# AI Server cache files
+ai_server/data/employee_encodings.npy
+ai_server/data/employee_metadata.json

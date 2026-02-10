@@ -3,6 +3,7 @@ Vision Service - YOLOv8n
 객체 인식 및 얼굴 인식 기능을 처리하는 서비스 레이어
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,6 +34,12 @@ class VisionService:
         self.employee_images_dir = (
             Path(__file__).resolve().parents[1] / "data" / "images"
         )
+        self.encodings_cache_path = (
+            Path(__file__).resolve().parents[1] / "data" / "employee_encodings.npy"
+        )
+        self.metadata_cache_path = (
+            Path(__file__).resolve().parents[1] / "data" / "employee_metadata.json"
+        )
         self.face_match_threshold = 0.3  # face_recognition distance threshold (lower = stricter) - 70% confidence
         self._employee_face_db: List[Dict[str, Any]] = []
         logger.info(f"Vision Service 초기화 중: {model_name}")
@@ -52,12 +59,14 @@ class VisionService:
     def _load_employee_faces(self) -> None:
         """
         직원 얼굴 이미지 로딩 및 face_recognition 임베딩 생성
+        캐시가 있고 유효하면 캐시에서 로드, 그렇지 않으면 재계산
         """
         self._employee_face_db = []
         if not self.employee_images_dir.exists():
             logger.warning("직원 이미지 폴더가 없습니다: %s", self.employee_images_dir)
             return
 
+        # 현재 이미지 파일 목록
         image_files = list(self.employee_images_dir.glob("*.png")) + list(
             self.employee_images_dir.glob("*.jpg")
         )
@@ -66,7 +75,50 @@ class VisionService:
             logger.warning("직원 이미지가 없습니다: %s", self.employee_images_dir)
             return
 
-        for image_path in image_files:
+        # 현재 파일 목록과 타임스탬프
+        current_files = {str(f.name): f.stat().st_mtime for f in image_files}
+
+        # 캐시 유효성 검사
+        use_cache = False
+        if self.encodings_cache_path.exists() and self.metadata_cache_path.exists():
+            try:
+                with open(self.metadata_cache_path, "r", encoding="utf-8") as f:
+                    cached_metadata = json.load(f)
+
+                # 파일 목록과 타임스탬프 비교
+                if cached_metadata.get("files") == current_files:
+                    use_cache = True
+                    logger.info("인코딩 캐시 유효 - 캐시에서 로드")
+            except Exception as e:
+                logger.warning(f"캐시 메타데이터 읽기 실패: {e}")
+
+        if use_cache:
+            # 캐시에서 로드
+            try:
+                encodings = np.load(str(self.encodings_cache_path))
+                with open(self.metadata_cache_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+
+                employee_ids = metadata["employee_ids"]
+                for i, employee_id in enumerate(employee_ids):
+                    self._employee_face_db.append(
+                        {"employee_id": employee_id, "encoding": encodings[i]}
+                    )
+
+                logger.info(
+                    f"캐시에서 직원 얼굴 로딩 완료: {len(self._employee_face_db)}명"
+                )
+                return
+            except Exception as e:
+                logger.warning(f"캐시 로드 실패, 이미지에서 다시 계산: {e}")
+                self._employee_face_db = []
+
+        # 캐시 없거나 무효 - 이미지에서 계산
+        logger.info("이미지에서 얼굴 인코딩 계산 중...")
+        encodings_list = []
+        employee_ids = []
+
+        for image_path in sorted(image_files):
             image = face_recognition.load_image_file(str(image_path))
             face_encodings = face_recognition.face_encodings(image)
 
@@ -78,10 +130,34 @@ class VisionService:
 
             # 가장 큰 얼굴의 인코딩 사용
             encoding = face_encodings[0]
+            employee_id = image_path.stem
+
             self._employee_face_db.append(
-                {"employee_id": image_path.stem, "encoding": encoding}
+                {"employee_id": employee_id, "encoding": encoding}
             )
-            logger.info("직원 얼굴 로딩: %s", image_path.stem)
+            encodings_list.append(encoding)
+            employee_ids.append(employee_id)
+            logger.info("직원 얼굴 로딩: %s", employee_id)
+
+        # 캐시 저장
+        if encodings_list:
+            try:
+                # 인코딩 배열 저장
+                encodings_array = np.array(encodings_list)
+                np.save(str(self.encodings_cache_path), encodings_array)
+
+                # 메타데이터 저장
+                metadata = {
+                    "employee_ids": employee_ids,
+                    "files": current_files,
+                    "count": len(employee_ids),
+                }
+                with open(self.metadata_cache_path, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+                logger.info(f"인코딩 캐시 저장 완료: {len(encodings_list)}명")
+            except Exception as e:
+                logger.warning(f"캐시 저장 실패: {e}")
 
         logger.info("직원 얼굴 로딩 완료: %d명", len(self._employee_face_db))
 
