@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 from pydantic import BaseModel
 import aiomysql
 
-from .connection import Database
+from ..connection import Database
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 

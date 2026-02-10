@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends
 
-from main_server.models.domains.robots.robot import Robot
+from main_server.domains.robots.models import Robot
 from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.container import container
 

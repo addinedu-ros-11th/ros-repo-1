@@ -2,9 +2,9 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from main_server.models.domains.tasks.task import Task, TaskStatus
-from main_server.models.domains.tasks.task_repository import ITaskRepository
-from main_server.infrastructure.database.base_repository import BaseRepository
+from main_server.domains.tasks.models import Task, TaskStatus
+from main_server.domains.tasks.repository import ITaskRepository
+from main_server.infrastructure.database.repositories.base_repository import BaseRepository
 
 class MySQLTaskRepository(BaseRepository, ITaskRepository):
     """
@@ -37,7 +37,7 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
             data['details'] = json.dumps(data['details'])
         
         # Pydantic 모델에 정의된 필드만 추출
-        task_data = {k: v for k, v in data.items() if k in Task.__fields__}
+        task_data = {k: v for k, v in data.items() if k in Task.model_fields}
         
         new_task_id = await super().create(task_data)
         

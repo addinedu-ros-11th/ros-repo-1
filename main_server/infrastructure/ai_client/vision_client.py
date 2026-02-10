@@ -5,7 +5,7 @@ from main_server.config import config
 # Generated gRPC files
 from main_server.infrastructure.grpc import ai_inference_pb2
 from main_server.infrastructure.grpc import ai_inference_pb2_grpc
-from main_server.services.ai_inference.protocols import IVisionService
+from main_server.domains.ai.interfaces import IVisionService
 
 class VisionServiceClient(IVisionService):
     """

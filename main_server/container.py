@@ -6,10 +6,10 @@ from main_server.infrastructure.database.connection import Database
 from main_server.web.connection_manager import manager as connection_manager
 
 # --- Repository Instances ---
-from main_server.models.domains.robots.robot_repository import IRobotRepository
+from main_server.domains.robots.repository import IRobotRepository
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
 
-from main_server.models.domains.tasks.task_repository import ITaskRepository
+from main_server.domains.tasks.repository import ITaskRepository
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
 
 # --- Communication Instances ---
