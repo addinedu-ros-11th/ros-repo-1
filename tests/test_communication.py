@@ -14,7 +14,7 @@ import signal
 # 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from main_server.core_layer.ai_inference.grpc_inference_client import AIInferenceService
+from main_server.services.ai_inference.grpc_inference_client import AIInferenceService
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

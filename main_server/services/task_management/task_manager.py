@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 
-from main_server.domains.tasks.task import Task, TaskType, TaskStatus
-from main_server.domains.tasks.task_repository import ITaskRepository
-from main_server.core_layer.fleet_management.fleet_manager import FleetManager
+from main_server.models.domains.tasks.task import Task, TaskType, TaskStatus
+from main_server.models.domains.tasks.task_repository import ITaskRepository
+from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.common.exceptions import TaskAssignmentException
 
 class TaskManager:
@@ -80,5 +80,5 @@ class TaskManager:
 
     async def get_task_by_id(self, task_id: int) -> Optional[Task]:
         """ID로 작업을 조회합니다."""
-        return await self.task_repo.find_by_id(task_id)
+        return await self.task_repo.get_by_id(task_id)
 

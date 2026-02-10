@@ -2,8 +2,8 @@ import json
 import roslibpy
 import asyncio
 from typing import List, Dict, Any, Optional, Callable
-from .protocols import IRobotCommunicator
-from main_server import config
+from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
+from main_server.config import config
 
 class ROSBridgeCommunicator(IRobotCommunicator):
     """

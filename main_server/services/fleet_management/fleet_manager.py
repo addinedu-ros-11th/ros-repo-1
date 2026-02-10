@@ -2,11 +2,10 @@ import math
 import json
 from typing import List, Optional, Dict, Any
 
-from main_server.domains.robots.robot import Robot, RobotStatus
-from main_server.domains.robots.robot_repository import IRobotRepository
-from main_server.domains.tasks.task import Task, TaskType
-from main_server.infrastructure.communication.protocols import IRobotCommunicator
-from main_server.core_layer.ai_inference.protocols import IAIInferenceService
+from main_server.models.domains.robots.robot import Robot, RobotStatus
+from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
+from main_server.models.domains.tasks.task import Task, TaskType
+from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
 from main_server.web.connection_manager import ConnectionManager
 
 
@@ -17,35 +16,18 @@ class FleetManager:
     데이터베이스 및 로봇 통신과 연동하여 로봇을 관리합니다.
     """
     def __init__(self,
-                 robot_repo: IRobotRepository,
+                 robot_repo: MySQLRobotRepository,
                  robot_communicator: IRobotCommunicator,
-                 ai_service: IAIInferenceService,
                  connection_manager: ConnectionManager):
         """
         리포지토리, 커뮤니케이터, AI 서비스, 웹소켓 연결 관리자를 주입받습니다.
         """
         self.robot_repo = robot_repo
         self.robot_communicator = robot_communicator
-        self.ai_service = ai_service
         self.connection_manager = connection_manager
         print("Fleet Manager 초기화 완료 (AI 서비스 연동).")
 
-    async def start_ai_stream(self):
-        """
-        AI 서버로부터의 실시간 추론 스트림을 구독하고 처리를 시작합니다.
-        """
-        async def handle_ai_result(data: Dict[str, Any]):
-            # AI 추론 결과에 따른 로직 처리 (예: 특정 객체 발견 시 정지, 안내 등)
-            robot_id = data.get("robot_id")
-            result_type = data.get("type")
-            content = data.get("content")
-            
-            print(f"[AI Stream] 로봇({robot_id})로부터 {result_type} 결과 수신: {content}")
-            
-            # TODO: 여기에 추론 결과에 따른 구체적인 비즈니스 로직 추가
-            # 예: 간식 배달 중 장애물 발견 시 경로 재탐색 요청 등
 
-        await self.ai_service.start_inference_stream(handle_ai_result)
 
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
         """

@@ -29,15 +29,15 @@ AI_INFERENCE_GRPC_HOST = os.getenv("AI_INFERENCE_GRPC_HOST", "localhost")
 AI_INFERENCE_GRPC_PORT = int(os.getenv("AI_INFERENCE_GRPC_PORT", 50051))
 
 # LLM Service configuration
-LLM_GRPC_HOST = os.getenv("LLM_GRPC_HOST", "0.0.0.0")
+LLM_GRPC_HOST = os.getenv("LLM_GRPC_HOST", "localhost")
 LLM_GRPC_PORT = int(os.getenv("LLM_GRPC_PORT", 50051))
 
 # Vision Service configuration
-VISION_GRPC_HOST = os.getenv("VISION_GRPC_HOST", "0.0.0.0")
+VISION_GRPC_HOST = os.getenv("VISION_GRPC_HOST", "localhost")
 VISION_GRPC_PORT = int(os.getenv("VISION_GRPC_PORT", 50052))
 
 # Video Stream configuration
-VIDEO_STREAM_HOST = os.getenv("VIDEO_STREAM_HOST", "0.0.0.0")
+VIDEO_STREAM_HOST = os.getenv("VIDEO_STREAM_HOST", "localhost")
 VIDEO_STREAM_PORT = int(os.getenv("VIDEO_STREAM_PORT", 54321))
 
 # FastAPI Application Metadata

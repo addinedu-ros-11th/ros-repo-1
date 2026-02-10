@@ -6,7 +6,7 @@ AI 서버의 gRPC 연결을 테스트하는 간단한 클라이언트
 import asyncio
 import logging
 
-from main_server.core_layer.ai_inference.grpc_inference_client import AIInferenceService
+from main_server.services.ai_inference.grpc_inference_client import AIInferenceService
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

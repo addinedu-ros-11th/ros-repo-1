@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict
 
 import grpc
-from main_server import config
+from main_server.config import config
 
 # Generated gRPC files
 from main_server.infrastructure.grpc import ai_inference_pb2

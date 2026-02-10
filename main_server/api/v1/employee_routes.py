@@ -1,8 +1,8 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Body, HTTPException
 
-from main_server.domains.tasks.task import Task, TaskType
-from main_server.core_layer.task_management.task_manager import TaskManager
+from main_server.models.domains.tasks.task import Task, TaskType
+from main_server.services.task_management.task_manager import TaskManager
 from main_server.container import container
 
 # --- 요청 본문 모델 ---

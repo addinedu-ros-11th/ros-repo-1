@@ -2,8 +2,8 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from main_server.domains.tasks.task import Task, TaskStatus
-from main_server.domains.tasks.task_repository import ITaskRepository
+from main_server.models.domains.tasks.task import Task, TaskStatus
+from main_server.models.domains.tasks.task_repository import ITaskRepository
 from main_server.infrastructure.database.base_repository import BaseRepository
 
 class MySQLTaskRepository(BaseRepository, ITaskRepository):

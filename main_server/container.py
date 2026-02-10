@@ -6,21 +6,21 @@ from main_server.infrastructure.database.connection import Database
 from main_server.web.connection_manager import manager as connection_manager
 
 # --- Repository Instances ---
-from main_server.domains.robots.robot_repository import IRobotRepository
+from main_server.models.domains.robots.robot_repository import IRobotRepository
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
 
-from main_server.domains.tasks.task_repository import ITaskRepository
+from main_server.models.domains.tasks.task_repository import ITaskRepository
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
 
 # --- Communication Instances ---
-from main_server.infrastructure.communication.protocols import IRobotCommunicator
-from main_server.infrastructure.communication.ros_bridge import ROSBridgeCommunicator
+from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
+from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridgeCommunicator
 
 # --- Core Service Instances ---
-from main_server.infrastructure.ai_inference import AIInferenceService, LLMServiceClient, VisionServiceClient
-from main_server.core_layer.office_iot.iot_controller import IoTController
-from main_server.core_layer.fleet_management.fleet_manager import FleetManager
-from main_server.core_layer.task_management.task_manager import TaskManager
+from main_server.infrastructure.ai_client import AIInferenceService, LLMServiceClient, VisionServiceClient
+from main_server.services.office_iot.iot_controller import IoTController
+from main_server.services.fleet_management.fleet_manager import FleetManager
+from main_server.services.task_management.task_manager import TaskManager
 
 
 class Container:
@@ -67,7 +67,6 @@ class Container:
         self.fleet_manager = FleetManager(
             robot_repo=self.robot_repo,
             robot_communicator=self.robot_communicator,
-            ai_service=self.ai_service,
             connection_manager=self.connection_manager
         )
         self.task_manager = TaskManager(

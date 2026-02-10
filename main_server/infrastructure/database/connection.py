@@ -1,7 +1,7 @@
 import aiomysql
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from main_server import config
+from main_server.config import config
 
 class Database:
     _pool: Optional[aiomysql.Pool] = None

@@ -6,8 +6,8 @@ LLM과 Vision 서버의 gRPC 연결을 개별 테스트
 import asyncio
 import logging
 
-from main_server.core_layer.ai_inference.llm_client import LLMClient
-from main_server.core_layer.ai_inference.vision_client import VisionClient
+from main_server.services.ai_inference.llm_client import LLMClient
+from main_server.services.ai_inference.vision_client import VisionClient
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

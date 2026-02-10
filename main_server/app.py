@@ -1,4 +1,4 @@
-from main_server import config
+from main_server.config import config
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from main_server.container import container
 from main_server.infrastructure.database.connection import Database
 from main_server.web.connection_manager import manager as connection_manager
-from main_server.infrastructure.communication.ros_bridge import ROSBridge
+from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridge
 
 # 전역 변수로 백그라운드 태스크 저장
 background_tasks = set()
@@ -28,9 +28,9 @@ async def startup_event():
     bridge_task = asyncio.create_task(ros_bridge.start())
     background_tasks.add(bridge_task)
 
-    # 4. AI 실시간 추론 결과 구독 시작
-    ai_stream_task = asyncio.create_task(container.fleet_manager.start_ai_stream())
-    background_tasks.add(ai_stream_task)
+    # # 4. AI 실시간 추론 결과 구독 시작
+    # ai_stream_task = asyncio.create_task(container.fleet_manager.start_ai_stream())
+    # background_tasks.add(ai_stream_task)
     
     print("ROS Bridge server and AI Stream subscriber started.")
 
