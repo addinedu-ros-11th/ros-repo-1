@@ -24,43 +24,41 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x61i_services.proto\x12\x0c\x61i_inference\"Y\n\x0bTextRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nmax_length\x18\x02 \x01(\x05\x12\x18\n\x0btemperature\x18\x03 \x01(\x02H\x00\x88\x01\x01\x42\x0e\n\x0c_temperature\":\n\x0cTextResponse\x12\x16\n\x0egenerated_text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"d\n\x0b\x43hatRequest\x12+\n\x08messages\x18\x01 \x03(\x0b\x32\x19.ai_inference.ChatMessage\x12\x18\n\x0btemperature\x18\x02 \x01(\x02H\x00\x88\x01\x01\x42\x0e\n\x0c_temperature\",\n\x0b\x43hatMessage\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"4\n\x0c\x43hatResponse\x12\x10\n\x08response\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"\\\n\x0eIntentResponse\x12\x0e\n\x06intent\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x08\x65ntities\x18\x03 \x03(\x0b\x32\x14.ai_inference.Entity\"9\n\x06\x45ntity\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"\x07\n\x05\x45mpty\"H\n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\x12\x17\n\nimage_data\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\r\n\x0b_image_data\"j\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x03\x62ox\x18\x03 \x01(\x0b\x32\x19.ai_inference.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id\"V\n\x1cMultiObjectDetectionResponse\x12\x36\n\x07objects\x18\x01 \x03(\x0b\x32%.ai_inference.ObjectDetectionResponse\"\x88\x02\n\x0cVisionResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12\x41\n\x10object_detection\x18\x03 \x01(\x0b\x32%.ai_inference.ObjectDetectionResponseH\x00\x12\x41\n\x10\x66\x61\x63\x65_recognition\x18\x04 \x01(\x0b\x32%.ai_inference.FaceRecognitionResponseH\x00\x12\x43\n\rmulti_objects\x18\x05 \x01(\x0b\x32*.ai_inference.MultiObjectDetectionResponseH\x00\x42\x08\n\x06result2\xdc\x01\n\nLLMService\x12\x45\n\x0cGenerateText\x12\x19.ai_inference.TextRequest\x1a\x1a.ai_inference.TextResponse\x12=\n\x04\x43hat\x12\x19.ai_inference.ChatRequest\x1a\x1a.ai_inference.ChatResponse\x12H\n\rAnalyzeIntent\x12\x19.ai_inference.TextRequest\x1a\x1c.ai_inference.IntentResponse2\xe3\x02\n\rVisionService\x12R\n\rDetectObjects\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.ObjectDetectionResponse\x12S\n\x0eRecognizeFaces\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.FaceRecognitionResponse\x12_\n\x15\x44\x65tectMultipleObjects\x12\x1a.ai_inference.ImageRequest\x1a*.ai_inference.MultiObjectDetectionResponse\x12H\n\x13StreamVisionResults\x12\x13.ai_inference.Empty\x1a\x1a.ai_inference.VisionResult0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x61i_services.proto\x12\x0c\x61i_inference\"\x07\n\x05\x45mpty\"H\n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\x12\x17\n\nimage_data\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\r\n\x0b_image_data\"j\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12&\n\x03\x62ox\x18\x03 \x01(\x0b\x32\x19.ai_inference.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id\"V\n\x1cMultiObjectDetectionResponse\x12\x36\n\x07objects\x18\x01 \x03(\x0b\x32%.ai_inference.ObjectDetectionResponse\"\x88\x02\n\x0cVisionResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12\x41\n\x10object_detection\x18\x03 \x01(\x0b\x32%.ai_inference.ObjectDetectionResponseH\x00\x12\x41\n\x10\x66\x61\x63\x65_recognition\x18\x04 \x01(\x0b\x32%.ai_inference.FaceRecognitionResponseH\x00\x12\x43\n\rmulti_objects\x18\x05 \x01(\x0b\x32*.ai_inference.MultiObjectDetectionResponseH\x00\x42\x08\n\x06result\",\n\tNLRequest\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\"\xaa\x01\n\x12StructuredResponse\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12)\n\ttask_type\x18\x02 \x01(\x0e\x32\x16.ai_inference.TaskType\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x12\x33\n\nstruct_msg\x18\x04 \x01(\x0b\x32\x1f.ai_inference.StructuredMessage\x12\x10\n\x08raw_text\x18\x05 \x01(\t\"\xb5\x06\n\x11StructuredMessage\x12\x15\n\x08location\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x11\n\x04item\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x18\n\x0bperson_name\x18\x03 \x01(\tH\x02\x88\x01\x01\x12\x16\n\tperson_id\x18\x04 \x01(\tH\x03\x88\x01\x01\x12\x1c\n\x0fsource_location\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x1a\n\rdest_location\x18\x06 \x01(\tH\x05\x88\x01\x01\x12\x15\n\x08quantity\x18\x07 \x01(\x05H\x06\x88\x01\x01\x12\x35\n\x0b\x64\x65vice_type\x18\x08 \x01(\x0e\x32\x1b.ai_inference.IoTDeviceTypeH\x07\x88\x01\x01\x12\x32\n\x07\x63ommand\x18\t \x01(\x0e\x32\x1c.ai_inference.IoTCommandTypeH\x08\x88\x01\x01\x12\x19\n\x0ctarget_value\x18\n \x01(\x02H\t\x88\x01\x01\x12\x14\n\x07room_id\x18\x0b \x01(\tH\n\x88\x01\x01\x12\x1c\n\x0fmeeting_room_id\x18\x0c \x01(\tH\x0b\x88\x01\x01\x12\x17\n\nstart_time\x18\r \x01(\tH\x0c\x88\x01\x01\x12\x15\n\x08\x65nd_time\x18\x0e \x01(\tH\r\x88\x01\x01\x12\x1b\n\x0e\x61ttendee_count\x18\x0f \x01(\x05H\x0e\x88\x01\x01\x12\x11\n\x04\x61rea\x18\x10 \x01(\tH\x0f\x88\x01\x01\x12\x11\n\twaypoints\x18\x11 \x03(\t\x12\x17\n\nquery_type\x18\x12 \x01(\tH\x10\x88\x01\x01\x12\x14\n\x07message\x18\x13 \x01(\tH\x11\x88\x01\x01\x12\x10\n\x08keywords\x18\x14 \x03(\tB\x0b\n\t_locationB\x07\n\x05_itemB\x0e\n\x0c_person_nameB\x0c\n\n_person_idB\x12\n\x10_source_locationB\x10\n\x0e_dest_locationB\x0b\n\t_quantityB\x0e\n\x0c_device_typeB\n\n\x08_commandB\x0f\n\r_target_valueB\n\n\x08_room_idB\x12\n\x10_meeting_room_idB\r\n\x0b_start_timeB\x0b\n\t_end_timeB\x11\n\x0f_attendee_countB\x07\n\x05_areaB\r\n\x0b_query_typeB\n\n\x08_message*\xac\x04\n\x08TaskType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x12\n\x0eSNACK_DELIVERY\x10\x01\x12\x11\n\rITEM_DELIVERY\x10\x02\x12\x0f\n\x0bPICKUP_ITEM\x10\x03\x12\x0f\n\x0bGUIDE_GUEST\x10\n\x12\x18\n\x14NAVIGATE_TO_LOCATION\x10\x0b\x12\x11\n\rFOLLOW_PERSON\x10\x0c\x12\x0e\n\nCALL_ROBOT\x10\x14\x12\x12\n\x0eRETURN_TO_BASE\x10\x15\x12\x0f\n\x0b\x43\x41NCEL_TASK\x10\x16\x12\x0e\n\nPAUSE_TASK\x10\x17\x12\x0f\n\x0bRESUME_TASK\x10\x18\x12\x11\n\rCONTROL_LIGHT\x10\x1e\x12\x17\n\x13\x43ONTROL_TEMPERATURE\x10\x1f\x12\x0e\n\nCONTROL_AC\x10 \x12\x10\n\x0c\x43ONTROL_DOOR\x10!\x12\x16\n\x12QUERY_ROBOT_STATUS\x10(\x12\x12\n\x0eQUERY_LOCATION\x10)\x12\x16\n\x12QUERY_AVAILABILITY\x10*\x12\x0f\n\x0b\x46IND_PERSON\x10+\x12\r\n\tFIND_ITEM\x10,\x12\x18\n\x14RESERVE_MEETING_ROOM\x10\x32\x12\x16\n\x12\x43\x41NCEL_RESERVATION\x10\x33\x12\x15\n\x11\x43HECK_ROOM_STATUS\x10\x34\x12\x0f\n\x0bPATROL_AREA\x10<\x12\x17\n\x13MONITOR_ENVIRONMENT\x10=\x12\x14\n\x10GENERAL_QUESTION\x10\x46\x12\x0c\n\x08GREETING\x10G*_\n\rIoTDeviceType\x12\x0f\n\x0bIOT_UNKNOWN\x10\x00\x12\t\n\x05LIGHT\x10\x01\x12\x0e\n\nTHERMOSTAT\x10\x02\x12\x13\n\x0f\x41IR_CONDITIONER\x10\x03\x12\r\n\tDOOR_LOCK\x10\x04*e\n\x0eIoTCommandType\x12\x13\n\x0fIOT_CMD_UNKNOWN\x10\x00\x12\x0b\n\x07TURN_ON\x10\x01\x12\x0c\n\x08TURN_OFF\x10\x02\x12\r\n\tSET_VALUE\x10\x03\x12\x08\n\x04LOCK\x10\x04\x12\n\n\x06UNLOCK\x10\x05\x32_\n\nLLMService\x12Q\n\x14ParseNaturalLanguage\x12\x17.ai_inference.NLRequest\x1a .ai_inference.StructuredResponse2\xe3\x02\n\rVisionService\x12R\n\rDetectObjects\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.ObjectDetectionResponse\x12S\n\x0eRecognizeFaces\x12\x1a.ai_inference.ImageRequest\x1a%.ai_inference.FaceRecognitionResponse\x12_\n\x15\x44\x65tectMultipleObjects\x12\x1a.ai_inference.ImageRequest\x1a*.ai_inference.MultiObjectDetectionResponse\x12H\n\x13StreamVisionResults\x12\x13.ai_inference.Empty\x1a\x1a.ai_inference.VisionResult0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ai_services_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_TEXTREQUEST']._serialized_start=35
-  _globals['_TEXTREQUEST']._serialized_end=124
-  _globals['_TEXTRESPONSE']._serialized_start=126
-  _globals['_TEXTRESPONSE']._serialized_end=184
-  _globals['_CHATREQUEST']._serialized_start=186
-  _globals['_CHATREQUEST']._serialized_end=286
-  _globals['_CHATMESSAGE']._serialized_start=288
-  _globals['_CHATMESSAGE']._serialized_end=332
-  _globals['_CHATRESPONSE']._serialized_start=334
-  _globals['_CHATRESPONSE']._serialized_end=386
-  _globals['_INTENTRESPONSE']._serialized_start=388
-  _globals['_INTENTRESPONSE']._serialized_end=480
-  _globals['_ENTITY']._serialized_start=482
-  _globals['_ENTITY']._serialized_end=539
-  _globals['_EMPTY']._serialized_start=541
-  _globals['_EMPTY']._serialized_end=548
-  _globals['_IMAGEREQUEST']._serialized_start=550
-  _globals['_IMAGEREQUEST']._serialized_end=622
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=624
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=730
-  _globals['_BOUNDINGBOX']._serialized_start=732
-  _globals['_BOUNDINGBOX']._serialized_end=798
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=800
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=908
-  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_start=910
-  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_end=996
-  _globals['_VISIONRESULT']._serialized_start=999
-  _globals['_VISIONRESULT']._serialized_end=1263
-  _globals['_LLMSERVICE']._serialized_start=1266
-  _globals['_LLMSERVICE']._serialized_end=1486
-  _globals['_VISIONSERVICE']._serialized_start=1489
-  _globals['_VISIONSERVICE']._serialized_end=1844
+  _globals['_TASKTYPE']._serialized_start=1803
+  _globals['_TASKTYPE']._serialized_end=2359
+  _globals['_IOTDEVICETYPE']._serialized_start=2361
+  _globals['_IOTDEVICETYPE']._serialized_end=2456
+  _globals['_IOTCOMMANDTYPE']._serialized_start=2458
+  _globals['_IOTCOMMANDTYPE']._serialized_end=2559
+  _globals['_EMPTY']._serialized_start=35
+  _globals['_EMPTY']._serialized_end=42
+  _globals['_IMAGEREQUEST']._serialized_start=44
+  _globals['_IMAGEREQUEST']._serialized_end=116
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=118
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=224
+  _globals['_BOUNDINGBOX']._serialized_start=226
+  _globals['_BOUNDINGBOX']._serialized_end=292
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=294
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=402
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_start=404
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_end=490
+  _globals['_VISIONRESULT']._serialized_start=493
+  _globals['_VISIONRESULT']._serialized_end=757
+  _globals['_NLREQUEST']._serialized_start=759
+  _globals['_NLREQUEST']._serialized_end=803
+  _globals['_STRUCTUREDRESPONSE']._serialized_start=806
+  _globals['_STRUCTUREDRESPONSE']._serialized_end=976
+  _globals['_STRUCTUREDMESSAGE']._serialized_start=979
+  _globals['_STRUCTUREDMESSAGE']._serialized_end=1800
+  _globals['_LLMSERVICE']._serialized_start=2561
+  _globals['_LLMSERVICE']._serialized_end=2656
+  _globals['_VISIONSERVICE']._serialized_start=2659
+  _globals['_VISIONSERVICE']._serialized_end=3014
 # @@protoc_insertion_point(module_scope)

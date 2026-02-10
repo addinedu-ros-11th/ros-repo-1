@@ -6,14 +6,8 @@ package ai_inference;
 // LLM Service (Qwen3-4B) - Port 50051
 // ============================================
 service LLMService {
-  // 텍스트 생성
-  rpc GenerateText (TextRequest) returns (TextResponse);
-  
-  // 대화형 응답
-  rpc Chat (ChatRequest) returns (ChatResponse);
-  
-  // 의도 분석
-  rpc AnalyzeIntent (TextRequest) returns (IntentResponse);
+  // 자연어 프롬프트 해석 (구조화된 작업 메시지로 변환)
+  rpc ParseNaturalLanguage (NLRequest) returns (StructuredResponse);
 }
 
 // ============================================
@@ -31,48 +25,6 @@ service VisionService {
   
   // 실시간 비전 스트리밍
   rpc StreamVisionResults (Empty) returns (stream VisionResult);
-}
-
-// ============================================
-// LLM 메시지 정의
-// ============================================
-
-message TextRequest {
-  string text = 1;
-  int32 max_length = 2;
-  optional float temperature = 3;
-}
-
-message TextResponse {
-  string generated_text = 1;
-  float confidence = 2;
-}
-
-message ChatRequest {
-  repeated ChatMessage messages = 1;
-  optional float temperature = 2;
-}
-
-message ChatMessage {
-  string role = 1;  // "user", "assistant", "system"
-  string content = 2;
-}
-
-message ChatResponse {
-  string response = 1;  // changed from text to response to match ai_services.proto if it was different, but it seems same
-  float confidence = 2;
-}
-
-message IntentResponse {
-  string intent = 1;
-  float confidence = 2;
-  repeated Entity entities = 3;
-}
-
-message Entity {
-  string type = 1;
-  string value = 2;
-  float confidence = 3;
 }
 
 // ============================================
@@ -117,4 +69,125 @@ message VisionResult {
     FaceRecognitionResponse face_recognition = 4;
     MultiObjectDetectionResponse multi_objects = 5;
   }
+}
+
+// ============================================
+// 자연어 프롬프트 해석 - 구조화된 응답 메시지
+// ============================================
+
+// 자연어 프롬프트 요청
+message NLRequest {
+  string req_id = 1;        // 요청 ID
+  string message = 2;       // 자연어 프롬프트
+}
+
+// 작업 유형 열거형
+enum TaskType {
+  UNKNOWN = 0;
+  
+  // 1. 물품/간식 배달 관련
+  SNACK_DELIVERY = 1;              // 간식 배달
+  ITEM_DELIVERY = 2;               // 물품 배달
+  PICKUP_ITEM = 3;                 // 물품 수거
+  
+  // 2. 안내/이동 관련
+  GUIDE_GUEST = 10;                // 방문객 안내
+  NAVIGATE_TO_LOCATION = 11;       // 특정 위치로 이동
+  FOLLOW_PERSON = 12;              // 사람 따라가기
+  
+  // 3. 로봇 제어 관련
+  CALL_ROBOT = 20;                 // 로봇 호출
+  RETURN_TO_BASE = 21;             // 로봇 복귀 (충전소/로비)
+  CANCEL_TASK = 22;                // 작업 취소
+  PAUSE_TASK = 23;                 // 작업 일시정지
+  RESUME_TASK = 24;                // 작업 재개
+  
+  // 4. 환경 제어 관련 (IoT)
+  CONTROL_LIGHT = 30;              // 조명 제어
+  CONTROL_TEMPERATURE = 31;        // 온도 제어
+  CONTROL_AC = 32;                 // 에어컨 제어
+  CONTROL_DOOR = 33;               // 문 제어
+  
+  // 5. 정보 조회 관련
+  QUERY_ROBOT_STATUS = 40;         // 로봇 상태 조회
+  QUERY_LOCATION = 41;             // 위치 정보 조회
+  QUERY_AVAILABILITY = 42;         // 회의실/좌석 가능 여부 조회
+  FIND_PERSON = 43;                // 사람 찾기
+  FIND_ITEM = 44;                  // 물건 찾기
+  
+  // 6. 회의실 관련
+  RESERVE_MEETING_ROOM = 50;       // 회의실 예약
+  CANCEL_RESERVATION = 51;         // 예약 취소
+  CHECK_ROOM_STATUS = 52;          // 회의실 상태 확인
+  
+  // 7. 순찰/모니터링
+  PATROL_AREA = 60;                // 구역 순찰
+  MONITOR_ENVIRONMENT = 61;        // 환경 모니터링
+  
+  // 8. 기타
+  GENERAL_QUESTION = 70;           // 일반 질문
+  GREETING = 71;                   // 인사
+}
+
+// IoT 장치 타입
+enum IoTDeviceType {
+  IOT_UNKNOWN = 0;
+  LIGHT = 1;
+  THERMOSTAT = 2;
+  AIR_CONDITIONER = 3;
+  DOOR_LOCK = 4;
+}
+
+// IoT 명령 타입
+enum IoTCommandType {
+  IOT_CMD_UNKNOWN = 0;
+  TURN_ON = 1;
+  TURN_OFF = 2;
+  SET_VALUE = 3;
+  LOCK = 4;
+  UNLOCK = 5;
+}
+
+// 구조화된 응답 메시지
+message StructuredResponse {
+  string req_id = 1;                    // 요청 ID
+  TaskType task_type = 2;               // 작업 유형
+  float confidence = 3;                 // 신뢰도 (0.0 ~ 1.0)
+  StructuredMessage struct_msg = 4;     // 구조화된 메시지
+  string raw_text = 5;                  // 원본 텍스트 (디버깅용)
+}
+
+// 구조화된 메시지 (작업 종류별 필드)
+message StructuredMessage {
+  // 공통 필드
+  optional string location = 1;         // 목적지/장소 (예: "회의실", "301호", "로비")
+  optional string item = 2;             // 물품/간식 이름 (예: "커피", "서류", "노트북")
+  optional string person_name = 3;      // 사람 이름
+  optional string person_id = 4;        // 사람 ID
+  
+  // 배달 관련
+  optional string source_location = 5;  // 출발지
+  optional string dest_location = 6;    // 목적지
+  optional int32 quantity = 7;          // 수량
+  
+  // IoT 제어 관련
+  optional IoTDeviceType device_type = 8;     // 장치 타입
+  optional IoTCommandType command = 9;        // 명령
+  optional float target_value = 10;           // 목표 값 (온도 등)
+  optional string room_id = 11;               // 방 ID
+  
+  // 회의실 관련
+  optional string meeting_room_id = 12;       // 회의실 ID
+  optional string start_time = 13;            // 시작 시간 (ISO 8601 형식)
+  optional string end_time = 14;              // 종료 시간
+  optional int32 attendee_count = 15;         // 참석자 수
+  
+  // 순찰 관련
+  optional string area = 16;                  // 구역
+  repeated string waypoints = 17;             // 경유지 목록
+  
+  // 기타
+  optional string query_type = 18;            // 조회 유형
+  optional string message = 19;               // 일반 메시지
+  repeated string keywords = 20;              // 키워드 목록
 }

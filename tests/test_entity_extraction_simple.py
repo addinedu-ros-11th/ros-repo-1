@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-간단한 엔티티 추출 테스트
+간단한 구조화 응답 테스트
 LLM 서비스만 직접 테스트 (gRPC 서버 없이)
 """
 
@@ -26,7 +26,7 @@ def main():
 
     # LLM 서비스 초기화
     logger.info("=" * 60)
-    logger.info("LLM 엔티티 추출 테스트 시작")
+    logger.info("LLM 구조화 응답 테스트 시작")
     logger.info("=" * 60)
 
     llm_service = LLMService(model_name="qwen3:4b-instruct-2507-q4_K_M")
@@ -59,11 +59,16 @@ def main():
         logger.info("-" * 40)
 
         try:
-            result = llm_service.extract_entities(test_input)
+            result = llm_service.parse_natural_language(test_input)
 
-            logger.info(f"📍 장소: {result.get('location', 'None')}")
-            logger.info(f"📦 물품: {result.get('item', 'None')}")
+            logger.info(f"🎯 TaskType: {result.get('task_type', 'UNKNOWN')}")
             logger.info(f"✓ 신뢰도: {result.get('confidence', 0.0):.2f}")
+
+            fields = result.get("fields", {})
+            if fields:
+                logger.info(f"📋 Structured: {fields}")
+            else:
+                logger.info("📋 Structured: 없음")
 
             if result.get("error"):
                 logger.warning(f"⚠ 오류: {result['error']}")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gRPC를 통한 엔티티 추출 테스트
+gRPC를 통한 구조화 응답 테스트
 LLM 서버가 실행 중이어야 함
 """
 
@@ -31,7 +31,7 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
         server_address: LLM 서버 주소
     """
     logger.info("=" * 60)
-    logger.info("gRPC 엔티티 추출 테스트 시작")
+    logger.info("gRPC 구조화 응답 테스트 시작")
     logger.info(f"서버: {server_address}")
     logger.info("=" * 60)
 
@@ -67,24 +67,36 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
 
         try:
             # gRPC 요청 생성
-            request = ai_services_pb2.TextRequest(text=test_input, max_length=200)
+            request = ai_services_pb2.NLRequest(req_id=f"test_{i}", message=test_input)
 
-            # AnalyzeIntent RPC 호출
-            response = stub.AnalyzeIntent(request)
+            # ParseNaturalLanguage RPC 호출
+            response = stub.ParseNaturalLanguage(request)
 
             # 결과 출력
-            logger.info(f"🎯 Intent: {response.intent}")
+            logger.info(
+                f"🎯 TaskType: {ai_services_pb2.TaskType.Name(response.task_type)}"
+            )
             logger.info(f"✓ Confidence: {response.confidence:.2f}")
 
-            if response.entities:
-                logger.info(f"📋 Entities:")
-                for entity in response.entities:
-                    icon = "📍" if entity.type == "location" else "📦"
-                    logger.info(
-                        f"  {icon} {entity.type}: {entity.value} (conf: {entity.confidence:.2f})"
-                    )
+            struct_msg = response.struct_msg
+            fields = []
+            for key in (
+                "location",
+                "item",
+                "person_name",
+                "source_location",
+                "dest_location",
+                "room_id",
+                "meeting_room_id",
+                "area",
+            ):
+                if struct_msg.HasField(key):
+                    fields.append(f"{key}={getattr(struct_msg, key)}")
+
+            if fields:
+                logger.info(f"📋 Structured: {', '.join(fields)}")
             else:
-                logger.info("📋 Entities: 없음")
+                logger.info("📋 Structured: 없음")
 
         except grpc.RpcError as e:
             logger.error(f"❌ gRPC 오류: {e.code()} - {e.details()}")

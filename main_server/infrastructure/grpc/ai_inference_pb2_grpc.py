@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from main_server.infrastructure.grpc import ai_inference_pb2 as main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2
+import ai_inference_pb2 as ai__inference__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in main_server/infrastructure/grpc/ai_inference_pb2_grpc.py depends on'
+        + ' but the generated code in ai_inference_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,20 +37,10 @@ class LLMServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.GenerateText = channel.unary_unary(
-                '/ai_inference.LLMService/GenerateText',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextResponse.FromString,
-                _registered_method=True)
-        self.Chat = channel.unary_unary(
-                '/ai_inference.LLMService/Chat',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatResponse.FromString,
-                _registered_method=True)
-        self.AnalyzeIntent = channel.unary_unary(
-                '/ai_inference.LLMService/AnalyzeIntent',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.IntentResponse.FromString,
+        self.ParseNaturalLanguage = channel.unary_unary(
+                '/ai_inference.LLMService/ParseNaturalLanguage',
+                request_serializer=ai__inference__pb2.NLRequest.SerializeToString,
+                response_deserializer=ai__inference__pb2.StructuredResponse.FromString,
                 _registered_method=True)
 
 
@@ -60,22 +50,8 @@ class LLMServiceServicer(object):
     ============================================
     """
 
-    def GenerateText(self, request, context):
-        """텍스트 생성
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def Chat(self, request, context):
-        """대화형 응답
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def AnalyzeIntent(self, request, context):
-        """의도 분석
+    def ParseNaturalLanguage(self, request, context):
+        """자연어 프롬프트 해석 (구조화된 작업 메시지로 변환)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -84,20 +60,10 @@ class LLMServiceServicer(object):
 
 def add_LLMServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'GenerateText': grpc.unary_unary_rpc_method_handler(
-                    servicer.GenerateText,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextResponse.SerializeToString,
-            ),
-            'Chat': grpc.unary_unary_rpc_method_handler(
-                    servicer.Chat,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatResponse.SerializeToString,
-            ),
-            'AnalyzeIntent': grpc.unary_unary_rpc_method_handler(
-                    servicer.AnalyzeIntent,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.IntentResponse.SerializeToString,
+            'ParseNaturalLanguage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ParseNaturalLanguage,
+                    request_deserializer=ai__inference__pb2.NLRequest.FromString,
+                    response_serializer=ai__inference__pb2.StructuredResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -114,7 +80,7 @@ class LLMService(object):
     """
 
     @staticmethod
-    def GenerateText(request,
+    def ParseNaturalLanguage(request,
             target,
             options=(),
             channel_credentials=None,
@@ -127,63 +93,9 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.LLMService/GenerateText',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def Chat(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ai_inference.LLMService/Chat',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ChatResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def AnalyzeIntent(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ai_inference.LLMService/AnalyzeIntent',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.TextRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.IntentResponse.FromString,
+            '/ai_inference.LLMService/ParseNaturalLanguage',
+            ai__inference__pb2.NLRequest.SerializeToString,
+            ai__inference__pb2.StructuredResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -209,23 +121,23 @@ class VisionServiceStub(object):
         """
         self.DetectObjects = channel.unary_unary(
                 '/ai_inference.VisionService/DetectObjects',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ObjectDetectionResponse.FromString,
+                request_serializer=ai__inference__pb2.ImageRequest.SerializeToString,
+                response_deserializer=ai__inference__pb2.ObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.RecognizeFaces = channel.unary_unary(
                 '/ai_inference.VisionService/RecognizeFaces',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.FaceRecognitionResponse.FromString,
+                request_serializer=ai__inference__pb2.ImageRequest.SerializeToString,
+                response_deserializer=ai__inference__pb2.FaceRecognitionResponse.FromString,
                 _registered_method=True)
         self.DetectMultipleObjects = channel.unary_unary(
                 '/ai_inference.VisionService/DetectMultipleObjects',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.MultiObjectDetectionResponse.FromString,
+                request_serializer=ai__inference__pb2.ImageRequest.SerializeToString,
+                response_deserializer=ai__inference__pb2.MultiObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.StreamVisionResults = channel.unary_stream(
                 '/ai_inference.VisionService/StreamVisionResults',
-                request_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.Empty.SerializeToString,
-                response_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.VisionResult.FromString,
+                request_serializer=ai__inference__pb2.Empty.SerializeToString,
+                response_deserializer=ai__inference__pb2.VisionResult.FromString,
                 _registered_method=True)
 
 
@@ -268,23 +180,23 @@ def add_VisionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'DetectObjects': grpc.unary_unary_rpc_method_handler(
                     servicer.DetectObjects,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ObjectDetectionResponse.SerializeToString,
+                    request_deserializer=ai__inference__pb2.ImageRequest.FromString,
+                    response_serializer=ai__inference__pb2.ObjectDetectionResponse.SerializeToString,
             ),
             'RecognizeFaces': grpc.unary_unary_rpc_method_handler(
                     servicer.RecognizeFaces,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.FaceRecognitionResponse.SerializeToString,
+                    request_deserializer=ai__inference__pb2.ImageRequest.FromString,
+                    response_serializer=ai__inference__pb2.FaceRecognitionResponse.SerializeToString,
             ),
             'DetectMultipleObjects': grpc.unary_unary_rpc_method_handler(
                     servicer.DetectMultipleObjects,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.MultiObjectDetectionResponse.SerializeToString,
+                    request_deserializer=ai__inference__pb2.ImageRequest.FromString,
+                    response_serializer=ai__inference__pb2.MultiObjectDetectionResponse.SerializeToString,
             ),
             'StreamVisionResults': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamVisionResults,
-                    request_deserializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.Empty.FromString,
-                    response_serializer=main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.VisionResult.SerializeToString,
+                    request_deserializer=ai__inference__pb2.Empty.FromString,
+                    response_serializer=ai__inference__pb2.VisionResult.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -315,8 +227,8 @@ class VisionService(object):
             request,
             target,
             '/ai_inference.VisionService/DetectObjects',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ObjectDetectionResponse.FromString,
+            ai__inference__pb2.ImageRequest.SerializeToString,
+            ai__inference__pb2.ObjectDetectionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -342,8 +254,8 @@ class VisionService(object):
             request,
             target,
             '/ai_inference.VisionService/RecognizeFaces',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.FaceRecognitionResponse.FromString,
+            ai__inference__pb2.ImageRequest.SerializeToString,
+            ai__inference__pb2.FaceRecognitionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -369,8 +281,8 @@ class VisionService(object):
             request,
             target,
             '/ai_inference.VisionService/DetectMultipleObjects',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.ImageRequest.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.MultiObjectDetectionResponse.FromString,
+            ai__inference__pb2.ImageRequest.SerializeToString,
+            ai__inference__pb2.MultiObjectDetectionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -396,8 +308,8 @@ class VisionService(object):
             request,
             target,
             '/ai_inference.VisionService/StreamVisionResults',
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.Empty.SerializeToString,
-            main__server_dot_infrastructure_dot_grpc_dot_ai__inference__pb2.VisionResult.FromString,
+            ai__inference__pb2.Empty.SerializeToString,
+            ai__inference__pb2.VisionResult.FromString,
             options,
             channel_credentials,
             insecure,

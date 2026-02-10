@@ -1,73 +1,100 @@
+import logging
+from typing import Any, Dict
+
 import grpc
-from typing import Dict, Any, List, Optional
 from main_server import config
 
 # Generated gRPC files
 from main_server.infrastructure.grpc import ai_inference_pb2
 from main_server.infrastructure.grpc import ai_inference_pb2_grpc
-from main_server.core_layer.ai_inference.protocols import ILLMService
 
-class LLMServiceClient(ILLMService):
+logger = logging.getLogger(__name__)
+
+
+class LLMServiceClient:
     """
     gRPC를 통해 원격 LLM 서버(Qwen3-4B)와 통신하는 클라이언트 서비스.
     """
-    def __init__(self, host: str = config.LLM_GRPC_HOST, port: int = config.LLM_GRPC_PORT):
-        self.channel = grpc.aio.insecure_channel(f'{host}:{port}')
+
+    def __init__(
+        self, host: str = config.LLM_GRPC_HOST, port: int = config.LLM_GRPC_PORT
+    ):
+        self.channel = grpc.aio.insecure_channel(f"{host}:{port}")
         self.stub = ai_inference_pb2_grpc.LLMServiceStub(self.channel)
-        print(f"LLM gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
+        logger.info("LLM gRPC Client 초기화 완료 (Connecting to %s:%s).", host, port)
 
-    async def generate_text(self, text: str, max_length: int = 100, temperature: Optional[float] = None) -> Dict[str, Any]:
+    async def parse_natural_language(self, req_id: str, message: str) -> Dict[str, Any]:
         """
-        주어진 텍스트로 텍스트 생성을 요청합니다.
+        자연어 프롬프트를 구조화된 작업 메시지로 변환합니다.
         """
-        request = ai_inference_pb2.TextRequest(
-            text=text, 
-            max_length=max_length, 
-            temperature=temperature
-        )
-        response = await self.stub.GenerateText(request)
-        
-        return {
-            "generated_text": response.generated_text,
-            "confidence": response.confidence
-        }
+        request = ai_inference_pb2.NLRequest(req_id=req_id, message=message)
+        response = await self.stub.ParseNaturalLanguage(request)
 
-    async def chat(self, messages: List[Dict[str, str]], temperature: Optional[float] = None) -> Dict[str, Any]:
-        """
-        대화형 응답을 요청합니다.
-        """
-        chat_messages = [
-            ai_inference_pb2.ChatMessage(role=msg["role"], content=msg["content"])
-            for msg in messages
-        ]
-        request = ai_inference_pb2.ChatRequest(
-            messages=chat_messages,
-            temperature=temperature
-        )
-        response = await self.stub.Chat(request)
-        
         return {
-            "response": response.response,
-            "confidence": response.confidence
-        }
-
-    async def analyze_intent(self, text: str) -> Dict[str, Any]:
-        """
-        의도 분석을 요청합니다.
-        """
-        request = ai_inference_pb2.TextRequest(text=text)
-        response = await self.stub.AnalyzeIntent(request)
-        
-        entities = [
-            {"type": e.type, "value": e.value, "confidence": e.confidence}
-            for e in response.entities
-        ]
-        
-        return {
-            "intent": response.intent,
+            "req_id": response.req_id,
+            "task_type": ai_inference_pb2.TaskType.Name(response.task_type),
             "confidence": response.confidence,
-            "entities": entities
+            "fields": self._struct_msg_to_dict(response.struct_msg),
+            "raw_text": response.raw_text,
         }
+
+    def _struct_msg_to_dict(
+        self, struct_msg: ai_inference_pb2.StructuredMessage
+    ) -> Dict[str, Any]:
+        """
+        StructuredMessage를 일반 dict로 변환합니다.
+        """
+        fields: Dict[str, Any] = {}
+
+        if struct_msg.HasField("location"):
+            fields["location"] = struct_msg.location
+        if struct_msg.HasField("item"):
+            fields["item"] = struct_msg.item
+        if struct_msg.HasField("person_name"):
+            fields["person_name"] = struct_msg.person_name
+        if struct_msg.HasField("person_id"):
+            fields["person_id"] = struct_msg.person_id
+
+        if struct_msg.HasField("source_location"):
+            fields["source_location"] = struct_msg.source_location
+        if struct_msg.HasField("dest_location"):
+            fields["dest_location"] = struct_msg.dest_location
+        if struct_msg.HasField("quantity"):
+            fields["quantity"] = struct_msg.quantity
+
+        if struct_msg.HasField("device_type"):
+            fields["device_type"] = ai_inference_pb2.IoTDeviceType.Name(
+                struct_msg.device_type
+            )
+        if struct_msg.HasField("command"):
+            fields["command"] = ai_inference_pb2.IoTCommandType.Name(struct_msg.command)
+        if struct_msg.HasField("target_value"):
+            fields["target_value"] = struct_msg.target_value
+        if struct_msg.HasField("room_id"):
+            fields["room_id"] = struct_msg.room_id
+
+        if struct_msg.HasField("meeting_room_id"):
+            fields["meeting_room_id"] = struct_msg.meeting_room_id
+        if struct_msg.HasField("start_time"):
+            fields["start_time"] = struct_msg.start_time
+        if struct_msg.HasField("end_time"):
+            fields["end_time"] = struct_msg.end_time
+        if struct_msg.HasField("attendee_count"):
+            fields["attendee_count"] = struct_msg.attendee_count
+
+        if struct_msg.HasField("area"):
+            fields["area"] = struct_msg.area
+        if len(struct_msg.waypoints) > 0:
+            fields["waypoints"] = list(struct_msg.waypoints)
+
+        if struct_msg.HasField("query_type"):
+            fields["query_type"] = struct_msg.query_type
+        if struct_msg.HasField("message"):
+            fields["message"] = struct_msg.message
+        if len(struct_msg.keywords) > 0:
+            fields["keywords"] = list(struct_msg.keywords)
+
+        return fields
 
     async def close(self):
         """gRPC 채널을 닫습니다."""
