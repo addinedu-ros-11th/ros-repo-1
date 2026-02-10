@@ -20,3 +20,7 @@ numpy
 # Vision 모델
 ultralytics
 pillow
+
+# Face Recognition
+face_recognition
+dlib

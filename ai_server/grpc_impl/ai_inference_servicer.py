@@ -92,7 +92,10 @@ class AIInferenceServicer(ai_inference_pb2_grpc.AIInferenceServicer):
 
         try:
             # Vision 서비스를 통해 얼굴 인식 수행
-            result = self.vision_service.recognize_face(request.image_id)
+            image_data = None
+            if request.HasField("image_data"):
+                image_data = request.image_data
+            result = self.vision_service.recognize_face(request.image_id, image_data)
 
             # 응답 메시지 생성
             response = ai_inference_pb2.FaceRecognitionResponse(
