@@ -17,6 +17,6 @@ ollama
 opencv-python
 numpy
 
-# Vision 모델 - 나중에 실제 모델 사용 시 추가
-# ultralytics
-# pillow
+# Vision 모델
+ultralytics
+pillow
