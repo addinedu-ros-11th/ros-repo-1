@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Body, HTTPException
 
-from main_server.domains.tasks.models import Task, TaskType
+from main_server.domains.tasks.schemas import Task, TaskType
 from main_server.services.task_management.task_manager import TaskManager
 from main_server.container import container
 

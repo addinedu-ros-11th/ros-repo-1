@@ -2,7 +2,7 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from main_server.domains.tasks.models import Task, TaskStatus
+from main_server.domains.tasks.schemas import Task, TaskStatus
 from main_server.domains.tasks.repository import ITaskRepository
 from main_server.infrastructure.database.repositories.base_repository import BaseRepository
 

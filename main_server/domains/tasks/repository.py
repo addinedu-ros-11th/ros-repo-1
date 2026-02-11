@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 
-from .models import Task, TaskStatus
+from .schemas import Task, TaskStatus
 
 class ITaskRepository(ABC):
     """

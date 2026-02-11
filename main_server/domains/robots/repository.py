@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from .models import Robot, RobotStatus
+from .schemas import Robot, RobotStatus
 
 class IRobotRepository(ABC):
     """
