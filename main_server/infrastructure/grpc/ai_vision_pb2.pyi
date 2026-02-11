@@ -9,6 +9,24 @@ class Empty(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class InferenceStateRequest(_message.Message):
+    __slots__ = ("robot_id", "model_type", "is_active")
+    ROBOT_ID_FIELD_NUMBER: _ClassVar[int]
+    MODEL_TYPE_FIELD_NUMBER: _ClassVar[int]
+    IS_ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    robot_id: str
+    model_type: str
+    is_active: bool
+    def __init__(self, robot_id: _Optional[str] = ..., model_type: _Optional[str] = ..., is_active: bool = ...) -> None: ...
+
+class InferenceStateResponse(_message.Message):
+    __slots__ = ("success", "message")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    message: str
+    def __init__(self, success: bool = ..., message: _Optional[str] = ...) -> None: ...
+
 class InferenceResult(_message.Message):
     __slots__ = ("robot_id", "object_detection", "face_recognition")
     ROBOT_ID_FIELD_NUMBER: _ClassVar[int]

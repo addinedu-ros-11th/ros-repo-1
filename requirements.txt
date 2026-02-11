@@ -8,6 +8,7 @@ aiomysql
 pydantic
 python-dotenv
 roslibpy
+pathfinding
 
 # AI Server dependencies
 # LLM (Qwen3-4B with Ollama)

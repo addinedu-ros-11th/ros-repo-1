@@ -120,9 +120,6 @@
   • `staff_id` (string)
   • `confidence` (float)
  |
-| 간식 확인 요청 | `StreamObjectCheck` |   •  `robot_id` (string)
-  •  `target_class` (string): "snack_A" |   •  `is_match` (bool)
-  • `detected_class` (string) |
 | 장애물 판별 스트리밍 | `StreamObjectScan` | • `robot_id` (string)
  | **(Stream)**
 • `frame_id`

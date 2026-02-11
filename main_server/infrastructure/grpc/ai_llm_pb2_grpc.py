@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import ai_llm_pb2 as ai__llm__pb2
+from . import ai_llm_pb2 as ai__llm__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -38,7 +38,7 @@ class LLMServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ParseNaturalLanguage = channel.unary_unary(
-                '/ai_inference.LLMService/ParseNaturalLanguage',
+                '/ai_inference.llm.LLMService/ParseNaturalLanguage',
                 request_serializer=ai__llm__pb2.NLRequest.SerializeToString,
                 response_deserializer=ai__llm__pb2.StructuredResponse.FromString,
                 _registered_method=True)
@@ -67,9 +67,9 @@ def add_LLMServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.LLMService', rpc_method_handlers)
+            'ai_inference.llm.LLMService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.LLMService', rpc_method_handlers)
+    server.add_registered_method_handlers('ai_inference.llm.LLMService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -93,7 +93,7 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.LLMService/ParseNaturalLanguage',
+            '/ai_inference.llm.LLMService/ParseNaturalLanguage',
             ai__llm__pb2.NLRequest.SerializeToString,
             ai__llm__pb2.StructuredResponse.FromString,
             options,
@@ -120,22 +120,22 @@ class VisionServiceStub(object):
             channel: A grpc.Channel.
         """
         self.DetectObjects = channel.unary_unary(
-                '/ai_inference.VisionService/DetectObjects',
+                '/ai_inference.llm.VisionService/DetectObjects',
                 request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__llm__pb2.ObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.RecognizeFaces = channel.unary_unary(
-                '/ai_inference.VisionService/RecognizeFaces',
+                '/ai_inference.llm.VisionService/RecognizeFaces',
                 request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__llm__pb2.FaceRecognitionResponse.FromString,
                 _registered_method=True)
         self.DetectMultipleObjects = channel.unary_unary(
-                '/ai_inference.VisionService/DetectMultipleObjects',
+                '/ai_inference.llm.VisionService/DetectMultipleObjects',
                 request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__llm__pb2.MultiObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.StreamVisionResults = channel.unary_stream(
-                '/ai_inference.VisionService/StreamVisionResults',
+                '/ai_inference.llm.VisionService/StreamVisionResults',
                 request_serializer=ai__llm__pb2.Empty.SerializeToString,
                 response_deserializer=ai__llm__pb2.VisionResult.FromString,
                 _registered_method=True)
@@ -200,9 +200,9 @@ def add_VisionServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.VisionService', rpc_method_handlers)
+            'ai_inference.llm.VisionService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.VisionService', rpc_method_handlers)
+    server.add_registered_method_handlers('ai_inference.llm.VisionService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -226,7 +226,7 @@ class VisionService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.VisionService/DetectObjects',
+            '/ai_inference.llm.VisionService/DetectObjects',
             ai__llm__pb2.ImageRequest.SerializeToString,
             ai__llm__pb2.ObjectDetectionResponse.FromString,
             options,
@@ -253,7 +253,7 @@ class VisionService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.VisionService/RecognizeFaces',
+            '/ai_inference.llm.VisionService/RecognizeFaces',
             ai__llm__pb2.ImageRequest.SerializeToString,
             ai__llm__pb2.FaceRecognitionResponse.FromString,
             options,
@@ -280,7 +280,7 @@ class VisionService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.VisionService/DetectMultipleObjects',
+            '/ai_inference.llm.VisionService/DetectMultipleObjects',
             ai__llm__pb2.ImageRequest.SerializeToString,
             ai__llm__pb2.MultiObjectDetectionResponse.FromString,
             options,
@@ -307,7 +307,7 @@ class VisionService(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ai_inference.VisionService/StreamVisionResults',
+            '/ai_inference.llm.VisionService/StreamVisionResults',
             ai__llm__pb2.Empty.SerializeToString,
             ai__llm__pb2.VisionResult.FromString,
             options,

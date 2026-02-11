@@ -11,6 +11,7 @@ from main_server.infrastructure.database.repositories.mysql_robot_repository imp
 
 from main_server.domains.tasks.repository import ITaskRepository
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
+from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
 
 # --- Communication Instances ---
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
@@ -34,6 +35,7 @@ class Container:
         # 이 변수들은 services()가 호출될 때 채워집니다.
         self.robot_repo = None
         self.task_repo = None
+        self.location_repo = None
         self.robot_communicator = None
         self.ai_processing_service = None
         self.llm_service = None
@@ -56,6 +58,7 @@ class Container:
         # 1. Infrastructure Layer
         self.robot_repo: IRobotRepository = MySQLRobotRepository()
         self.task_repo: ITaskRepository = MySQLTaskRepository()
+        self.location_repo = MySQLLocationRepository()
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
         self.connection_manager = connection_manager # WebSocket 관리자
 
@@ -78,7 +81,9 @@ class Container:
         )
         self.task_manager = TaskManager(
             task_repo=self.task_repo,
-            fleet_manager=self.fleet_manager
+            location_repo=self.location_repo,
+            fleet_manager=self.fleet_manager,
+            ai_processing_service=self.ai_processing_service
         )
 
         print("모든 서비스가 성공적으로 초기화되었습니다.")

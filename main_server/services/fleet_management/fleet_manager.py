@@ -2,9 +2,9 @@ import math
 import json
 from typing import List, Optional, Dict, Any
 
-from main_server.models.domains.robots.robot import Robot, RobotStatus
+from main_server.domains.robots.schemas import Robot, RobotStatus
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
-from main_server.models.domains.tasks.task import Task, TaskType
+from main_server.domains.tasks.schemas import Task, TaskType
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
 from main_server.web.connection_manager import ConnectionManager
 
@@ -137,3 +137,25 @@ class FleetManager:
         모든 로봇의 현재 상태를 DB에서 조회하여 반환합니다.
         """
         return await self.robot_repo.get_all()
+
+    async def send_move_command(self, robot_id: int, location_data: Dict[str, Any]):
+        """
+        특정 로봇에게 특정 위치(POI)로의 이동 명령을 전송합니다.
+        """
+        robot = await self.robot_repo.get_by_id(robot_id)
+        if not robot: return
+
+        # 로봇이 수행할 Action Sequence 생성 (이동만 포함)
+        actions = [
+            {
+                "action": "GOTO", 
+                "params": {
+                    "x": location_data["coordinate_x"], 
+                    "y": location_data["coordinate_y"]
+                }
+            }
+        ]
+        
+        # 실제 로봇에게 명령 전송 (ros_bridge 사용)
+        self.robot_communicator.send_action_sequence(robot.name, actions)
+        print(f"로봇 '{robot.name}'에게 {location_data['name']}으로의 이동 명령 전송 완료.")

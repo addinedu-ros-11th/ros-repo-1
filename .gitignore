@@ -187,3 +187,5 @@ cython_debug/
 # AI Server cache files
 ai_server/data/employee_encodings.npy
 ai_server/data/employee_metadata.json
+
+prompt.md

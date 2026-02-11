@@ -50,6 +50,23 @@ class VisionServiceClient(IVisionService):
             
         return result
 
+    async def update_inference_state(self, robot_id: str, model_type: str, is_active: bool) -> Dict[str, Any]:
+        """
+        AI 서버에게 특정 로봇에 대한 추론 시작/중지를 명령합니다.
+        """
+        try:
+            # 컴파일된 ai_vision_pb2의 실제 메시지 클래스 사용
+            request = ai_vision_pb2.InferenceStateRequest(
+                robot_id=robot_id,
+                model_type=model_type,
+                is_active=is_active
+            )
+            response = await self.stub.UpdateInferenceState(request)
+            return {"success": response.success, "message": response.message}
+        except Exception as e:
+            print(f"Error in UpdateInferenceState: {e}")
+            return {"success": False, "message": str(e)}
+
     async def start_vision_stream(self, callback: Any):
         """
         비전 추론 결과 스트림을 구독합니다.

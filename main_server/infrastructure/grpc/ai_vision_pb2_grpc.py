@@ -36,17 +36,22 @@ class AIInferenceStub(object):
             channel: A grpc.Channel.
         """
         self.DetectObjects = channel.unary_unary(
-                '/ai_inference.AIInference/DetectObjects',
+                '/ai_inference.vision.AIInference/DetectObjects',
                 request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__vision__pb2.ObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.RecognizeFaces = channel.unary_unary(
-                '/ai_inference.AIInference/RecognizeFaces',
+                '/ai_inference.vision.AIInference/RecognizeFaces',
                 request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__vision__pb2.FaceRecognitionResponse.FromString,
                 _registered_method=True)
+        self.UpdateInferenceState = channel.unary_unary(
+                '/ai_inference.vision.AIInference/UpdateInferenceState',
+                request_serializer=ai__vision__pb2.InferenceStateRequest.SerializeToString,
+                response_deserializer=ai__vision__pb2.InferenceStateResponse.FromString,
+                _registered_method=True)
         self.StreamInferenceResults = channel.unary_stream(
-                '/ai_inference.AIInference/StreamInferenceResults',
+                '/ai_inference.vision.AIInference/StreamInferenceResults',
                 request_serializer=ai__vision__pb2.Empty.SerializeToString,
                 response_deserializer=ai__vision__pb2.InferenceResult.FromString,
                 _registered_method=True)
@@ -65,6 +70,13 @@ class AIInferenceServicer(object):
 
     def RecognizeFaces(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateInferenceState(self, request, context):
+        """AI 서버 추론 제어 명령 (추가)
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -90,6 +102,11 @@ def add_AIInferenceServicer_to_server(servicer, server):
                     request_deserializer=ai__vision__pb2.ImageRequest.FromString,
                     response_serializer=ai__vision__pb2.FaceRecognitionResponse.SerializeToString,
             ),
+            'UpdateInferenceState': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateInferenceState,
+                    request_deserializer=ai__vision__pb2.InferenceStateRequest.FromString,
+                    response_serializer=ai__vision__pb2.InferenceStateResponse.SerializeToString,
+            ),
             'StreamInferenceResults': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamInferenceResults,
                     request_deserializer=ai__vision__pb2.Empty.FromString,
@@ -97,9 +114,9 @@ def add_AIInferenceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.AIInference', rpc_method_handlers)
+            'ai_inference.vision.AIInference', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.AIInference', rpc_method_handlers)
+    server.add_registered_method_handlers('ai_inference.vision.AIInference', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -121,7 +138,7 @@ class AIInference(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.AIInference/DetectObjects',
+            '/ai_inference.vision.AIInference/DetectObjects',
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.ObjectDetectionResponse.FromString,
             options,
@@ -148,9 +165,36 @@ class AIInference(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.AIInference/RecognizeFaces',
+            '/ai_inference.vision.AIInference/RecognizeFaces',
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.FaceRecognitionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateInferenceState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai_inference.vision.AIInference/UpdateInferenceState',
+            ai__vision__pb2.InferenceStateRequest.SerializeToString,
+            ai__vision__pb2.InferenceStateResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -175,7 +219,7 @@ class AIInference(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ai_inference.AIInference/StreamInferenceResults',
+            '/ai_inference.vision.AIInference/StreamInferenceResults',
             ai__vision__pb2.Empty.SerializeToString,
             ai__vision__pb2.InferenceResult.FromString,
             options,

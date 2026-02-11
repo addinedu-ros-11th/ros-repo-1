@@ -1,59 +1,36 @@
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, Body, HTTPException
-
-from main_server.domains.tasks.schemas import Task, TaskType
-from main_server.services.task_management.task_manager import TaskManager
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any
 from main_server.container import container
+import uuid
 
-# --- 요청 본문 모델 ---
-from pydantic import BaseModel
+router = APIRouter(prefix="/api/v1/employee", tags=["Employee"])
 
-class CreateTaskRequest(BaseModel):
-    task_type: TaskType
-    requester_id: int
-    details: Dict[str, Any] = {}
-
-# --- FastAPI 라우터 생성 ---
-router = APIRouter(
-    prefix="/api/v1/employee",
-    tags=["Employee"],
-)
-
-@router.post("/tasks", response_model=Task, status_code=201)
-async def create_new_task(
-    task_request: CreateTaskRequest = Body(...),
-    task_manager: TaskManager = Depends(lambda: container.task_manager)
-):
+@router.post("/command")
+async def process_command(request: Dict[str, str]):
     """
-    새로운 작업을 요청합니다. (간식, 배달 등) (SR-009)
-    TaskManager를 호출하여 작업을 생성하고 로봇 할당을 시도합니다.
+    직원의 자연어 명령(예: "커피 배달해줘")을 처리합니다.
     """
-    if not task_manager:
-        raise HTTPException(status_code=503, detail="Task service is not available.")
+    message = request.get("message")
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    req_id = str(uuid.uuid4())
     
-    try:
-        created_task = await task_manager.create_new_task(
-            task_type=task_request.task_type,
-            requester_id=task_request.requester_id,
-            details=task_request.details
-        )
-        return created_task
-    except Exception as e:
-        # 실제 운영 환경에서는 에러 로깅이 필요합니다.
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-
-@router.get("/tasks/{task_id}", response_model=Optional[Task])
-async def get_task_status(
-    task_id: int,
-    task_manager: TaskManager = Depends(lambda: container.task_manager)
-):
-    """
-    특정 작업의 현재 상태를 조회합니다.
-    """
-    if not task_manager:
-        raise HTTPException(status_code=503, detail="Task service is not available.")
+    # 1. AI 서비스를 통해 자연어 해석
+    ai_result = await container.ai_processing_service.process_natural_language(req_id, message)
     
-    task = await task_manager.get_task_by_id(task_id)
+    if ai_result.get("task_type") == "UNKNOWN":
+        return {"status": "error", "message": "명령을 이해하지 못했습니다.", "ai_result": ai_result}
+
+    # 2. 해석된 데이터를 바탕으로 작업 생성 및 로봇 할당
+    task = await container.task_manager.create_task_from_ai(ai_result)
+    
     if not task:
-        raise HTTPException(status_code=404, detail=f"Task with ID {task_id} not found.")
-    return task
+        return {"status": "retry", "message": "가용한 로봇이 없습니다.", "ai_result": ai_result}
+
+    return {
+        "status": "success",
+        "message": f"작업이 접수되었습니다: {ai_result['task_type']}",
+        "task_id": task.id,
+        "ai_fields": ai_result.get("fields")
+    }

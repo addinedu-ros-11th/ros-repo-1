@@ -1,12 +1,15 @@
 syntax = "proto3";
 
-package ai_inference;
+package ai_inference.vision;
 
 // 서비스 정의
 service AIInference {
   // 1:1 요청-응답 방식 (기존)
   rpc DetectObjects (ImageRequest) returns (ObjectDetectionResponse);
   rpc RecognizeFaces (ImageRequest) returns (FaceRecognitionResponse);
+
+  // AI 서버 추론 제어 명령 (추가)
+  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
 
   // 서버 스트리밍 방식 (실시간 구독)
   // 서버에서 추론 결과가 발생할 때마다 클라이언트에게 스트림으로 전달합니다.
@@ -15,6 +18,19 @@ service AIInference {
 
 // 빈 요청 메시지
 message Empty {}
+
+// 추론 상태 제어 요청
+message InferenceStateRequest {
+  string robot_id = 1;
+  string model_type = 2; // e.g., "FACE", "OBSTACLE", "SNACK"
+  bool is_active = 3;
+}
+
+// 추론 상태 제어 응답
+message InferenceStateResponse {
+  bool success = 1;
+  string message = 2;
+}
 
 // 통합 추론 결과 메시지 (스트리밍용)
 message InferenceResult {

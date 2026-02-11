@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package ai_inference;
+package ai_inference.llm;
 
 // ============================================
 // LLM Service (Qwen3-4B) - Port 50051
