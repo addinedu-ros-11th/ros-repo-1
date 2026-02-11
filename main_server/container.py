@@ -17,7 +17,8 @@ from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCom
 from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridgeCommunicator
 
 # --- Core Service Instances ---
-from main_server.infrastructure.ai_client import AIInferenceService, LLMServiceClient, VisionServiceClient
+from main_server.infrastructure.ai_client import LLMServiceClient, VisionServiceClient
+from main_server.services.ai_management.ai_processing import AIProcessingService
 from main_server.services.office_iot.iot_controller import IoTController
 from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.services.task_management.task_manager import TaskManager
@@ -34,7 +35,7 @@ class Container:
         self.robot_repo = None
         self.task_repo = None
         self.robot_communicator = None
-        self.ai_service = None
+        self.ai_processing_service = None
         self.llm_service = None
         self.vision_service = None
         self.iot_controller = None
@@ -59,9 +60,15 @@ class Container:
         self.connection_manager = connection_manager # WebSocket 관리자
 
         # 2. Core Layer
-        self.ai_service = AIInferenceService()
         self.llm_service = LLMServiceClient()
         self.vision_service = VisionServiceClient()
+        
+        self.ai_processing_service = AIProcessingService(
+            vision_service=self.vision_service,
+            llm_service=self.llm_service,
+            connection_manager=self.connection_manager
+        )
+        
         self.iot_controller = IoTController()
         
         self.fleet_manager = FleetManager(

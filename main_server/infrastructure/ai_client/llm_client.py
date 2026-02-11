@@ -5,8 +5,8 @@ import grpc
 from main_server.config import config
 
 # Generated gRPC files
-from main_server.infrastructure.grpc import ai_inference_pb2
-from main_server.infrastructure.grpc import ai_inference_pb2_grpc
+from main_server.infrastructure.grpc import ai_llm_pb2
+from main_server.infrastructure.grpc import ai_llm_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -20,26 +20,26 @@ class LLMServiceClient:
         self, host: str = config.LLM_GRPC_HOST, port: int = config.LLM_GRPC_PORT
     ):
         self.channel = grpc.aio.insecure_channel(f"{host}:{port}")
-        self.stub = ai_inference_pb2_grpc.LLMServiceStub(self.channel)
-        logger.info("LLM gRPC Client 초기화 완료 (Connecting to %s:%s).", host, port)
+        self.stub = ai_llm_pb2_grpc.LLMServiceStub(self.channel)
+        print(f"LLM gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
 
     async def parse_natural_language(self, req_id: str, message: str) -> Dict[str, Any]:
         """
-        자연어 프롬프트를 구조화된 작업 메시지로 변환합니다.
+        자연어 프롬프트를 해석하여 구조화된 작업 데이터로 변환합니다.
         """
-        request = ai_inference_pb2.NLRequest(req_id=req_id, message=message)
+        request = ai_llm_pb2.NLRequest(req_id=req_id, message=message)
         response = await self.stub.ParseNaturalLanguage(request)
 
         return {
             "req_id": response.req_id,
-            "task_type": ai_inference_pb2.TaskType.Name(response.task_type),
+            "task_type": ai_llm_pb2.TaskType.Name(response.task_type),
             "confidence": response.confidence,
             "fields": self._struct_msg_to_dict(response.struct_msg),
             "raw_text": response.raw_text,
         }
 
     def _struct_msg_to_dict(
-        self, struct_msg: ai_inference_pb2.StructuredMessage
+        self, struct_msg: ai_llm_pb2.StructuredMessage
     ) -> Dict[str, Any]:
         """
         StructuredMessage를 일반 dict로 변환합니다.
@@ -63,11 +63,11 @@ class LLMServiceClient:
             fields["quantity"] = struct_msg.quantity
 
         if struct_msg.HasField("device_type"):
-            fields["device_type"] = ai_inference_pb2.IoTDeviceType.Name(
+            fields["device_type"] = ai_llm_pb2.IoTDeviceType.Name(
                 struct_msg.device_type
             )
         if struct_msg.HasField("command"):
-            fields["command"] = ai_inference_pb2.IoTCommandType.Name(struct_msg.command)
+            fields["command"] = ai_llm_pb2.IoTCommandType.Name(struct_msg.command)
         if struct_msg.HasField("target_value"):
             fields["target_value"] = struct_msg.target_value
         if struct_msg.HasField("room_id"):

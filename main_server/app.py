@@ -28,9 +28,9 @@ async def startup_event():
     bridge_task = asyncio.create_task(ros_bridge.start())
     background_tasks.add(bridge_task)
 
-    # # 4. AI 실시간 추론 결과 구독 시작
-    # ai_stream_task = asyncio.create_task(container.fleet_manager.start_ai_stream())
-    # background_tasks.add(ai_stream_task)
+    # 4. AI 실시간 추론 결과 구독 시작 (AIProcessingService 사용)
+    ai_stream_task = asyncio.create_task(container.ai_processing_service.start_ai_stream())
+    background_tasks.add(ai_stream_task)
     
     print("ROS Bridge server and AI Stream subscriber started.")
 

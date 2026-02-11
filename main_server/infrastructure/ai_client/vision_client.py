@@ -3,8 +3,8 @@ from typing import Dict, Any, Optional
 from main_server.config import config
 
 # Generated gRPC files
-from main_server.infrastructure.grpc import ai_inference_pb2
-from main_server.infrastructure.grpc import ai_inference_pb2_grpc
+from main_server.infrastructure.grpc import ai_vision_pb2
+from main_server.infrastructure.grpc import ai_vision_pb2_grpc
 from main_server.domains.ai.interfaces import IVisionService
 
 class VisionServiceClient(IVisionService):
@@ -13,14 +13,14 @@ class VisionServiceClient(IVisionService):
     """
     def __init__(self, host: str = config.VISION_GRPC_HOST, port: int = config.VISION_GRPC_PORT):
         self.channel = grpc.aio.insecure_channel(f'{host}:{port}')
-        self.stub = ai_inference_pb2_grpc.VisionServiceStub(self.channel)
+        self.stub = ai_vision_pb2_grpc.AIInferenceStub(self.channel)
         print(f"Vision gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
 
     async def request_object_detection(self, image_id: str, image_data: Optional[bytes] = None) -> Dict[str, Any]:
         """
         주어진 이미지 ID 또는 데이터로 객체 인식을 요청합니다.
         """
-        request = ai_inference_pb2.ImageRequest(image_id=image_id, image_data=image_data)
+        request = ai_vision_pb2.ImageRequest(image_id=image_id)
         response = await self.stub.DetectObjects(request)
         
         return {
@@ -38,7 +38,7 @@ class VisionServiceClient(IVisionService):
         """
         주어진 이미지 ID 또는 데이터로 얼굴 인식을 요청합니다.
         """
-        request = ai_inference_pb2.ImageRequest(image_id=image_id, image_data=image_data)
+        request = ai_vision_pb2.ImageRequest(image_id=image_id)
         response = await self.stub.RecognizeFaces(request)
         
         result = {
@@ -50,38 +50,15 @@ class VisionServiceClient(IVisionService):
             
         return result
 
-    async def request_multiple_object_detection(self, image_id: str, image_data: Optional[bytes] = None) -> Dict[str, Any]:
-        """
-        복수 객체 인식을 요청합니다.
-        """
-        request = ai_inference_pb2.ImageRequest(image_id=image_id, image_data=image_data)
-        response = await self.stub.DetectMultipleObjects(request)
-        
-        objects = []
-        for obj in response.objects:
-            objects.append({
-                "object_name": obj.object_name,
-                "confidence": obj.confidence,
-                "box": {
-                    "x": obj.box.x,
-                    "y": obj.box.y,
-                    "width": obj.box.width,
-                    "height": obj.box.height
-                }
-            })
-            
-        return {"objects": objects}
-
     async def start_vision_stream(self, callback: Any):
         """
         비전 추론 결과 스트림을 구독합니다.
         """
-        print("Vision 스트림 구독 시작...")
+        print("Vision 스트림 구독 시작 (StreamInferenceResults)...")
         try:
-            async for result in self.stub.StreamVisionResults(ai_inference_pb2.Empty()):
+            async for result in self.stub.StreamInferenceResults(ai_vision_pb2.Empty()):
                 data = {
                     "robot_id": result.robot_id,
-                    "timestamp": result.timestamp,
                 }
                 
                 if result.HasField("object_detection"):
@@ -96,14 +73,6 @@ class VisionServiceClient(IVisionService):
                         "person_type": result.face_recognition.person_type,
                         "confidence": result.face_recognition.confidence
                     }
-                elif result.HasField("multi_objects"):
-                    data["type"] = "multi_objects"
-                    data["content"] = [
-                        {
-                            "object_name": obj.object_name,
-                            "confidence": obj.confidence
-                        } for obj in result.multi_objects.objects
-                    ]
                 
                 await callback(data)
         except grpc.aio.AioRpcError as e:

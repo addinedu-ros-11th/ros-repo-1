@@ -20,14 +20,12 @@ class FleetManager:
                  robot_communicator: IRobotCommunicator,
                  connection_manager: ConnectionManager):
         """
-        리포지토리, 커뮤니케이터, AI 서비스, 웹소켓 연결 관리자를 주입받습니다.
+        리포지토리, 커뮤니케이터, 웹소켓 연결 관리자를 주입받습니다.
         """
         self.robot_repo = robot_repo
         self.robot_communicator = robot_communicator
         self.connection_manager = connection_manager
-        print("Fleet Manager 초기화 완료 (AI 서비스 연동).")
-
-
+        print("Fleet Manager 초기화 완료.")
 
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
         """
