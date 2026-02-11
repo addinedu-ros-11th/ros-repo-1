@@ -4,74 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리자 관제 시스템</title>
+    <link rel="stylesheet" href="../static/admin_style.css">
     <style>
-        /* [기본 레이아웃] */
-        body { display: flex; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; background: #f4f4f9; }
-        .sidebar { width: 250px; min-width: 250px; background: #2c3e50; color: white; display: flex; flex-direction: column; z-index: 100; }
-        .sidebar h2 { padding: 20px; font-size: 1.2rem; border-bottom: 1px solid #34495e; margin: 0; }
-        .sidebar-menu { list-style: none; padding: 0; flex-grow: 1; margin: 0; }
-        .sidebar-menu li { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #34495e; transition: 0.3s; }
-        .sidebar-menu li.active { background: #3498db; }
-        .logout-btn { padding: 15px 20px; background: #e74c3c; text-align: center; text-decoration: none; color: white; }
-
-        .main-content { flex-grow: 1; padding: 30px; overflow-y: auto; min-width: 0; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-
-        /* [지도 및 드래그] */
-        #map-container { 
-            width: 100%; height: 500px; 
-            background-color: #ffffff; 
-            background-image: radial-gradient(#ddd 1px, transparent 1px); 
-            background-size: 40px 40px; 
-            border: 2px solid #adb5bd; border-radius: 12px; 
-            position: relative; overflow: hidden; 
-            box-shadow: inset 0 0 15px rgba(0,0,0,0.05);
+        /* [지도 및 드로잉 관련 추가 스타일 복구] */
+        #map-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background-color: white;
+            border: 2px solid #333;
+            margin-top: 20px;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(#eee 1px, transparent 1px),
+                linear-gradient(90deg, #eee 1px, transparent 1px);
+            background-size: 40px 40px;
+            cursor: crosshair;
         }
-        #map-container.drawing-mode { cursor: crosshair; }
-        .btn-zone-setup { position: absolute; top: 15px; right: 15px; padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; z-index: 10; font-weight: bold; }
-        
-        #draw-rect { position: absolute; border: 2px dashed #e74c3c; background: rgba(231, 76, 60, 0.2); display: none; pointer-events: none; z-index: 8; }
-        
-        .no-go-zone { 
-            position: absolute; border: 2px solid #e74c3c; background: rgba(231, 76, 60, 0.3); 
-            display: flex; align-items: center; justify-content: center; 
-            color: #fff; font-weight: bold; font-size: 11px; z-index: 7; 
-            text-align: center; overflow: hidden; padding: 2px;
+        .btn-zone-setup {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+            padding: 8px 15px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
         }
-        .robot-dot { 
-            position: absolute; width: 55px; height: 55px; 
-            background-color: #3498db; border: 3px solid white; border-radius: 50%; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center; 
-            color: white; font-weight: bold; transform: translate(-50%, -50%); 
-            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1); z-index: 9; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        .temp-rect {
+            position: absolute;
+            border: 2px dashed #e74c3c;
+            background: rgba(231, 76, 60, 0.2);
+            pointer-events: none;
         }
-        .robot-dot .name { font-size: 11px; margin-bottom: 2px; }
-        .robot-dot .battery { font-size: 13px; }
-
-        /* [금지구역 관리 섹션] */
-        .management-section { margin-top: 30px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .zone-form { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; padding: 0 20px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd; height: 80px; }
-        .zone-info-box { min-width: 250px; max-width: 250px; display: flex; flex-direction: column; justify-content: center; }
-        #temp-coord { display: block; font-size: 0.9rem; line-height: 1.4; color: #e67e22; font-weight: bold; }
-        .zone-form input { height: 35px; padding: 0 10px; border: 1px solid #ddd; border-radius: 4px; flex-grow: 1; }
-        
-        /* [공통 데이터 테이블] */
-        .data-table { width: 100%; border-collapse: collapse; background: white; margin-top: 20px; }
-        .data-table th, .data-table td { padding: 12px; border: 1px solid #ccc; text-align: center; }
-        .data-table th { background: #34495e; color: white; }
-        .btn-action { height: 40px; min-width: 90px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-save { background: #2ecc71; color: white; }
-        .btn-cancel { background: #95a5a6; color: white; }
-        .btn-delete { background: #e74c3c; color: white; padding: 5px 10px; border-radius: 4px; border: none; cursor: pointer; }
+        .no-go-zone {
+            position: absolute;
+            background: rgba(231, 76, 60, 0.4);
+            border: 2px solid #e74c3c;
+            color: #c0392b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+
     <div class="sidebar">
         <h2>관리자 메뉴</h2>
         <ul class="sidebar-menu">
             <li id="menu-robot-mgmt" onclick="showTab('robot-mgmt')">🤖 로봇 관리</li>
+            <li id="menu-office-mgmt" onclick="showTab('office-mgmt')">🏢 사무실 관리</li>
             <li id="menu-visitor-res" onclick="showTab('visitor-res')">📅 방문객 예약 현황</li>
             <li id="menu-sys-logs" onclick="showTab('sys-logs')">📜 시스템 동작 로그</li>
         </ul>
@@ -80,217 +68,284 @@
 
     <div class="main-content">
         <div id="robot-mgmt" class="tab-content">
-            <h1>🤖 로봇 실시간 관제</h1>
-            <div id="map-container" onmousedown="startDraw(event)" onmousemove="doDraw(event)" onmouseup="endDraw(event)">
-                <button class="btn-zone-setup" id="setup-btn" onclick="toggleSetupMode()">금지구역설정</button>
-                <div id="draw-rect"></div>
-                <div id="map-inner"></div>
-            </div>
+            <h1 style="margin-bottom: 15px;">🤖 로봇 실시간 관제</h1>
 
-            <div class="management-section">
-                <h2>🚫 금지구역 관리</h2>
-                <div id="new-zone-form" class="zone-form">
-                    <div class="zone-info-box">
-                        <strong style="color:#333;">[신규 구역 등록]</strong>
-                        <span id="temp-coord"></span>
-                    </div>
-                    <input type="text" id="temp-reason" placeholder="금지 사유를 입력하세요">
-                    <button class="btn-action btn-save" onclick="confirmAddZone()">저장하기</button>
-                    <button class="btn-action btn-cancel" onclick="clearTempZone()">취소</button>
+            <div style="position: relative; width: fit-content;">
+                <button id="setup-btn" onclick="toggleZoneSetup()" 
+                        style="position: absolute; bottom: 100%; right: 0; margin-bottom: 5px; 
+                            padding: 6px 12px; font-size: 0.85rem; font-weight: bold; 
+                            background: #e74c3c; color: white; border: none; border-radius: 4px; 
+                            cursor: pointer; z-index: 11;">
+                    🚫 금지구역 설정: OFF
+                </button>
+
+                <div id="map-container" 
+                    onmousedown="startDraw(event)" 
+                    onmousemove="doDraw(event)" 
+                    onmouseup="endDraw(event)" 
+                    oncontextmenu="return false;" 
+                    style="margin-top: 0;"> 
+                    <div id="map-inner"></div>
                 </div>
+            </div>
+            
+            <div class="zone-management" style="margin-top: 20px;">
+                <h3 style="margin-bottom: 10px;">📋 설정된 금지구역 리스트</h3>
+                <div id="zone-list-container"></div>
+            </div>
+        </div>
 
-                <table class="data-table">
-                    <thead>
-                        <tr><th>구역 ID</th><th>위치 및 크기</th><th>금지 사유</th><th>관리</th></tr>
-                    </thead>
-                    <tbody id="zone-list"></tbody>
-                </table>
+        <div id="office-mgmt" class="tab-content">
+            <h2>🏢 사무실 관리 시스템</h2>
+            <div class="office-grid">
+                <div class="office-section">
+                    <h3>📅 회의실 현황</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>회의실</th>
+                                <th>상태</th>
+                                <th>예약자</th>
+                                <th>예약시간</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>제 1 회의실</td>
+                                <td><span class="status-indicator status-on"></span></td>
+                                <td>김철수</td>
+                                <td>14:00 - 16:00</td>
+                            </tr>
+                            <tr>
+                                <td>제 2 회의실</td>
+                                <td><span class="status-indicator status-off"></span></td>
+                                <td>-</td>
+                                <td>-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="office-section">
+                    <h3>🍿 간식 현황</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>품목명</th><th>수량</th><th>상태</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>캡슐 커피</td><td>45개</td><td>충분</td></tr>
+                            <tr><td>생수</td><td>5개</td><td><span style="color:red">부족</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
         <div id="visitor-res" class="tab-content">
-            <h1>📅 방문객 예약 현황</h1>
+            <h2>📅 방문객 예약 현황</h2>
             <table class="data-table">
                 <thead>
-                    <tr><th>예약 날짜</th><th>시간</th><th>호스트</th><th>방문객</th></tr>
+                    <tr><th>방문날짜</th><th>방문시간</th><th>담당자</th><th>방문객</th></tr>
                 </thead>
                 <tbody id="visitor-list"></tbody>
             </table>
         </div>
 
         <div id="sys-logs" class="tab-content">
-            <h1>📜 시스템 동작 로그</h1>
+            <h2>📜 시스템 동작 로그</h2>
             <table class="data-table">
                 <thead>
-                    <tr><th>날짜</th><th>시간</th><th>로봇명</th><th>작업 ID</th><th>배터리</th><th>상태</th></tr>
+                    <tr><th>날짜</th><th>시간</th><th>로봇명</th><th>상태</th></tr>
                 </thead>
                 <tbody id="log-list"></tbody>
             </table>
         </div>
     </div>
 
-<script>
-    let isSetupMode = false, isDrawing = false, startX, startY, tempZone = null, zones = [], currentRobots = [];
+    <script>
+        /* [전역 상태 관리] */
+        let currentRobots = []; // 실시간 로봇 위치 저장 (충돌 검사용)
+        let zones = [];         // 금지구역 목록
+        let isSettingMode = false;
+        let isDrawing = false;
+        let startX, startY, tempRect;
 
-    // 로그아웃 처리 함수 (employee_app 로직 이식)
-    function logout() {
-        if(confirm("로그아웃 하시겠습니까?")) {
-            location.href = "http://127.0.0.1:8000/web"; 
+        /* [1] 금지구역 설정 모드 제어 */
+        function toggleZoneSetup() {
+            isSettingMode = !isSettingMode;
+            const btn = document.getElementById('setup-btn');
+            if (btn) {
+                btn.innerText = isSettingMode ? "🚫 금지구역 설정: ON" : "🚫 금지구역 설정: OFF";
+                btn.style.background = isSettingMode ? "#2ecc71" : "#e74c3c";
+            }
         }
-    }
 
-    // [탭 전환 함수]
-    function showTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.sidebar-menu li').forEach(l => l.classList.remove('active'));
-        const targetTab = document.getElementById(tabId);
-        const targetMenu = document.getElementById('menu-' + tabId);
-        if(targetTab && targetMenu) {
-            targetTab.classList.add('active');
-            targetMenu.classList.add('active');
+        /* [2] 로봇 위치 체크 (백업본 핵심 기능) */
+        function isRobotInRect(left, top, width, height) {
+            return currentRobots.some(r => {
+                const rx = r.pose_x * 40; // 스케일링 적용
+                const ry = r.pose_y * 40;
+                return (rx >= left && rx <= left + width && ry >= top && ry <= top + height);
+            });
+        }
+
+        /* [3] 드로잉 이벤트 리스너 */
+        /* [3] 드로잉 이벤트 리스너 수정 */
+        function startDraw(e) {
+            // e.button === 0 이 왼쪽 클릭입니다. (1은 휠, 2는 우클릭)
+            if (!isSettingMode || e.button !== 0) return; 
+            
+            isDrawing = true;
+            const rect = e.currentTarget.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+
+            tempRect = document.createElement('div');
+            tempRect.className = 'temp-rect';
+            tempRect.style.left = startX + 'px';
+            tempRect.style.top = startY + 'px';
+            e.currentTarget.appendChild(tempRect);
+        }
+
+        function doDraw(e) {
+            if (!isDrawing) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const curX = e.clientX - rect.left;
+            const curY = e.clientY - rect.top;
+
+            tempRect.style.width = Math.abs(curX - startX) + 'px';
+            tempRect.style.height = Math.abs(curY - startY) + 'px';
+            tempRect.style.left = Math.min(curX, startX) + 'px';
+            tempRect.style.top = Math.min(curY, startY) + 'px';
+        }
+
+        function endDraw(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const l = parseInt(tempRect.style.left);
+            const t = parseInt(tempRect.style.top);
+            const w = parseInt(tempRect.style.width);
+            const h = parseInt(tempRect.style.height);
+
+            // 로봇 충돌 검사 실행
+            if (isRobotInRect(l, t, w, h)) {
+                alert("⚠️ 로봇이 있는 위치에는 금지구역을 설정할 수 없습니다!");
+                tempRect.remove();
+                return;
+            }
+
+            const reason = prompt("금지 구역 설정 사유를 입력하세요:", "작업 구역");
+            if (reason) {
+                zones.push({ id: Date.now(), left: l, top: t, width: w, height: h, reason: reason });
+                renderZoneList();
+            }
+            tempRect.remove();
+        }
+
+        /* [4] UI 렌더링 (지도 및 리스트) */
+        function renderZoneList() {
+            const container = document.getElementById('zone-list-container');
+            if (!container) return;
+            
+            // 리스트만 갱신 (지도는 updateUI가 담당)
+            container.innerHTML = zones.length === 0 ? '<p style="color: #999;">설정된 구역이 없습니다.</p>' : 
+                zones.map(z => `
+                    <div class="zone-list-item" style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
+                        <span>🚫 <b>${z.reason}</b> (${z.left}, ${z.top})</span>
+                        <button onclick="deleteZone(${z.id})" style="background:#ff4d4d; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">삭제</button>
+                    </div>
+                `).join('');
+        }
+
+        function deleteZone(id) {
+            if (confirm("정말 이 구역을 삭제하시겠습니까?")) {
+                zones = zones.filter(z => z.id !== id);
+                renderZoneList();
+            }
+        }
+
+        /* [5] 실시간 데이터 업데이트 (통합 로직) */
+        function updateUI() {
+            // 로봇 데이터 (예시)
+            currentRobots = [
+                { "name": "R-01", "battery_level": 88, "pose_x": 4.5, "pose_y": 5.2 },
+                { "name": "R-02", "battery_level": 20, "pose_x": 12.0, "pose_y": 3.0 }
+            ];
+
+            const mapInner = document.getElementById('map-inner');
+            if (!mapInner) return;
+
+            // 1. 로봇 HTML 생성
+            const robotHtml = currentRobots.map(r => `
+                <div class="robot-dot" style="left:${r.pose_x * 40}px; top:${r.pose_y * 40}px; position:absolute;">
+                    <div style="background:#3498db; width:30px; height:30px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; font-size:8px; border:2px solid #fff;">
+                        <b>${r.name}</b><span>${r.battery_level}%</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // 2. 금지구역 HTML 생성 (클릭 기능 제거됨)
+            const zoneHtml = zones.map(z => `
+                <div class="no-go-zone" 
+                    style="left:${z.left}px; top:${z.top}px; width:${z.width}px; height:${z.height}px;">
+                    ${z.reason}
+                </div>
+            `).join('');
+
+            // 지도 합치기
+            mapInner.innerHTML = robotHtml + zoneHtml;
+            // 하단 테이블 데이터 자동 갱신
+            refreshTableData();
+        }
+
+        function refreshTableData() {
+            const vList = document.getElementById('visitor-list');
+            const lList = document.getElementById('log-list');
+            
+            if (vList) {
+                const visitors = [{ "res_date": "2026-03-04", "res_time": "15:29", "host_name": "홍길동", "guest": "김철수" }];
+                vList.innerHTML = visitors.map(v => `<tr><td>${v.res_date}</td><td>${v.res_time}</td><td>${v.host_name}</td><td>${v.guest}</td></tr>`).join('');
+            }
+            if (lList) {
+                const logs = [{ "name": "R-01", "date": "2026-03-04", "time": "15:29:34", "state": "Start" }];
+                lList.innerHTML = logs.map(l => `<tr><td>${l.date}</td><td>${l.time}</td><td>${l.name}</td><td>${l.state}</td></tr>`).join('');
+            }
+        }
+
+        /* [6] 초기화 및 탭 제어 */
+        function showTab(tabId) {
+            // 탭 이동 시 금지구역 설정 모드 강제 종료
+            if (isSettingMode) {
+                isSettingMode = false;
+                const btn = document.getElementById('setup-btn');
+                if (btn) {
+                    btn.innerText = "🚫 금지구역 설정: OFF";
+                    btn.style.background = "#e74c3c";
+                }
+            }
+
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.sidebar-menu li').forEach(l => l.classList.remove('active'));
+            
+            const target = document.getElementById(tabId);
+            if (target) target.style.display = 'block';
+            document.getElementById('menu-' + tabId)?.classList.add('active');
             localStorage.setItem('activeTab', tabId);
         }
-    }
 
-    // [금지구역 설정 관련 함수]
-    function toggleSetupMode() {
-        isSetupMode = !isSetupMode;
-        const btn = document.getElementById('setup-btn');
-        const map = document.getElementById('map-container');
-        btn.classList.toggle('active', isSetupMode);
-        map.classList.toggle('drawing-mode', isSetupMode);
-        btn.innerText = isSetupMode ? "영역 드래그 중..." : "금지구역설정";
-    }
-
-    function startDraw(e) {
-        if (!isSetupMode) return;
-        isDrawing = true;
-        const rect = e.currentTarget.getBoundingClientRect();
-        startX = e.clientX - rect.left;
-        startY = e.clientY - rect.top;
-        const drawRect = document.getElementById('draw-rect');
-        Object.assign(drawRect.style, { left: `${startX}px`, top: `${startY}px`, width: '0px', height: '0px', display: 'block' });
-    }
-
-    function doDraw(e) {
-        if (!isDrawing) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const curX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-        const curY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
-        const drawRect = document.getElementById('draw-rect');
-        drawRect.style.width = Math.abs(curX - startX) + 'px';
-        drawRect.style.height = Math.abs(curY - startY) + 'px';
-        drawRect.style.left = Math.min(curX, startX) + 'px';
-        drawRect.style.top = Math.min(curY, startY) + 'px';
-    }
-
-    function endDraw() {
-        if (!isDrawing) return;
-        isDrawing = false;
-        const drawRect = document.getElementById('draw-rect');
-        tempZone = {
-            left: parseInt(drawRect.style.left),
-            top: parseInt(drawRect.style.top),
-            width: parseInt(drawRect.style.width),
-            height: parseInt(drawRect.style.height)
-        };
-        if (tempZone.width > 5) {
-            document.getElementById('temp-coord').innerHTML = `위치: (${tempZone.left}, ${tempZone.top})<br>크기: ${tempZone.width}x${tempZone.height}`;
+        function logout() {
+            if (confirm("로그아웃 하시겠습니까?")) {
+                localStorage.removeItem('activeTab');
+                window.location.href = "/web";
+            }
         }
-        toggleSetupMode();
-    }
 
-    function clearTempZone() {
-        tempZone = null;
-        document.getElementById('temp-coord').innerHTML = "";
-        document.getElementById('temp-reason').value = "";
-        document.getElementById('draw-rect').style.display = 'none';
-    }
-
-    function confirmAddZone() {
-        if (!tempZone) { alert("영역을 선택해주세요."); return; }
-        const reason = document.getElementById('temp-reason').value;
-        if (!reason) { alert("사유를 입력해주세요."); return; }
-
-        const isRobotInside = currentRobots.some(r => {
-            const rx = r.pose_x * 40; const ry = r.pose_y * 40;
-            return (rx >= tempZone.left && rx <= tempZone.left + tempZone.width &&
-                    ry >= tempZone.top && ry <= tempZone.top + tempZone.height);
+        document.addEventListener('DOMContentLoaded', () => {
+            const lastTab = localStorage.getItem('activeTab') || 'robot-mgmt';
+            showTab(lastTab);
+            setInterval(updateUI, 1000); // 1초 주기로 백업본의 실시간성 복구
         });
-
-        if (isRobotInside) { alert("⚠️ 로봇이 있는 위치에는 금지구역을 설정할 수 없습니다."); clearTempZone(); return; }
-
-        zones.push({ ...tempZone, id: Date.now(), reason: reason });
-        clearTempZone();
-        renderZones();
-    }
-
-    function renderZones() {
-        const zoneList = document.getElementById('zone-list');
-        zoneList.innerHTML = zones.map(z => `
-            <tr>
-                <td>#${z.id.toString().slice(-4)}</td>
-                <td>(${z.left},${z.top}) ${z.width}x${z.height}</td>
-                <td>${z.reason}</td>
-                <td><button class="btn-delete" onclick="deleteZone(${z.id})">삭제</button></td>
-            </tr>
-        `).join('');
-    }
-
-    function deleteZone(id) {
-        if (confirm("삭제하시겠습니까?")) {
-            zones = zones.filter(z => z.id !== id);
-            renderZones();
-        }
-    }
-
-    // [전체 UI 업데이트 및 데이터 시뮬레이션]
-    function updateUI() {
-        // 1. 로봇 데이터 업데이트
-        currentRobots = [
-            { "name": "R-01", "battery_level": 88, "pose_x": 4.0 + Math.random()*0.5, "pose_y": 6.0 + Math.random()*0.5 },
-            { "name": "R-02", "battery_level": 15, "pose_x": 10.0 + Math.random()*0.5, "pose_y": 3.0 + Math.random()*0.5 }
-        ];
-
-        const mapInner = document.getElementById('map-inner');
-        const robotHtml = currentRobots.map(r => `
-            <div class="robot-dot" style="left:${r.pose_x * 40}px; top:${r.pose_y * 40}px;">
-                <div class="name">${r.name}</div>
-                <div class="battery">${r.battery_level}%</div>
-            </div>
-        `).join('');
-        
-        const zoneHtml = zones.map(z => `
-            <div class="no-go-zone" style="left:${z.left}px; top:${z.top}px; width:${z.width}px; height:${z.height}px;">
-                ${z.reason}
-            </div>
-        `).join('');
-        mapInner.innerHTML = robotHtml + zoneHtml;
-
-        // 2. 방문객 예약 데이터 업데이트 (업로드 파일 기준)
-        const mockVisitors = [
-            { "res_date": "2026-03-04", "res_time": "15:29", "host_name": "홍길동", "guest": "김철수" }
-        ];
-        document.getElementById('visitor-list').innerHTML = mockVisitors.map(v => `
-            <tr><td>${v.res_date}</td><td>${v.res_time}</td><td>${v.host_name}</td><td>${v.guest}</td></tr>
-        `).join('');
-
-        // 3. 시스템 로그 데이터 업데이트 (업로드 파일 기준)
-        const mockLogs = [
-            { "name": "R-01", "battery_level": 90, "current_task_id": 123, "date": "2026-03-04", "time": "15:29:34", "state": "Start" }
-        ];
-        document.getElementById('log-list').innerHTML = mockLogs.map(l => `
-            <tr><td>${l.date}</td><td>${l.time}</td><td>${l.name}</td><td>#${l.current_task_id}</td><td>${l.battery_level}%</td><td>${l.state}</td></tr>
-        `).join('');
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        const savedTab = localStorage.getItem('activeTab') || 'robot-mgmt';
-        showTab(savedTab);
-        renderZones();
-        updateUI();
-        setInterval(updateUI, 2000); 
-    });
-</script>
+    </script>
 </body>
 </html>
