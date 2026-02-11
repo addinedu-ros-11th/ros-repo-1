@@ -1,61 +1,77 @@
-import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from main_server.domains.tasks.schemas import Task, TaskType, TaskStatus
+from main_server.domains.robots.schemas import RobotStatus
 from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
-from main_server.services.ai_management.ai_processing import AIProcessingService
+from main_server.services.task_management.task_processors import SnackProcessor, GuideProcessor, ItemProcessor
 
 logger = logging.getLogger(__name__)
 
 class TaskManager:
     """
-    작업의 생명주기를 관리하고 AI 해석 결과를 로봇 작업으로 변환합니다.
+    작업의 통합 관리자. 작업 유형에 따라 적절한 Processor를 선택하여 실행합니다.
     """
     def __init__(self, 
                  task_repo: MySQLTaskRepository, 
                  location_repo: MySQLLocationRepository,
                  fleet_manager: FleetManager,
-                 ai_processing_service: AIProcessingService = None):
+                 ai_processing_service: Any = None):
         self.task_repo = task_repo
         self.location_repo = location_repo
         self.fleet_manager = fleet_manager
-        self.ai_processing_service = ai_processing_service
+        
+        # Processor 등록 (시나리오 확장 시 여기에 추가)
+        self.processors = {
+            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, ai_processing_service),
+            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, ai_processing_service),
+            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, ai_processing_service),
+        }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
-        # ... (이전 구현 내용 유지)
-        pass
+        """AI 해석 결과로 태스크를 생성하고 로봇을 배차합니다."""
+        task_type_str = ai_result.get("task_type")
+        fields = ai_result.get("fields", {})
+        
+        dest_name = fields.get("location") or fields.get("dest_location", "lobby")
+        location_data = await self.location_repo.find_by_name(dest_name)
+        target_pose = (location_data["coordinate_x"], location_data["coordinate_y"]) if location_data else (0.0, 0.0)
 
-    async def execute_snack_task_step(self, task_id: int, robot_id: int, step_event: str):
-        """
-        [간식 시나리오] 로봇의 보고를 바탕으로 다음 단계 명령을 내립니다.
-        """
+        task_data = {
+            "task_type": task_type_str,
+            "status": TaskStatus.PENDING,
+            "details": fields,
+            "target_location_name": dest_name,
+            "destination_id": location_data["location_id"] if location_data else None
+        }
+
+        task = await self.task_repo.create(task_data)
+        
+        optimal_robot = await self.fleet_manager.find_optimal_robot(target_pose)
+        if optimal_robot:
+            await self.assign_and_dispatch(optimal_robot, task)
+            return task
+        return None
+
+    async def assign_and_dispatch(self, robot, task):
+        """로봇에게 작업을 할당하고 해당 시나리오의 초기 명령을 전송합니다."""
+        await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
+        
+        # 해당 작업 타입의 Processor 가져오기
+        processor = self.processors.get(task.task_type)
+        if processor:
+            actions = await processor.get_initial_actions(task)
+            if actions:
+                self.fleet_manager.send_action_commands(robot.name, actions)
+        else:
+            logger.error(f"작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
+
+    async def handle_robot_event(self, task_id: int, robot_id: int, event: str):
+        """로봇으로부터 수신된 이벤트(도착 등)를 처리기에 전달합니다."""
         task = await self.task_repo.find_by_id(task_id)
         if not task: return
 
-        if step_event == "ARRIVED_AT_PANTRY_ENTRANCE":
-            # 6. 창고 진입 가능 확인 후 간식 위치로 이동
-            logger.info(f"로봇 {robot_id} 창고 입구 도착. 간식 위치로 이동 명령.")
-            snack_name = task.details.get("item", "snack")
-            location_data = await self.location_repo.find_by_name(snack_name)
-            if location_data:
-                await self.fleet_manager.send_move_command(robot_id, location_data)
-
-        elif step_event == "ARRIVED_AT_SNACK_POINT":
-            # 7-8. 간식 인증 시작
-            logger.info(f"로봇 {robot_id} 간식 앞 도착. AI 인증 시작.")
-            success = await self.ai_processing_service.verify_snack_with_stream(
-                robot_id=str(robot_id), 
-                target_snack=task.details.get("item", "")
-            )
-            
-            if success:
-                # 9-10. 로딩 후 사용자에게 이동
-                logger.info("간식 인증 성공. 3초 대기(로딩) 후 사용자에게 이동.")
-                await asyncio.sleep(3)
-                dest_location = await self.location_repo.find_by_name(task.target_location_name)
-                if dest_location:
-                    await self.fleet_manager.send_move_command(robot_id, dest_location)
-            else:
-                logger.error("간식 인증 실패. 작업을 중단하거나 재시도해야 합니다.")
+        processor = self.processors.get(task.task_type)
+        if processor:
+            await processor.handle_event(task, robot_id, event)

@@ -1,123 +1,57 @@
 import math
-import json
+import logging
 from typing import List, Optional, Dict, Any
 
 from main_server.domains.robots.schemas import Robot, RobotStatus
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
-from main_server.domains.tasks.schemas import Task, TaskType
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
 from main_server.web.connection_manager import ConnectionManager
 
+logger = logging.getLogger(__name__)
 
 class FleetManager:
     """
-    다중 로봇의 상태를 관리하고, 최적의 로봇을 배차하며,
-    교착 상태를 제어하는 Fleet Management System.
-    데이터베이스 및 로봇 통신과 연동하여 로봇을 관리합니다.
+    로봇 자원 관리 및 물리적 제어를 담당하는 서비스.
+    최적 로봇 검색, 로봇 상태 업데이트, 직접 명령 전송을 수행합니다.
     """
     def __init__(self,
                  robot_repo: MySQLRobotRepository,
                  robot_communicator: IRobotCommunicator,
                  connection_manager: ConnectionManager):
-        """
-        리포지토리, 커뮤니케이터, 웹소켓 연결 관리자를 주입받습니다.
-        """
         self.robot_repo = robot_repo
         self.robot_communicator = robot_communicator
         self.connection_manager = connection_manager
-        print("Fleet Manager 초기화 완료.")
+        logger.info("FleetManager 초기화 완료.")
 
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
-        """
-        주어진 목적지에 가장 적합한 로봇을 찾습니다.
-        (거리, 배터리, 현재 상태 고려)
-        """
-        print(f"{target_pose}로의 작업을 위한 최적 로봇 탐색...")
-        
+        """목적지에 가장 적합한 로봇을 검색합니다."""
         idle_robots = await self.robot_repo.find_by_status(RobotStatus.IDLE)
+        available_robots = [r for r in idle_robots if r.battery_level > 20]
         
-        available_robots = [
-            robot for robot in idle_robots if robot.battery_level > 20
-        ]
+        if not available_robots: return None
         
-        if not available_robots:
-            print("현재 가용한 로봇이 없습니다.")
-            return None
-        
-        best_robot = None
-        min_score = float('inf')
-
-        for robot in available_robots:
-            # L2 거리 계산
-            dist = math.sqrt((robot.pose_x - target_pose[0])**2 + (robot.pose_y - target_pose[1])**2)
-            # 점수가 낮을수록 좋음 (현재는 거리만 고려)
-            score = dist 
-            if score < min_score:
-                min_score = score
-                best_robot = robot
-        
-        print(f"최적 로봇으로 '{best_robot.name}' 선택됨 (거리: {min_score:.2f}).")
+        best_robot = min(
+            available_robots, 
+            key=lambda r: math.sqrt((r.pose_x - target_pose[0])**2 + (r.pose_y - target_pose[1])**2)
+        )
         return best_robot
 
-    async def assign_task_to_robot(self, robot: Robot, task: Task) -> Optional[Robot]:
-        """
-        선택된 로봇에게 작업을 할당하고 상태를 변경하며, 실제 로봇에게 명령을 전송합니다.
-        변경사항은 WebSocket으로 브로드캐스트됩니다.
-        """
-        update_data = {
-            "status": RobotStatus.MOVING,
-            "current_task_id": task.id
-        }
-        updated_robot = await self.robot_repo.update(robot.id, update_data)
+    async def update_robot_task_status(self, robot_id: int, task_id: Optional[int], status: RobotStatus) -> Optional[Robot]:
+        """로봇의 작업 할당 상태를 DB에 반영하고 알립니다."""
+        update_data = {"status": status, "current_task_id": task_id}
+        updated_robot = await self.robot_repo.update(robot_id, update_data)
         
         if updated_robot:
-            print(f"로봇 '{updated_robot.name}'에게 작업 ID {task.id} 할당 (DB 업데이트).")
-            
-            # 로봇이 수행할 Action Sequence 생성
-            actions = self._generate_action_sequence(task)
-            
-            # 실제 로봇에게 명령 전송
-            self.robot_communicator.send_action_sequence(robot.name, actions)
-            print(f"로봇 '{robot.name}'에게 실제 작업 명령 전송 완료.")
-
-            # 변경된 상태를 모든 관리자 클라이언트에게 브로드캐스트
             await self.connection_manager.broadcast(updated_robot.model_dump_json())
-
         return updated_robot
 
-    def _generate_action_sequence(self, task: Task) -> List[Dict[str, Any]]:
-        """작업 유형에 따라 로봇이 수행할 Action Command 리스트를 생성합니다."""
-        print(f"작업 ID {task.id} (유형: {task.task_type})에 대한 Action Sequence 생성 중...")
-        actions = []
-        
-        if task.task_type == TaskType.SNACK_DELIVERY:
-            pantry_loc = task.details.get("pantry_location", {"x": 5, "y": 5}) # 예시: 간식창고 위치
-            user_loc = task.details.get("destination", {"x": 0, "y": 0})
-            actions.append({"action": "GOTO", "params": pantry_loc})
-            actions.append({"action": "PICKUP", "params": {"item": task.details.get("item_name")}})
-            actions.append({"action": "GOTO", "params": user_loc})
-            actions.append({"action": "DROPOFF"})
-            
-        elif task.task_type == TaskType.ITEM_DELIVERY:
-            pickup_loc = task.details.get("source")
-            dropoff_loc = task.details.get("destination")
-            actions.append({"action": "GOTO", "params": pickup_loc})
-            actions.append({"action": "PICKUP"})
-            actions.append({"action": "GOTO", "params": dropoff_loc})
-            actions.append({"action": "DROPOFF"})
-
-        elif task.task_type == TaskType.GUIDE_GUEST:
-            destination = task.details.get("destination")
-            actions.append({"action": "LEAD_GUEST", "params": destination})
-        
-        print(f"생성된 Actions: {actions}")
-        return actions
+    def send_action_commands(self, robot_name: str, actions: List[Dict[str, Any]]):
+        """실제 로봇에게 액션 시퀀스를 전송합니다."""
+        self.robot_communicator.send_action_sequence(robot_name, actions)
+        logger.info(f"로봇 '{robot_name}'에게 {len(actions)}개의 액션 전송 완료.")
 
     async def update_robot_status(self, robot_id: int, status: RobotStatus, location: tuple, battery: float) -> Optional[Robot]:
-        """
-        로봇으로부터 주기적으로 상태를 보고받아 DB를 갱신하고,
-        변경사항을 WebSocket으로 브로드캐스트합니다.
-        """
+        """로봇으로부터 수신된 텔레메트리 정보를 DB에 갱신합니다."""
         update_data = {
             "status": status,
             "pose_x": location[0],
@@ -125,37 +59,9 @@ class FleetManager:
             "battery_level": battery
         }
         updated_robot = await self.robot_repo.update(robot_id, update_data)
-        
         if updated_robot:
-            # 변경된 상태를 모든 관리자 클라이언트에게 브로드캐스트
             await self.connection_manager.broadcast(updated_robot.model_dump_json())
-
         return updated_robot
 
     async def get_all_robot_status(self) -> List[Robot]:
-        """
-        모든 로봇의 현재 상태를 DB에서 조회하여 반환합니다.
-        """
         return await self.robot_repo.get_all()
-
-    async def send_move_command(self, robot_id: int, location_data: Dict[str, Any]):
-        """
-        특정 로봇에게 특정 위치(POI)로의 이동 명령을 전송합니다.
-        """
-        robot = await self.robot_repo.get_by_id(robot_id)
-        if not robot: return
-
-        # 로봇이 수행할 Action Sequence 생성 (이동만 포함)
-        actions = [
-            {
-                "action": "GOTO", 
-                "params": {
-                    "x": location_data["coordinate_x"], 
-                    "y": location_data["coordinate_y"]
-                }
-            }
-        ]
-        
-        # 실제 로봇에게 명령 전송 (ros_bridge 사용)
-        self.robot_communicator.send_action_sequence(robot.name, actions)
-        print(f"로봇 '{robot.name}'에게 {location_data['name']}으로의 이동 명령 전송 완료.")

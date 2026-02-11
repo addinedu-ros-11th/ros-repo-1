@@ -6,6 +6,14 @@ class IRobotCommunicator(Protocol):
     ROS Bridge, MQTT, TCP 소켓 등 구체적인 구현을 추상화합니다.
     """
 
+    def connect(self):
+        """통신 채널을 연결합니다."""
+        ...
+
+    def disconnect(self):
+        """통신 채널을 닫습니다."""
+        ...
+
     def send_action_sequence(self, robot_name: str, actions: List[Dict[str, Any]]):
         """
         로봇에게 수행할 액션 시퀀스를 전송합니다.
@@ -13,7 +21,6 @@ class IRobotCommunicator(Protocol):
         Args:
             robot_name (str): 명령을 수신할 로봇의 이름.
             actions (List[Dict[str, Any]]): 로봇이 순차적으로 수행할 액션 목록.
-                예: [{'action': 'GOTO', 'params': {'x': 1.0, 'y': 2.5}}, {'action': 'PICKUP'}]
         """
         ...
 
