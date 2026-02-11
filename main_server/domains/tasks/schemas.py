@@ -68,3 +68,62 @@ class ActionCommand(BaseModel):
     """로봇에게 전달되는 개별 액션 구조"""
     action: RobotActionType
     params: Dict[str, Any] = Field(default_factory=dict)
+
+# ==========================================
+# 4. API 응답 데이터 구조 (Response Schemas)
+# ==========================================
+
+class TaskCommandResponse(BaseModel):
+    """자연어 명령(/api/v1/employee/command)에 대한 응답 구조"""
+    status: str = Field(..., description="success, error, retry 등 상태")
+    message: str = Field(..., description="사용자에게 보여줄 안내 문구")
+    task_id: Optional[int] = None
+    ai_fields: Optional[Dict[str, Any]] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "작업이 접수되었습니다: SNACK_DELIVERY",
+                "task_id": 123,
+                "ai_fields": {"location": "회의실", "item": "커피"}
+            }
+        }
+
+# ==========================================
+# 5. 시나리오별 응답 데이터 예시 (Reference)
+# ==========================================
+
+"""
+[간식 시나리오 응답 흐름 예시]
+1. 명령 접수 시 (TaskCommandResponse):
+   {
+       "status": "success",
+       "message": "간식 배달을 시작합니다.",
+       "task_id": 10,
+       "ai_fields": {"item": "초코파이", "location": "302호"}
+   }
+
+2. AI 실시간 추론 결과 (WebSocket - event: 'ai_inference'):
+   {
+       "event": "ai_inference",
+       "data": {
+           "robot_id": "robot_01",
+           "type": "object_detection",
+           "content": {
+               "object_name": "chocopie",
+               "confidence": 0.92
+           }
+       }
+   }
+
+3. 로봇 상태 업데이트 (WebSocket - Robot status):
+   {
+       "robot_id": 1,
+       "name": "robot_01",
+       "status": "moving",
+       "pose_x": 12.5,
+       "pose_y": 5.0,
+       "battery_level": 80
+   }
+"""
