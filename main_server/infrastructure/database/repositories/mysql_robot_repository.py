@@ -51,6 +51,18 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
         
         await super().delete(robot_id)
         return True
+    
+    # 미리업뎃하였음
+
+    async def update_location(self, robot_id: int, x: float, y: float):
+        """실시간 좌표 업데이트 (관제 지도 표시용)"""
+        query = "UPDATE robots SET current_x = %s, current_y = %s WHERE id = %s"
+        await self._execute(query, (x, y, robot_id), fetch="none")
+
+    async def log_telemetry(self, robot_id: int, data: dict):
+        """로봇의 모든 센서 데이터를 로그 테이블에 기록 (분석용)"""
+        # Robot_Telemetry_Logs 테이블에 데이터 쌓기
+        pass
 
 # 이 리포지토리를 사용하기 위한 의존성 주입용 팩토리 함수
 def get_robot_repository() -> IRobotRepository:
