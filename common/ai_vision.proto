@@ -1,59 +1,42 @@
 syntax = "proto3";
 
-package ai_inference.vision;
+package ai_vision;
 
-// 서비스 정의
-service AIInference {
-  // 1:1 요청-응답 방식 (기존)
+// ============================================
+// Vision Service (YOLOv8n) - Port 50052
+// 객체 인식 및 얼굴 인식 기능 제공
+// ============================================
+service VisionService {
+  // 객체 인식
   rpc DetectObjects (ImageRequest) returns (ObjectDetectionResponse);
+  
+  // 얼굴 인식
   rpc RecognizeFaces (ImageRequest) returns (FaceRecognitionResponse);
-
-  // AI 서버 추론 제어 명령 (추가)
-  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
-
-  // 서버 스트리밍 방식 (실시간 구독)
-  // 서버에서 추론 결과가 발생할 때마다 클라이언트에게 스트림으로 전달합니다.
-  rpc StreamInferenceResults (Empty) returns (stream InferenceResult);
+  
+  // 복수 객체 인식
+  rpc DetectMultipleObjects (ImageRequest) returns (MultiObjectDetectionResponse);
+  
+  // 실시간 비전 스트리밍
+  rpc StreamVisionResults (Empty) returns (stream VisionResult);
 }
 
-// 빈 요청 메시지
+// ============================================
+// Vision 메시지 정의
+// ============================================
+
 message Empty {}
 
-// 추론 상태 제어 요청
-message InferenceStateRequest {
-  string robot_id = 1;
-  string model_type = 2; // e.g., "FACE", "OBSTACLE", "SNACK"
-  bool is_active = 3;
-}
-
-// 추론 상태 제어 응답
-message InferenceStateResponse {
-  bool success = 1;
-  string message = 2;
-}
-
-// 통합 추론 결과 메시지 (스트리밍용)
-message InferenceResult {
-  string robot_id = 1;
-  oneof result {
-    ObjectDetectionResponse object_detection = 2;
-    FaceRecognitionResponse face_recognition = 3;
-  }
-}
-
-// 공통 이미지 데이터 요청 메시지
 message ImageRequest {
   string image_id = 1;
+  optional bytes image_data = 2;  // 선택적으로 이미지 바이너리 직접 전송
 }
 
-// 객체 인식 결과 메시지
 message ObjectDetectionResponse {
   string object_name = 1;
   float confidence = 2;
   BoundingBox box = 3;
 }
 
-// 바운딩 박스 메시지
 message BoundingBox {
   int32 x = 1;
   int32 y = 2;
@@ -61,9 +44,22 @@ message BoundingBox {
   int32 height = 4;
 }
 
-// 얼굴 인식 결과 메시지
 message FaceRecognitionResponse {
-  string person_type = 1; // 예: "Employee", "Guest", "Unknown"
-  optional string employee_id = 2; // 직원의 경우 ID, Guest 또는 Unknown의 경우 비어 있을 수 있음
+  string person_type = 1;  // "Employee", "Guest", "Unknown"
+  optional string employee_id = 2;
   float confidence = 3;
+}
+
+message MultiObjectDetectionResponse {
+  repeated ObjectDetectionResponse objects = 1;
+}
+
+message VisionResult {
+  string robot_id = 1;
+  int64 timestamp = 2;
+  oneof result {
+    ObjectDetectionResponse object_detection = 3;
+    FaceRecognitionResponse face_recognition = 4;
+    MultiObjectDetectionResponse multi_objects = 5;
+  }
 }

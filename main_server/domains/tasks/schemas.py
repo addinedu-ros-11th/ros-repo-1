@@ -17,7 +17,7 @@ class TaskType(str, Enum):
 
 class TaskStatus(str, Enum):
     """태스크의 생명주기 상태 (SR-012)"""
-    WAITING = "WAITING"                 # 대기 중 (배차 전)
+    PENDING = "PENDING"                 # 대기 중 (배차 전)
     ASSIGNED = "ASSIGNED"               # 로봇 배차 완료
     IN_PROGRESS = "IN_PROGRESS"         # 수행 중
     ARRIVED = "ARRIVED"                 # 목적지 도착

@@ -24,9 +24,9 @@ class TaskManager:
         
         # Processor 등록 (시나리오 확장 시 여기에 추가)
         self.processors = {
-            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, ai_processing_service),
-            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, ai_processing_service),
-            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, ai_processing_service),
+            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
+            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
+            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
         }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
@@ -69,7 +69,7 @@ class TaskManager:
 
     async def handle_robot_event(self, task_id: int, robot_id: int, event: str):
         """로봇으로부터 수신된 이벤트(도착 등)를 처리기에 전달합니다."""
-        task = await self.task_repo.find_by_id(task_id)
+        task = await self.task_repo.get_by_id(task_id)
         if not task: return
 
         processor = self.processors.get(task.task_type)

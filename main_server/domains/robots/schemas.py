@@ -12,6 +12,7 @@ class RobotStatus(str, Enum):
     DB(Robots 테이블) 및 시나리오 명세와 일치시킴
     """
     IDLE = "IDLE"           # 대기 중 (가용 상태)
+    WAITING = "WAITING"
     ASSIGNED = "ASSIGNED"   # 작업 배정됨
     MOVING = "MOVING"       # 목적지로 이동 중
     GUIDING = "GUIDING"     # 게스트 가이딩 중

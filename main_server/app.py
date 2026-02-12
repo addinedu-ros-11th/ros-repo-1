@@ -24,7 +24,12 @@ async def startup_event():
     print("DI container and services initialized.")
 
     # 3. 통신 서버(ROS 브리지)를 백그라운드 태스크로 시작
-    ros_bridge = ROSBridge(host=config.ROS_BRIDGE_HOST, port=config.ROS_BRIDGE_PORT, fleet_manager=container.fleet_manager)
+    ros_bridge = ROSBridge(
+        host=config.ROS_BRIDGE_HOST, 
+        port=config.ROS_BRIDGE_PORT, 
+        fleet_manager=container.fleet_manager,
+        task_manager=container.task_manager
+    )
     bridge_task = asyncio.create_task(ros_bridge.start())
     background_tasks.add(bridge_task)
 

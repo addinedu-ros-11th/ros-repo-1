@@ -62,9 +62,10 @@ class ROSBridge:
     애플리케이션 시작 시 백그라운드에서 실행되어 
     ROS 통신 및 FleetManager 상태 동기화를 담당하는 고수준 브리지 서비스.
     """
-    def __init__(self, host: str, port: int, fleet_manager: Any):
+    def __init__(self, host: str, port: int, fleet_manager: Any, task_manager: Any = None):
         self.communicator = ROSBridgeCommunicator(host, port)
         self.fleet_manager = fleet_manager
+        self.task_manager = task_manager
 
     async def start(self):
         """ROS Bridge 연결 및 상태 수신 루프 실행"""
@@ -72,15 +73,16 @@ class ROSBridge:
         
         def status_handler(data: Dict[str, Any]):
             try:
-                # data 예시: {"robot_id": 1, "status": "IDLE", "location": [1.2, 3.4], "battery": 85.0}
+                # data 예시: {"robot_id": 1, "status": "IDLE", "location": [1.2, 3.4], "battery": 85.0, "event": "ARRIVED_AT_DESTINATION"}
                 robot_id = data.get("robot_id")
                 status = data.get("status")
                 location = tuple(data.get("location", [0, 0]))
                 battery = data.get("battery", 0.0)
+                event = data.get("event")
                 
-                # 비동기 업데이트를 메인 루프에서 실행
+                # 비동기 업데이트 및 이벤트 처리를 메인 루프에서 실행
                 asyncio.run_coroutine_threadsafe(
-                    self.fleet_manager.update_robot_status(robot_id, status, location, battery),
+                    self._handle_status_update(robot_id, status, location, battery, event),
                     asyncio.get_event_loop()
                 )
             except Exception as e:
@@ -94,3 +96,13 @@ class ROSBridge:
                 await asyncio.sleep(1)
         finally:
             self.communicator.disconnect()
+
+    async def _handle_status_update(self, robot_id: int, status: str, location: tuple, battery: float, event: Optional[str]):
+        """로봇 상태를 업데이트하고, 이벤트가 있으면 TaskManager에 전달합니다."""
+        # 1. FleetManager를 통해 상태 업데이트 (DB 반영)
+        updated_robot = await self.fleet_manager.update_robot_status(robot_id, status, location, battery)
+        
+        # 2. 이벤트가 있고 로봇이 현재 진행 중인 작업이 있다면 TaskManager 호출
+        if event and updated_robot and updated_robot.current_task_id and self.task_manager:
+            logger.info(f"로봇 {robot_id}로부터 이벤트 수신: {event} (Task ID: {updated_robot.current_task_id})")
+            await self.task_manager.handle_robot_event(updated_robot.current_task_id, robot_id, event)

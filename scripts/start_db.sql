@@ -65,7 +65,7 @@ CREATE TABLE `Tasks` (
   `assigned_robot_id` int COMMENT '스마트 배차 (SR-011)',
   `task_type` ENUM ('GUIDE', 'SNACK_DELIVERY', 'ITEM_DELIVERY', 'RETURN'),
   `priority` int DEFAULT 3 COMMENT '1:가이드, 2:물품, 3:간식 (SR-012)',
-  `status` ENUM ('WAITING', 'ASSIGNED', 'IN_PROGRESS', 'ARRIVED', 'COMPLETED', 'FAILED', 'CANCELLED') DEFAULT 'WAITING',
+  `status` ENUM ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ARRIVED', 'COMPLETED', 'FAILED', 'CANCELLED') DEFAULT 'PENDING',
   `destination_id` int,
   `visitor_id` int COMMENT '가이드 대상일 경우',
   `created_at` timestamp DEFAULT (now()),
