@@ -1,9 +1,0 @@
-source;share/communication_node/hook/pythonpath.ps1
-source;share/communication_node/hook/pythonpath.dsv
-source;share/communication_node/hook/pythonpath.sh
-source;share/communication_node/hook/ament_prefix_path.ps1
-source;share/communication_node/hook/ament_prefix_path.dsv
-source;share/communication_node/hook/ament_prefix_path.sh
-source;../../build/communication_node/share/communication_node/hook/pythonpath_develop.ps1
-source;../../build/communication_node/share/communication_node/hook/pythonpath_develop.dsv
-source;../../build/communication_node/share/communication_node/hook/pythonpath_develop.sh

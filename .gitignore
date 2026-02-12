@@ -34,6 +34,10 @@ MANIFEST
 
 # Installer logs
 pip-log.txt
+
+# Colcon build artifacts (local only)
+robot/jazzy_ws/install/
+robot/jazzy_ws/log/
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
