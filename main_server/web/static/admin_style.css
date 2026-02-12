@@ -145,27 +145,46 @@ body {
     flex-grow: 1; /* 테이블이 남은 공간을 채우도록 함 */
 }
 
-/* 금지구역 관리 리스트 스타일 */
+/* 금지구역 관리 섹션 전체 */
 .zone-management {
     margin-top: 20px;
     background: white;
-    padding: 15px;
+    padding: 20px;
     border-radius: 10px;
     border: 1px solid #ddd;
+    
+    /* 추가: 패딩과 테두리를 포함하여 전체 너비를 계산함 */
+    box-sizing: border-box; 
+    
+    /* 이제 지도와 똑같이 1000px로 맞춰집니다 */
+    width: 1000px; 
 }
-.zone-list-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
+
+.zone-management h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+/* 금지구역 전용 테이블 스타일 */
+.zone-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.zone-table thead tr {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.zone-table th, .zone-table td {
+    padding: 12px;
+    text-align: center;
     border-bottom: 1px solid #eee;
 }
-.btn-delete-zone {
-    background: #ff4d4d;
-    color: white;
-    border: none;
-    padding: 2px 8px;
-    border-radius: 4px;
-    cursor: pointer;
+
+.zone-table .empty-msg {
+    padding: 30px;
+    color: #888;
 }
 
 /* [테이블 스타일 - 엑셀 스타일] */
