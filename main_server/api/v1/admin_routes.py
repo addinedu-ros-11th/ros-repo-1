@@ -74,3 +74,17 @@ async def get_system_logs(
     """시스템 로그 및 로봇 텔레메트리 로그를 조회합니다. (SR-020)"""
     # TODO: fleet_manager 내부에 log_repository 연결 필요
     return {"message": "로그 조회 기능은 LogRepository 연동 후 활성화됩니다."}
+
+#  @app 수정해야함. db를 안정했음.
+# @app.get("/api/office-status")
+# async def get_office_status():
+#     # 실제 환경에서는 DB에서 조회 (SELECT * FROM rooms...)
+#     meeting_rooms = [
+#         {"name": "제 1 회의실", "is_occupied": True, "user": "김철수", "time": "14:00 - 16:00"},
+#         {"name": "제 2 회의실", "is_occupied": False, "user": "-", "time": "-"}
+#     ]
+#     snacks = [
+#         {"name": "캡슐 커피", "quantity": 45, "status": "충분"},
+#         {"name": "생수", "quantity": 5, "status": "부족"}
+#     ]
+#     return {"rooms": meeting_rooms, "snacks": snacks}

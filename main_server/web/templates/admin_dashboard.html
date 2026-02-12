@@ -78,20 +78,13 @@
                                 <th>예약시간</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="meeting-room-tbody">
                             <tr>
-                                <td>제 1 회의실</td>
-                                <td><span class="status-indicator status-on"></span></td>
-                                <td>김철수</td>
-                                <td>14:00 - 16:00</td>
+                                <td colspan="4" class="empty-msg">
+                                    🚫 연동되지않았습니다.
+                                </td>
                             </tr>
-                            <tr>
-                                <td>제 2 회의실</td>
-                                <td><span class="status-indicator status-off"></span></td>
-                                <td>-</td>
-                                <td>-</td>
-                            </tr>
-                        </tbody>
+                            </tbody>
                     </table>
                 </div>
                 
@@ -101,10 +94,13 @@
                         <thead>
                             <tr><th>품목명</th><th>수량</th><th>상태</th></tr>
                         </thead>
-                        <tbody>
-                            <tr><td>캡슐 커피</td><td>45개</td><td>충분</td></tr>
-                            <tr><td>생수</td><td>5개</td><td><span style="color:red">부족</span></td></tr>
-                        </tbody>
+                        <tbody id="snack-status-tbody">
+                            <tr>
+                                <td colspan="4" class="empty-msg">
+                                    🚫 연동되지않았습니다.
+                                </td>
+                            </tr>
+                            </tbody>
                     </table>
                 </div>
             </div>
@@ -450,6 +446,40 @@
             showTab(lastTab);
             setInterval(updateUI, 1000); // 1초 주기로 백업본의 실시간성 복구
         });
+
+        async function updateOfficeStatus() {
+            try {
+                const response = await fetch('/api/office-status');
+                const data = await response.json();
+
+                // 1. 회의실 테이블 업데이트
+                const roomBody = document.getElementById('meeting-room-tbody');
+                roomBody.innerHTML = data.rooms.map(room => `
+                    <tr>
+                        <td>${room.name}</td>
+                        <td><span class="status-indicator ${room.is_occupied ? 'status-on' : 'status-off'}"></span></td>
+                        <td>${room.user}</td>
+                        <td>${room.time}</td>
+                    </tr>
+                `).join('');
+
+                // 2. 간식 테이블 업데이트
+                const snackBody = document.getElementById('snack-status-tbody');
+                snackBody.innerHTML = data.snacks.map(snack => `
+                    <tr>
+                        <td>${snack.name}</td>
+                        <td>${snack.quantity}개</td>
+                        <td style="${snack.status === '부족' ? 'color:red' : ''}">${snack.status}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error("사무실 데이터 조회 실패:", error);
+            }
+        }
+
+        // 60초마다 갱신
+        setInterval(updateOfficeStatus, 60000);
+        updateOfficeStatus(); // 초기 로드
     </script>
 </body>
 </html>
