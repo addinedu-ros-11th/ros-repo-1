@@ -240,25 +240,112 @@
             tempRect.remove();
         }
 
-        /* [4] UI 렌더링 (지도 및 리스트) */
-        function renderZoneList() {
-            const container = document.getElementById('zone-list-container');
-            if (!container) return;
-            
-            // 리스트만 갱신 (지도는 updateUI가 담당)
-            container.innerHTML = zones.length === 0 ? '<p style="color: #999;">설정된 구역이 없습니다.</p>' : 
-                zones.map(z => `
-                    <div class="zone-list-item" style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
-                        <span>🚫 <b>${z.reason}</b> (${z.left}, ${z.top})</span>
-                        <button onclick="deleteZone(${z.id})" style="background:#ff4d4d; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">삭제</button>
-                    </div>
+        /* [4] UI 렌더링 (DB 기반 리스트 업데이트) */
+        async function renderZoneList() {
+            const tbody = document.getElementById('zone-tbody');
+            if (!tbody) return;
+
+            try {
+                // 백엔드 GET 엔드포인트 호출
+                const response = await fetch('/api/v1/admin/forbidden-zones');
+                const zonesFromDb = await response.json();
+
+                // 데이터가 없는 경우 처리
+                if (!zonesFromDb || zonesFromDb.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" style="text-align: center; padding: 30px; color: #888;">
+                                🚫 현재 금지된 구역이 없습니다.
+                            </td>
+                        </tr>`;
+                    zones = []; // 지도 UI용 전역 변수 초기화
+                    return;
+                }
+
+                // 데이터가 있는 경우 테이블 행 생성
+                tbody.innerHTML = zonesFromDb.map(z => `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 10px; text-align: center;">${z.id || '-'}</td>
+                        <td style="padding: 10px; text-align: center;"><b>${z.reason}</b></td>
+                        <td style="padding: 10px; text-align: center; color: #666; font-size: 0.9em;">
+                            (${z.left}, ${z.top}) | ${z.width}x${z.height}
+                        </td>
+                        <td style="padding: 10px; text-align: center;">
+                            <button onclick="deleteZone(${z.id})" 
+                                style="background:#ff4d4d; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">
+                                삭제
+                            </button>
+                        </td>
+                    </tr>
                 `).join('');
+
+                // 전역 변수 zones 업데이트 (updateUI 함수에서 지도에 사각형을 그릴 때 사용)
+                zones = zonesFromDb;
+
+            } catch (error) {
+                console.error("데이터 로드 실패:", error);
+            }
         }
 
-        function deleteZone(id) {
-            if (confirm("정말 이 구역을 삭제하시겠습니까?")) {
-                zones = zones.filter(z => z.id !== id);
-                renderZoneList();
+        /* [3] 드로잉 이벤트 리스너 수정 */
+        async function endDraw(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const l = parseInt(tempRect.style.left);
+            const t = parseInt(tempRect.style.top);
+            const w = parseInt(tempRect.style.width);
+            const h = parseInt(tempRect.style.height);
+
+            if (isRobotInRect(l, t, w, h)) {
+                alert("⚠️ 로봇이 있는 위치에는 금지구역을 설정할 수 없습니다!");
+                tempRect.remove();
+                return;
+            }
+
+            const reason = prompt("금지 구역 설정 사유를 입력하세요:", "작업 구역");
+            if (reason) {
+                // [수정] 로컬 배열 push 삭제 -> 백업 POST API 호출
+                try {
+                    const response = await fetch('/api/v1/admin/forbidden-zones', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            account: "admin", // 실제 환경에선 로그인 세션 정보 사용
+                            left: l,
+                            top: t,
+                            width: w,
+                            height: h,
+                            reason: reason
+                        })
+                    });
+
+                    if (response.ok) {
+                        renderZoneList(); // 저장 성공 시 리스트 갱신
+                    } else {
+                        alert("금지구역 저장에 실패했습니다.");
+                    }
+                } catch (error) {
+                    console.error("저장 중 통신 에러:", error);
+                }
+            }
+            tempRect.remove();
+        }
+
+        async function deleteZone(id) {
+            if (!confirm("정말 이 구역을 삭제하시겠습니까?")) return;
+
+            try {
+                // 백엔드 DELETE 엔드포인트 호출
+                const response = await fetch(`/api/v1/admin/forbidden-zones/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    renderZoneList(); // 삭제 성공 시 리스트 갱신
+                }
+            } catch (error) {
+                alert("삭제 중 오류가 발생했습니다.");
             }
         }
 

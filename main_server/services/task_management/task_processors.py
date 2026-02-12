@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 from main_server.domains.tasks.schemas import Task, TaskType
 from main_server.domains.robots.schemas import RobotStatus
-from common.events import RobotEvent
+from common.robot_task_events import RobotEvent
 
 logger = logging.getLogger(__name__)
 
