@@ -1,6 +1,7 @@
+from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Mapping as _Mapping
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
@@ -9,21 +10,13 @@ class Empty(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
-class InferenceResult(_message.Message):
-    __slots__ = ("robot_id", "object_detection", "face_recognition")
-    ROBOT_ID_FIELD_NUMBER: _ClassVar[int]
-    OBJECT_DETECTION_FIELD_NUMBER: _ClassVar[int]
-    FACE_RECOGNITION_FIELD_NUMBER: _ClassVar[int]
-    robot_id: str
-    object_detection: ObjectDetectionResponse
-    face_recognition: FaceRecognitionResponse
-    def __init__(self, robot_id: _Optional[str] = ..., object_detection: _Optional[_Union[ObjectDetectionResponse, _Mapping]] = ..., face_recognition: _Optional[_Union[FaceRecognitionResponse, _Mapping]] = ...) -> None: ...
-
 class ImageRequest(_message.Message):
-    __slots__ = ("image_id",)
+    __slots__ = ("image_id", "image_data")
     IMAGE_ID_FIELD_NUMBER: _ClassVar[int]
+    IMAGE_DATA_FIELD_NUMBER: _ClassVar[int]
     image_id: str
-    def __init__(self, image_id: _Optional[str] = ...) -> None: ...
+    image_data: bytes
+    def __init__(self, image_id: _Optional[str] = ..., image_data: _Optional[bytes] = ...) -> None: ...
 
 class ObjectDetectionResponse(_message.Message):
     __slots__ = ("object_name", "confidence", "box")
@@ -56,3 +49,23 @@ class FaceRecognitionResponse(_message.Message):
     employee_id: str
     confidence: float
     def __init__(self, person_type: _Optional[str] = ..., employee_id: _Optional[str] = ..., confidence: _Optional[float] = ...) -> None: ...
+
+class MultiObjectDetectionResponse(_message.Message):
+    __slots__ = ("objects",)
+    OBJECTS_FIELD_NUMBER: _ClassVar[int]
+    objects: _containers.RepeatedCompositeFieldContainer[ObjectDetectionResponse]
+    def __init__(self, objects: _Optional[_Iterable[_Union[ObjectDetectionResponse, _Mapping]]] = ...) -> None: ...
+
+class VisionResult(_message.Message):
+    __slots__ = ("robot_id", "timestamp", "object_detection", "face_recognition", "multi_objects")
+    ROBOT_ID_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_DETECTION_FIELD_NUMBER: _ClassVar[int]
+    FACE_RECOGNITION_FIELD_NUMBER: _ClassVar[int]
+    MULTI_OBJECTS_FIELD_NUMBER: _ClassVar[int]
+    robot_id: str
+    timestamp: int
+    object_detection: ObjectDetectionResponse
+    face_recognition: FaceRecognitionResponse
+    multi_objects: MultiObjectDetectionResponse
+    def __init__(self, robot_id: _Optional[str] = ..., timestamp: _Optional[int] = ..., object_detection: _Optional[_Union[ObjectDetectionResponse, _Mapping]] = ..., face_recognition: _Optional[_Union[FaceRecognitionResponse, _Mapping]] = ..., multi_objects: _Optional[_Union[MultiObjectDetectionResponse, _Mapping]] = ...) -> None: ...

@@ -8,19 +8,17 @@ from typing import Optional
 import asyncio
 import grpc
 
-from ai_server.grpc_impl import ai_inference_pb2
-from ai_server.grpc_impl import ai_inference_pb2_grpc
+from ai_server.grpc_impl import ai_vision_pb2
+from ai_server.grpc_impl import ai_vision_pb2_grpc
 from ai_server.services.vision_service import VisionService
 
 logger = logging.getLogger(__name__)
 
 
-class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
+class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
     """
     Vision 전용 gRPC Servicer
-
-    TODO: ai_services.proto 기반으로 생성된 VisionServiceServicer 사용
-    현재는 기존 AIInferenceServicer 구조를 유지하면서 Vision 기능만 제공
+    ai_vision.proto 기반 VisionServiceServicer 구현
     """
 
     def __init__(self, vision_service: Optional[VisionService] = None):
@@ -51,10 +49,10 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
             result = self.vision_service.detect_objects(request.image_id)
 
             # 응답 메시지 생성
-            response = ai_inference_pb2.ObjectDetectionResponse(
+            response = ai_vision_pb2.ObjectDetectionResponse(
                 object_name=result["object_name"],
                 confidence=result["confidence"],
-                box=ai_inference_pb2.BoundingBox(
+                box=ai_vision_pb2.BoundingBox(
                     x=result["box"]["x"],
                     y=result["box"]["y"],
                     width=result["box"]["width"],
@@ -71,7 +69,7 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
             logger.error(f"객체 인식 처리 중 오류: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"객체 인식 실패: {str(e)}")
-            return ai_inference_pb2.ObjectDetectionResponse()
+            return ai_vision_pb2.ObjectDetectionResponse()
 
     async def RecognizeFaces(self, request, context):
         """
@@ -94,7 +92,7 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
             result = self.vision_service.recognize_face(request.image_id, image_data)
 
             # 응답 메시지 생성
-            response = ai_inference_pb2.FaceRecognitionResponse(
+            response = ai_vision_pb2.FaceRecognitionResponse(
                 person_type=result["person_type"], confidence=result["confidence"]
             )
 
@@ -111,7 +109,7 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
             logger.error(f"얼굴 인식 처리 중 오류: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"얼굴 인식 실패: {str(e)}")
-            return ai_inference_pb2.FaceRecognitionResponse()
+            return ai_vision_pb2.FaceRecognitionResponse()
 
     async def DetectMultipleObjects(self, request, context):
         """
@@ -122,7 +120,7 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
             context: gRPC context
 
         Returns:
-            MultiObjectDetectionResponse (스텁)
+            MultiObjectDetectionResponse
         """
         logger.info(f"복수 객체 인식 요청 수신: image_id={request.image_id}")
 
@@ -132,14 +130,28 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
 
             logger.info(f"복수 객체 인식 완료: {len(results)}개 객체")
 
-            # TODO: MultiObjectDetectionResponse 생성
-            return {"objects": results}
+            # MultiObjectDetectionResponse 생성
+            objects = []
+            for result in results:
+                obj = ai_vision_pb2.ObjectDetectionResponse(
+                    object_name=result["object_name"],
+                    confidence=result["confidence"],
+                    box=ai_vision_pb2.BoundingBox(
+                        x=result["box"]["x"],
+                        y=result["box"]["y"],
+                        width=result["box"]["width"],
+                        height=result["box"]["height"],
+                    ),
+                )
+                objects.append(obj)
+
+            return ai_vision_pb2.MultiObjectDetectionResponse(objects=objects)
 
         except Exception as e:
             logger.error(f"복수 객체 인식 처리 중 오류: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"복수 객체 인식 실패: {str(e)}")
-            return {"objects": []}
+            return ai_vision_pb2.MultiObjectDetectionResponse(objects=[])
 
     async def StreamVisionResults(self, request, context):
         """
@@ -161,15 +173,19 @@ class VisionServicer(ai_inference_pb2_grpc.AIInferenceServicer):
                 await asyncio.sleep(5)
 
                 # 더미 객체 인식 결과 생성
-                object_detection = ai_inference_pb2.ObjectDetectionResponse(
+                object_detection = ai_vision_pb2.ObjectDetectionResponse(
                     object_name=f"object_{i}",
                     confidence=0.9 - (i * 0.1),
-                    box=ai_inference_pb2.BoundingBox(x=10, y=20, width=100, height=150),
+                    box=ai_vision_pb2.BoundingBox(x=10, y=20, width=100, height=150),
                 )
 
-                # TODO: VisionResult 메시지로 변경
-                result = ai_inference_pb2.InferenceResult(
-                    robot_id=f"robot_{i % 2}", object_detection=object_detection
+                # VisionResult 메시지 생성
+                import time
+
+                result = ai_vision_pb2.VisionResult(
+                    robot_id=f"robot_{i % 2}",
+                    timestamp=int(time.time()),
+                    object_detection=object_detection,
                 )
 
                 logger.info(f"스트리밍 결과 전송: robot_id=robot_{i % 2}")

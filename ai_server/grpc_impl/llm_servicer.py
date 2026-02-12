@@ -8,19 +8,18 @@ from typing import Any, Dict, Optional
 
 import grpc
 
-# ai_services.proto 기반 pb2 사용
-from ai_server.grpc_impl import ai_services_pb2
+# ai_llm.proto 기반 pb2 사용
+from ai_server.grpc_impl import ai_llm_pb2
+from ai_server.grpc_impl import ai_llm_pb2_grpc
 from ai_server.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
 
-class LLMServicer:
+class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
     """
     LLM 전용 gRPC Servicer
-
-    TODO: ai_services.proto 기반으로 생성된 LLMServiceServicer 사용
-    현재는 기존 구조를 유지하면서 LLM 기능만 제공
+    ai_llm.proto 기반 LLMServiceServicer 구현
     """
 
     def __init__(self, llm_service: Optional[LLMService] = None):
@@ -55,9 +54,9 @@ class LLMServicer:
             # TaskType enum 매핑
             task_type_str = result.get("task_type", "UNKNOWN")
             task_type_enum = getattr(
-                ai_services_pb2.TaskType,
+                ai_llm_pb2.TaskType,
                 task_type_str,
-                ai_services_pb2.TaskType.UNKNOWN,
+                ai_llm_pb2.TaskType.UNKNOWN,
             )
 
             # StructuredMessage 생성
@@ -65,10 +64,10 @@ class LLMServicer:
             struct_msg_kwargs = self._build_structured_message_kwargs(fields)
 
             # StructuredMessage 생성
-            struct_msg = ai_services_pb2.StructuredMessage(**struct_msg_kwargs)
+            struct_msg = ai_llm_pb2.StructuredMessage(**struct_msg_kwargs)
 
             # StructuredResponse 생성
-            response = ai_services_pb2.StructuredResponse(
+            response = ai_llm_pb2.StructuredResponse(
                 req_id=request.req_id,
                 task_type=task_type_enum,
                 confidence=result.get("confidence", 0.0),
@@ -87,11 +86,11 @@ class LLMServicer:
             context.set_details(f"자연어 해석 실패: {str(e)}")
 
             # 에러 시 기본 응답 반환
-            return ai_services_pb2.StructuredResponse(
+            return ai_llm_pb2.StructuredResponse(
                 req_id=request.req_id,
-                task_type=ai_services_pb2.TaskType.UNKNOWN,
+                task_type=ai_llm_pb2.TaskType.UNKNOWN,
                 confidence=0.0,
-                struct_msg=ai_services_pb2.StructuredMessage(),
+                struct_msg=ai_llm_pb2.StructuredMessage(),
                 raw_text=f"Error: {str(e)}",
             )
 
@@ -148,16 +147,16 @@ class LLMServicer:
 
         if "device_type" in fields and fields["device_type"]:
             struct_msg_kwargs["device_type"] = getattr(
-                ai_services_pb2.IoTDeviceType,
+                ai_llm_pb2.IoTDeviceType,
                 fields["device_type"],
-                ai_services_pb2.IoTDeviceType.IOT_UNKNOWN,
+                ai_llm_pb2.IoTDeviceType.IOT_UNKNOWN,
             )
 
         if "command" in fields and fields["command"]:
             struct_msg_kwargs["command"] = getattr(
-                ai_services_pb2.IoTCommandType,
+                ai_llm_pb2.IoTCommandType,
                 fields["command"],
-                ai_services_pb2.IoTCommandType.IOT_CMD_UNKNOWN,
+                ai_llm_pb2.IoTCommandType.IOT_CMD_UNKNOWN,
             )
 
         if isinstance(fields.get("waypoints"), list):

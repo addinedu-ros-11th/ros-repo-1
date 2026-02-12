@@ -12,8 +12,8 @@ from pathlib import Path
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ai_server.grpc_impl import ai_services_pb2
-from ai_server.grpc_impl import ai_services_pb2_grpc
+from ai_server.grpc_impl import ai_llm_pb2
+from ai_server.grpc_impl import ai_llm_pb2_grpc
 
 # 로깅 설정
 logging.basicConfig(
@@ -38,7 +38,7 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
     # gRPC 채널 생성
     try:
         channel = grpc.insecure_channel(server_address)
-        stub = ai_services_pb2_grpc.LLMServiceStub(channel)
+        stub = ai_llm_pb2_grpc.LLMServiceStub(channel)
         logger.info("✓ gRPC 채널 생성 완료\n")
     except Exception as e:
         logger.error(f"❌ gRPC 채널 생성 실패: {e}")
@@ -67,15 +67,13 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
 
         try:
             # gRPC 요청 생성
-            request = ai_services_pb2.NLRequest(req_id=f"test_{i}", message=test_input)
+            request = ai_llm_pb2.NLRequest(req_id=f"test_{i}", message=test_input)
 
             # ParseNaturalLanguage RPC 호출
             response = stub.ParseNaturalLanguage(request)
 
             # 결과 출력
-            logger.info(
-                f"🎯 TaskType: {ai_services_pb2.TaskType.Name(response.task_type)}"
-            )
+            logger.info(f"🎯 TaskType: {ai_llm_pb2.TaskType.Name(response.task_type)}")
             logger.info(f"✓ Confidence: {response.confidence:.2f}")
 
             struct_msg = response.struct_msg

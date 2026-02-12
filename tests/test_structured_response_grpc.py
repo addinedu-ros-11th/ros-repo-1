@@ -10,8 +10,8 @@ import os
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from ai_server.grpc_impl import ai_services_pb2
-from ai_server.grpc_impl import ai_services_pb2_grpc
+from ai_server.grpc_impl import ai_llm_pb2
+from ai_server.grpc_impl import ai_llm_pb2_grpc
 
 
 def print_result(req_id: str, text: str, response):
@@ -20,7 +20,7 @@ def print_result(req_id: str, text: str, response):
     print(f"요청 ID: {req_id}")
     print(f"입력: {text}")
     print(f"{'-'*70}")
-    print(f"🎯 작업 유형: {ai_services_pb2.TaskType.Name(response.task_type)}")
+    print(f"🎯 작업 유형: {ai_llm_pb2.TaskType.Name(response.task_type)}")
     print(f"✓ 신뢰도: {response.confidence:.2f}")
 
     struct_msg = response.struct_msg
@@ -47,12 +47,10 @@ def print_result(req_id: str, text: str, response):
     # IoT 제어
     if struct_msg.HasField("device_type"):
         print(
-            f"  🔌 device_type: {ai_services_pb2.IoTDeviceType.Name(struct_msg.device_type)}"
+            f"  🔌 device_type: {ai_llm_pb2.IoTDeviceType.Name(struct_msg.device_type)}"
         )
     if struct_msg.HasField("command"):
-        print(
-            f"  ⚙️  command: {ai_services_pb2.IoTCommandType.Name(struct_msg.command)}"
-        )
+        print(f"  ⚙️  command: {ai_llm_pb2.IoTCommandType.Name(struct_msg.command)}")
     if struct_msg.HasField("target_value"):
         print(f"  🎚️  target_value: {struct_msg.target_value}")
     if struct_msg.HasField("room_id"):
@@ -95,7 +93,7 @@ def test_grpc_structured_response():
 
     # gRPC 채널 및 스텁 생성
     channel = grpc.insecure_channel("localhost:50051")
-    stub = ai_services_pb2_grpc.LLMServiceStub(channel)
+    stub = ai_llm_pb2_grpc.LLMServiceStub(channel)
 
     # 테스트 케이스
     test_cases = [
@@ -131,7 +129,7 @@ def test_grpc_structured_response():
         print(f"[테스트 {i}/{len(test_cases)}]")
         try:
             # gRPC 요청
-            request = ai_services_pb2.NLRequest(req_id=req_id, message=message)
+            request = ai_llm_pb2.NLRequest(req_id=req_id, message=message)
 
             # RPC 호출
             response = stub.ParseNaturalLanguage(request)

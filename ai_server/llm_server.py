@@ -12,7 +12,7 @@ import grpc
 from ai_server import config
 from ai_server.services.llm_service import LLMService
 from ai_server.grpc_impl.llm_servicer import LLMServicer
-from ai_server.grpc_impl import ai_services_pb2_grpc
+from ai_server.grpc_impl import ai_llm_pb2_grpc
 
 # 로깅 설정
 logging.basicConfig(
@@ -42,7 +42,7 @@ async def serve():
 
     # Servicer 등록
     servicer = LLMServicer(llm_service=llm_service)
-    ai_services_pb2_grpc.add_LLMServiceServicer_to_server(servicer, server)
+    ai_llm_pb2_grpc.add_LLMServiceServicer_to_server(servicer, server)
     logger.info("LLM Servicer 등록 완료")
 
     # 서버 주소 설정

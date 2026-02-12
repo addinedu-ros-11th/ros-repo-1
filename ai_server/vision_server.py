@@ -12,7 +12,7 @@ from ai_server import config
 from ai_server.services.vision_service import VisionService
 from ai_server.services.video_receiver import UDPVideoReceiver, VideoStreamProcessor
 from ai_server.grpc_impl.vision_servicer import VisionServicer
-from ai_server.grpc_impl import ai_inference_pb2_grpc
+from ai_server.grpc_impl import ai_vision_pb2_grpc
 
 # 로깅 설정
 logging.basicConfig(
@@ -83,7 +83,7 @@ async def serve():
 
     # Servicer 등록
     servicer = VisionServicer(vision_service=vision_service)
-    ai_inference_pb2_grpc.add_AIInferenceServicer_to_server(servicer, server)
+    ai_vision_pb2_grpc.add_VisionServiceServicer_to_server(servicer, server)
 
     # 서버 주소 설정
     server_address = f"{config.VISION_GRPC_HOST}:{config.VISION_GRPC_PORT}"

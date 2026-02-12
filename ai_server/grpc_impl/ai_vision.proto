@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package ai_vision;
+
+// ============================================
+// Vision Service (YOLOv8n) - Port 50052
+// 객체 인식 및 얼굴 인식 기능 제공
+// ============================================
+service VisionService {
+  // 객체 인식
+  rpc DetectObjects (ImageRequest) returns (ObjectDetectionResponse);
+  
+  // 얼굴 인식
+  rpc RecognizeFaces (ImageRequest) returns (FaceRecognitionResponse);
+  
+  // 복수 객체 인식
+  rpc DetectMultipleObjects (ImageRequest) returns (MultiObjectDetectionResponse);
+  
+  // 실시간 비전 스트리밍
+  rpc StreamVisionResults (Empty) returns (stream VisionResult);
+}
+
+// ============================================
+// Vision 메시지 정의
+// ============================================
+
+message Empty {}
+
+message ImageRequest {
+  string image_id = 1;
+  optional bytes image_data = 2;  // 선택적으로 이미지 바이너리 직접 전송
+}
+
+message ObjectDetectionResponse {
+  string object_name = 1;
+  float confidence = 2;
+  BoundingBox box = 3;
+}
+
+message BoundingBox {
+  int32 x = 1;
+  int32 y = 2;
+  int32 width = 3;
+  int32 height = 4;
+}
+
+message FaceRecognitionResponse {
+  string person_type = 1;  // "Employee", "Guest", "Unknown"
+  optional string employee_id = 2;
+  float confidence = 3;
+}
+
+message MultiObjectDetectionResponse {
+  repeated ObjectDetectionResponse objects = 1;
+}
+
+message VisionResult {
+  string robot_id = 1;
+  int64 timestamp = 2;
+  oneof result {
+    ObjectDetectionResponse object_detection = 3;
+    FaceRecognitionResponse face_recognition = 4;
+    MultiObjectDetectionResponse multi_objects = 5;
+  }
+}
