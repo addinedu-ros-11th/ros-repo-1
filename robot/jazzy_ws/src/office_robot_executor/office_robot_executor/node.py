@@ -9,7 +9,7 @@ from std_msgs.msg import String
 class OfficeRobotExecutor(Node):
     """
     Minimal task executor node.
-    Subscribes: task (std_msgs/String)
+    Subscribes: commands (std_msgs/String)
     Publishes: status, event (std_msgs/String)
     """
 
@@ -26,7 +26,7 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("execution_delay_sec").get_parameter_value().double_value
         )
 
-        self.task_sub = self.create_subscription(String, "task", self._on_task, 10)
+        self.command_sub = self.create_subscription(String, "commands", self._on_task, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
 

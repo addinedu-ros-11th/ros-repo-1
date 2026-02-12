@@ -9,7 +9,7 @@ def generate_launch_description() -> LaunchDescription:
     enable_rosbridge = LaunchConfiguration("enable_rosbridge")
     return LaunchDescription(
         [
-            DeclareLaunchArgument("robot_ns", default_value="robot_a"),
+            DeclareLaunchArgument("robot_ns", default_value="robot"),
             DeclareLaunchArgument("port", default_value="9090"),
             DeclareLaunchArgument("enable_rosbridge", default_value="true"),
             LogInfo(msg=["[rosbridge] robot_ns: ", robot_ns]),

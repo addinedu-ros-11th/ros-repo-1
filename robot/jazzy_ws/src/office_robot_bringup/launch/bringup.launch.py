@@ -14,7 +14,7 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("robot_ns", default_value="robot_a"),
+            DeclareLaunchArgument("robot_ns", default_value="robot"),
             DeclareLaunchArgument("enable_rosbridge", default_value="true"),
             DeclareLaunchArgument("rosbridge_port", default_value="9090"),
             DeclareLaunchArgument("mock_mode", default_value="true"),
