@@ -65,6 +65,12 @@ class VisionServiceStub(object):
             response_deserializer=ai__vision__pb2.VisionResult.FromString,
             _registered_method=True,
         )
+        self.UpdateInferenceState = channel.unary_unary(
+            "/ai_vision.VisionService/UpdateInferenceState",
+            request_serializer=ai__vision__pb2.InferenceStateRequest.SerializeToString,
+            response_deserializer=ai__vision__pb2.InferenceStateResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class VisionServiceServicer(object):
@@ -98,6 +104,12 @@ class VisionServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def UpdateInferenceState(self, request, context):
+        """추론 상태 제어 (메인서버 통신 확인용)"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_VisionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -120,6 +132,11 @@ def add_VisionServiceServicer_to_server(servicer, server):
             servicer.StreamVisionResults,
             request_deserializer=ai__vision__pb2.Empty.FromString,
             response_serializer=ai__vision__pb2.VisionResult.SerializeToString,
+        ),
+        "UpdateInferenceState": grpc.unary_unary_rpc_method_handler(
+            servicer.UpdateInferenceState,
+            request_deserializer=ai__vision__pb2.InferenceStateRequest.FromString,
+            response_serializer=ai__vision__pb2.InferenceStateResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -248,6 +265,36 @@ class VisionService(object):
             "/ai_vision.VisionService/StreamVisionResults",
             ai__vision__pb2.Empty.SerializeToString,
             ai__vision__pb2.VisionResult.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def UpdateInferenceState(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/ai_vision.VisionService/UpdateInferenceState",
+            ai__vision__pb2.InferenceStateRequest.SerializeToString,
+            ai__vision__pb2.InferenceStateResponse.FromString,
             options,
             channel_credentials,
             insecure,

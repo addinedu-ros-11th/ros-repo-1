@@ -18,6 +18,9 @@ service VisionService {
   
   // 실시간 비전 스트리밍
   rpc StreamVisionResults (Empty) returns (stream VisionResult);
+  
+  // 추론 상태 제어 (메인서버 통신 확인용)
+  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
 }
 
 // ============================================
@@ -25,6 +28,17 @@ service VisionService {
 // ============================================
 
 message Empty {}
+
+message InferenceStateRequest {
+  string robot_id = 1;
+  string model_type = 2; // "SNACK", "EMPLOYEE", "OBSTACLE" 등
+  bool is_active = 3;
+}
+
+message InferenceStateResponse {
+  bool success = 1;
+  string message = 2;
+}
 
 message ImageRequest {
   string image_id = 1;

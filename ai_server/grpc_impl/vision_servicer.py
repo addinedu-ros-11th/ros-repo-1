@@ -195,3 +195,48 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
             logger.error(f"스트리밍 처리 중 오류: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"스트리밍 실패: {str(e)}")
+
+    async def UpdateInferenceState(self, request, context):
+        """
+        추론 상태 업데이트 (시나리오별 시작/중지)
+        메인서버와의 통신 확인 및 추론 제어용
+
+        Args:
+            request: InferenceStateRequest (robot_id, model_type, is_active)
+            context: gRPC context
+
+        Returns:
+            InferenceStateResponse (success, message)
+        """
+        logger.info(
+            f"추론 상태 업데이트 요청: robot_id={request.robot_id}, "
+            f"model_type={request.model_type}, is_active={request.is_active}"
+        )
+
+        try:
+            # Vision 서비스를 통해 추론 상태 업데이트
+            if self.vision_service:
+                # 실제 서비스에 상태 업데이트 로직 호출
+                # 예: self.vision_service.update_inference_state(...)
+                pass
+
+            # 성공 응답
+            response = ai_vision_pb2.InferenceStateResponse(
+                success=True,
+                message=f"Inference state updated for robot {request.robot_id}, "
+                f"model {request.model_type}, active={request.is_active}",
+            )
+
+            logger.info(
+                f"추론 상태 업데이트 완료: robot_id={request.robot_id}, model={request.model_type}"
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"추론 상태 업데이트 중 오류: {e}", exc_info=True)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"추론 상태 업데이트 실패: {str(e)}")
+
+            return ai_vision_pb2.InferenceStateResponse(
+                success=False, message=f"Error: {str(e)}"
+            )
