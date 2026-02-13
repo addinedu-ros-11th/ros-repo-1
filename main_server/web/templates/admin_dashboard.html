@@ -6,51 +6,7 @@
     <title>관리자 관제 시스템</title>
     <link rel="stylesheet" href="../static/admin_style.css">
     <style>
-        /* [지도 및 드로잉 관련 추가 스타일 복구] */
-        #map-container {
-            position: relative;
-            width: 800px;
-            height: 600px;
-            background-color: white;
-            border: 2px solid #333;
-            margin-top: 20px;
-            overflow: hidden;
-            background-image: 
-                linear-gradient(#eee 1px, transparent 1px),
-                linear-gradient(90deg, #eee 1px, transparent 1px);
-            background-size: 40px 40px;
-            cursor: crosshair;
-        }
-        .btn-zone-setup {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 10;
-            padding: 8px 15px;
-            background: #e74c3c;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .temp-rect {
-            position: absolute;
-            border: 2px dashed #e74c3c;
-            background: rgba(231, 76, 60, 0.2);
-            pointer-events: none;
-        }
-        .no-go-zone {
-            position: absolute;
-            background: rgba(231, 76, 60, 0.4);
-            border: 2px solid #e74c3c;
-            color: #c0392b;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 12px;
-            cursor: pointer;
-        }
+        /* 비워둠 */
     </style>
 </head>
 <body>
@@ -70,12 +26,8 @@
         <div id="robot-mgmt" class="tab-content">
             <h1 style="margin-bottom: 15px;">🤖 로봇 실시간 관제</h1>
 
-            <div style="position: relative; width: fit-content;">
-                <button id="setup-btn" onclick="toggleZoneSetup()" 
-                        style="position: absolute; bottom: 100%; right: 0; margin-bottom: 5px; 
-                            padding: 6px 12px; font-size: 0.85rem; font-weight: bold; 
-                            background: #e74c3c; color: white; border: none; border-radius: 4px; 
-                            cursor: pointer; z-index: 11;">
+            <div class="map-control-wrapper">
+                <button id="setup-btn" class="btn-zone-setup" onclick="toggleZoneSetup()">
                     🚫 금지구역 설정: OFF
                 </button>
 
@@ -83,15 +35,32 @@
                     onmousedown="startDraw(event)" 
                     onmousemove="doDraw(event)" 
                     onmouseup="endDraw(event)" 
-                    oncontextmenu="return false;" 
-                    style="margin-top: 0;"> 
+                    oncontextmenu="return false;"> 
                     <div id="map-inner"></div>
                 </div>
             </div>
             
-            <div class="zone-management" style="margin-top: 20px;">
-                <h3 style="margin-bottom: 10px;">📋 설정된 금지구역 리스트</h3>
-                <div id="zone-list-container"></div>
+            <div class="zone-management">
+                <h3>📋 설정된 금지구역 리스트</h3>
+                <div id="zone-list-container">
+                    <table class="zone-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>구역 이름</th>
+                                <th>좌표 정보</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="zone-tbody">
+                            <tr>
+                                <td colspan="4" class="empty-msg">
+                                    🚫 현재 금지된 구역이 없습니다.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -109,20 +78,13 @@
                                 <th>예약시간</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="meeting-room-tbody">
                             <tr>
-                                <td>제 1 회의실</td>
-                                <td><span class="status-indicator status-on"></span></td>
-                                <td>김철수</td>
-                                <td>14:00 - 16:00</td>
+                                <td colspan="4" class="empty-msg">
+                                    🚫 연동되지않았습니다.
+                                </td>
                             </tr>
-                            <tr>
-                                <td>제 2 회의실</td>
-                                <td><span class="status-indicator status-off"></span></td>
-                                <td>-</td>
-                                <td>-</td>
-                            </tr>
-                        </tbody>
+                            </tbody>
                     </table>
                 </div>
                 
@@ -132,24 +94,56 @@
                         <thead>
                             <tr><th>품목명</th><th>수량</th><th>상태</th></tr>
                         </thead>
-                        <tbody>
-                            <tr><td>캡슐 커피</td><td>45개</td><td>충분</td></tr>
-                            <tr><td>생수</td><td>5개</td><td><span style="color:red">부족</span></td></tr>
-                        </tbody>
+                        <tbody id="snack-status-tbody">
+                            <tr>
+                                <td colspan="4" class="empty-msg">
+                                    🚫 연동되지않았습니다.
+                                </td>
+                            </tr>
+                            </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
         <div id="visitor-res" class="tab-content">
-            <h2>📅 방문객 예약 현황</h2>
+        <h2>📅 방문객 예약 관리</h2>
+
+        <div class="office-section" style="margin-bottom: 30px; border: 2px solid #3498db; padding: 15px; border-radius: 10px; background: #ebf5fb;">
+            <h3 style="color: #2980b9;">⏳ 승인 대기 목록 (신규 신청)</h3>
             <table class="data-table">
                 <thead>
-                    <tr><th>방문날짜</th><th>방문시간</th><th>담당자</th><th>방문객</th></tr>
+                    <tr>
+                        <th>방문객</th>
+                        <th>목적</th>
+                        <th>방문예정일</th>
+                        <th>신청자(직원)</th>
+                        <th>결정</th>
+                    </tr>
                 </thead>
-                <tbody id="visitor-list"></tbody>
+                <tbody id="pending-visitor-list">
+                    <tr>
+                        <td>박지민</td>
+                        <td>장비 점검</td>
+                        <td>2026-03-10</td>
+                        <td>이대리</td>
+                        <td>
+                            <button onclick="approveVisitor(this)" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">수락</button>
+                            <button onclick="rejectVisitor(this)" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">거절</button>
+                        </td>
+                    </tr>
+                </tbody>
             </table>
         </div>
+
+        <h3>✅ 최종 예약 확정 현황</h3>
+        <table class="data-table">
+            <thead>
+                <tr><th>방문날짜</th><th>방문시간</th><th>담당자</th><th>방문객</th></tr>
+            </thead>
+            <tbody id="visitor-list"></tbody>
+        </table>
+    </div>
 
         <div id="sys-logs" class="tab-content">
             <h2>📜 시스템 동작 로그</h2>
@@ -189,7 +183,6 @@
             });
         }
 
-        /* [3] 드로잉 이벤트 리스너 */
         /* [3] 드로잉 이벤트 리스너 수정 */
         function startDraw(e) {
             // e.button === 0 이 왼쪽 클릭입니다. (1은 휠, 2는 우클릭)
@@ -243,25 +236,112 @@
             tempRect.remove();
         }
 
-        /* [4] UI 렌더링 (지도 및 리스트) */
-        function renderZoneList() {
-            const container = document.getElementById('zone-list-container');
-            if (!container) return;
-            
-            // 리스트만 갱신 (지도는 updateUI가 담당)
-            container.innerHTML = zones.length === 0 ? '<p style="color: #999;">설정된 구역이 없습니다.</p>' : 
-                zones.map(z => `
-                    <div class="zone-list-item" style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
-                        <span>🚫 <b>${z.reason}</b> (${z.left}, ${z.top})</span>
-                        <button onclick="deleteZone(${z.id})" style="background:#ff4d4d; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">삭제</button>
-                    </div>
+        /* [4] UI 렌더링 (DB 기반 리스트 업데이트) */
+        async function renderZoneList() {
+            const tbody = document.getElementById('zone-tbody');
+            if (!tbody) return;
+
+            try {
+                // 백엔드 GET 엔드포인트 호출
+                const response = await fetch('/api/v1/admin/forbidden-zones');
+                const zonesFromDb = await response.json();
+
+                // 데이터가 없는 경우 처리
+                if (!zonesFromDb || zonesFromDb.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" style="text-align: center; padding: 30px; color: #888;">
+                                🚫 현재 금지된 구역이 없습니다.
+                            </td>
+                        </tr>`;
+                    zones = []; // 지도 UI용 전역 변수 초기화
+                    return;
+                }
+
+                // 데이터가 있는 경우 테이블 행 생성
+                tbody.innerHTML = zonesFromDb.map(z => `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 10px; text-align: center;">${z.id || '-'}</td>
+                        <td style="padding: 10px; text-align: center;"><b>${z.reason}</b></td>
+                        <td style="padding: 10px; text-align: center; color: #666; font-size: 0.9em;">
+                            (${z.left}, ${z.top}) | ${z.width}x${z.height}
+                        </td>
+                        <td style="padding: 10px; text-align: center;">
+                            <button onclick="deleteZone(${z.id})" 
+                                style="background:#ff4d4d; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">
+                                삭제
+                            </button>
+                        </td>
+                    </tr>
                 `).join('');
+
+                // 전역 변수 zones 업데이트 (updateUI 함수에서 지도에 사각형을 그릴 때 사용)
+                zones = zonesFromDb;
+
+            } catch (error) {
+                console.error("데이터 로드 실패:", error);
+            }
         }
 
-        function deleteZone(id) {
-            if (confirm("정말 이 구역을 삭제하시겠습니까?")) {
-                zones = zones.filter(z => z.id !== id);
-                renderZoneList();
+        /* [3] 드로잉 이벤트 리스너 수정 */
+        async function endDraw(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const l = parseInt(tempRect.style.left);
+            const t = parseInt(tempRect.style.top);
+            const w = parseInt(tempRect.style.width);
+            const h = parseInt(tempRect.style.height);
+
+            if (isRobotInRect(l, t, w, h)) {
+                alert("⚠️ 로봇이 있는 위치에는 금지구역을 설정할 수 없습니다!");
+                tempRect.remove();
+                return;
+            }
+
+            const reason = prompt("금지 구역 설정 사유를 입력하세요:", "작업 구역");
+            if (reason) {
+                // [수정] 로컬 배열 push 삭제 -> 백업 POST API 호출
+                try {
+                    const response = await fetch('/api/v1/admin/forbidden-zones', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            account: "admin", // 실제 환경에선 로그인 세션 정보 사용
+                            left: l,
+                            top: t,
+                            width: w,
+                            height: h,
+                            reason: reason
+                        })
+                    });
+
+                    if (response.ok) {
+                        renderZoneList(); // 저장 성공 시 리스트 갱신
+                    } else {
+                        alert("금지구역 저장에 실패했습니다.");
+                    }
+                } catch (error) {
+                    console.error("저장 중 통신 에러:", error);
+                }
+            }
+            tempRect.remove();
+        }
+
+        async function deleteZone(id) {
+            if (!confirm("정말 이 구역을 삭제하시겠습니까?")) return;
+
+            try {
+                // 백엔드 DELETE 엔드포인트 호출
+                const response = await fetch(`/api/v1/admin/forbidden-zones/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    renderZoneList(); // 삭제 성공 시 리스트 갱신
+                }
+            } catch (error) {
+                alert("삭제 중 오류가 발생했습니다.");
             }
         }
 
@@ -297,6 +377,26 @@
             mapInner.innerHTML = robotHtml + zoneHtml;
             // 하단 테이블 데이터 자동 갱신
             refreshTableData();
+        }
+
+        // 승인 버튼 클릭 시
+        function approveVisitor(btn) {
+            if(confirm("이 예약을 수락하시겠습니까?")) {
+                const row = btn.closest('tr');
+                // 실제로는 여기서 서버(FastAPI)에 승인 신호를 보내야 함
+                alert("예약이 수락되었습니다. 확정 목록으로 이동합니다.");
+                row.remove(); // 대기 목록에서 삭제
+                // 확정 목록 갱신 로직 추가 필요
+            }
+        }
+
+        // 거절 버튼 클릭 시
+        function rejectVisitor(btn) {
+            if(confirm("이 예약을 거절하시겠습니까?")) {
+                const row = btn.closest('tr');
+                alert("예약 신청이 반려되었습니다.");
+                row.remove();
+            }
         }
 
         function refreshTableData() {
@@ -346,6 +446,40 @@
             showTab(lastTab);
             setInterval(updateUI, 1000); // 1초 주기로 백업본의 실시간성 복구
         });
+
+        async function updateOfficeStatus() {
+            try {
+                const response = await fetch('/api/office-status');
+                const data = await response.json();
+
+                // 1. 회의실 테이블 업데이트
+                const roomBody = document.getElementById('meeting-room-tbody');
+                roomBody.innerHTML = data.rooms.map(room => `
+                    <tr>
+                        <td>${room.name}</td>
+                        <td><span class="status-indicator ${room.is_occupied ? 'status-on' : 'status-off'}"></span></td>
+                        <td>${room.user}</td>
+                        <td>${room.time}</td>
+                    </tr>
+                `).join('');
+
+                // 2. 간식 테이블 업데이트
+                const snackBody = document.getElementById('snack-status-tbody');
+                snackBody.innerHTML = data.snacks.map(snack => `
+                    <tr>
+                        <td>${snack.name}</td>
+                        <td>${snack.quantity}개</td>
+                        <td style="${snack.status === '부족' ? 'color:red' : ''}">${snack.status}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error("사무실 데이터 조회 실패:", error);
+            }
+        }
+
+        // 60초마다 갱신
+        setInterval(updateOfficeStatus, 60000);
+        updateOfficeStatus(); // 초기 로드
     </script>
 </body>
 </html>
