@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 from main_server.container import container
+from main_server.domains.tasks.schemas import ConfirmTaskRequest
 import uuid
 
 router = APIRouter(prefix="/api/v1/employee", tags=["Employee"])
@@ -34,3 +35,18 @@ async def process_command(request: Dict[str, str]):
         "task_id": task.id,
         "ai_fields": ai_result.get("fields")
     }
+
+@router.post("/confirm")
+async def confirm_delivery_action(request: ConfirmTaskRequest):
+    """
+    사용자의 수령/적재 확인을 처리합니다.
+    """
+    success, message = await container.task_manager.confirm_delivery(
+        request.task_id, 
+        request.action_type
+    )
+    
+    if not success:
+        return {"status": "error", "message": message}
+        
+    return {"status": "success", "message": message}

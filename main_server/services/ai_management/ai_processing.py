@@ -1,7 +1,7 @@
 import json
 import logging
 import asyncio
-from typing import Any, Dict, Optional, Callable, List
+from typing import Any, Dict, Optional, Callable, List, Union
 from collections import defaultdict
 from main_server.infrastructure.ai_client.vision_client import VisionServiceClient
 from main_server.infrastructure.ai_client.llm_client import LLMServiceClient
@@ -26,7 +26,7 @@ class AIProcessingService:
         
         # 시나리오별 콜백 핸들러 저장소
         # 구조: { robot_id: { scenario_type: callback_function } }
-        self._scenario_handlers: Dict[str, Dict[str, Callable[[Dict[str, Any]], None]]] = defaultdict(dict)
+        self._scenario_handlers: Dict[str, Dict[str, Union[Callable[[Dict[str, Any]], None], Callable[[Dict[str, Any]], Any]]]] = defaultdict(dict)
         
         # 스트림 태스크 상태 관리
         self._stream_task: Optional[asyncio.Task] = None

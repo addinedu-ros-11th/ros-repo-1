@@ -83,7 +83,8 @@ class Container:
             task_repo=self.task_repo,
             location_repo=self.location_repo,
             fleet_manager=self.fleet_manager,
-            ai_processing_service=self.ai_processing_service
+            ai_processing_service=self.ai_processing_service,
+            connection_manager=self.connection_manager
         )
 
         print("모든 서비스가 성공적으로 초기화되었습니다.")

@@ -7,6 +7,7 @@ from main_server.infrastructure.database.repositories.mysql_task_repository impo
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
 from main_server.services.task_management.task_processors import SnackProcessor, GuideProcessor, ItemProcessor
 from main_server.services.ai_management.ai_processing import AIProcessingService
+from main_server.web.connection_manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,16 +19,17 @@ class TaskManager:
                  task_repo: MySQLTaskRepository, 
                  location_repo: MySQLLocationRepository,
                  fleet_manager: FleetManager,
-                 ai_processing_service: AIProcessingService):
+                 ai_processing_service: AIProcessingService,
+                 connection_manager: ConnectionManager):
         self.task_repo = task_repo
         self.location_repo = location_repo
         self.fleet_manager = fleet_manager
         
         # Processor 등록 (시나리오 확장 시 여기에 추가)
         self.processors = {
-            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
-            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
-            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service),
+            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
+            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
+            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
         }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
@@ -76,3 +78,34 @@ class TaskManager:
         processor = self.processors.get(task.task_type)
         if processor:
             await processor.handle_event(task, robot_id, event)
+
+    async def confirm_delivery(self, task_id: int, action_type: str):
+        """사용자로부터 확인(적재/수령)을 받아 처리합니다."""
+        from common.robot_task_events import RobotEvent
+        
+        task = await self.task_repo.get_by_id(task_id)
+        if not task:
+            return False, "Task not found"
+            
+        robot_id = task.assigned_robot_id
+        if not robot_id:
+            return False, "Robot not assigned"
+
+        processor = self.processors.get(task.task_type)
+        if not processor:
+            return False, "Processor not found"
+
+        # Action Type에 따른 이벤트 매핑
+        event = None
+        if action_type == "CONFIRM_SNACK_RECEIPT":
+            event = RobotEvent.DELIVERY_CONFIRMED
+        elif action_type == "CONFIRM_LOADING":
+            event = RobotEvent.LOADING_COMPLETE
+        elif action_type == "CONFIRM_ITEM_RECEIPT":
+            event = RobotEvent.DELIVERY_CONFIRMED
+            
+        if event:
+            await processor.handle_event(task, robot_id, event)
+            return True, "Confirmed"
+        
+        return False, "Invalid action type"

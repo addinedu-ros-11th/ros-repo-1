@@ -69,6 +69,19 @@ class ActionCommand(BaseModel):
     action: RobotActionType
     params: Dict[str, Any] = Field(default_factory=dict)
 
+class ConfirmTaskRequest(BaseModel):
+    """사용자 확인 요청(수령/적재) 스키마"""
+    task_id: int = Field(..., description="대상 작업 ID")
+    action_type: str = Field(..., description="확인 유형 (CONFIRM_SNACK_RECEIPT, CONFIRM_LOADING, CONFIRM_ITEM_RECEIPT)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": 10,
+                "action_type": "CONFIRM_SNACK_RECEIPT"
+            }
+        }
+
 # ==========================================
 # 4. API 응답 데이터 구조 (Response Schemas)
 # ==========================================

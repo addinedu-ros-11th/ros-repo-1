@@ -39,7 +39,7 @@ async def update_robot_location(
 ):
     """로봇이 이동할 때마다 실시간으로 DB에 좌표를 찍어줍니다."""
     # 리포지토리의 update_location을 직접 호출하거나 FleetManager에 메서드 추가 필요
-    await fleet_manager.robot_repository.update_location(robot_id, x, y)
+    await fleet_manager.robot_repo.update_location(robot_id, x, y)
     return {"status": "success", "robot_id": robot_id, "new_pos": [x, y]}
 
 # 3. 금지 구역 설정 (관제 지도에서 그린 구역 저장)

@@ -13,7 +13,7 @@ class VisionServiceClient(IVisionService):
     """
     def __init__(self, host: str = config.VISION_GRPC_HOST, port: int = config.VISION_GRPC_PORT):
         self.channel = grpc.aio.insecure_channel(f'{host}:{port}')
-        self.stub = ai_vision_pb2_grpc.AIInferenceStub(self.channel)
+        self.stub = ai_vision_pb2_grpc.VisionServiceStub(self.channel)
         print(f"Vision gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
 
     async def request_object_detection(self, image_id: str, image_data: Optional[bytes] = None) -> Dict[str, Any]:
@@ -71,9 +71,9 @@ class VisionServiceClient(IVisionService):
         """
         비전 추론 결과 스트림을 구독합니다.
         """
-        print("Vision 스트림 구독 시작 (StreamInferenceResults)...")
+        print("Vision 스트림 구독 시작 (StreamVisionResults)...")
         try:
-            async for result in self.stub.StreamInferenceResults(ai_vision_pb2.Empty()):
+            async for result in self.stub.StreamVisionResults(ai_vision_pb2.Empty()):
                 data = {
                     "robot_id": result.robot_id,
                 }

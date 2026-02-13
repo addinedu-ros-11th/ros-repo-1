@@ -116,9 +116,42 @@
         .message.user { align-self: flex-end; background: var(--user-gray); border-top-right-radius: 2px; }
         .chat-input-area { padding: 20px; border-top: 1px solid #f1f1f1; display: flex; gap: 10px; }
         #user-input { flex-grow: 1; border: 1px solid #dfe1e5; border-radius: 25px; padding: 12px 20px; outline: none; }
+
+        /* [6] 알림 팝업 (Push Notification) */
+        #notification-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .notification-card {
+            background: white; padding: 30px; border-radius: 20px; width: 350px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .noti-icon { font-size: 50px; margin-bottom: 15px; }
+        .noti-title { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+        .noti-msg { font-size: 15px; color: #666; margin-bottom: 25px; line-height: 1.4; }
+        .noti-btns { display: flex; gap: 10px; }
+        .noti-btn { flex: 1; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 15px; }
+        .btn-accept { background: var(--ai-blue); color: white; }
+        .btn-reject { background: #f1f3f4; color: #555; }
     </style>
 </head>
 <body>
+
+    <!-- 알림 오버레이 추가 -->
+    <div id="notification-overlay">
+        <div class="notification-card">
+            <div class="noti-icon">🤖</div>
+            <div class="noti-title">로봇 도착 알림</div>
+            <div id="noti-message" class="noti-msg">로봇이 도착했습니다. 수령하시겠습니까?</div>
+            <div class="noti-btns">
+                <button class="noti-btn btn-reject" onclick="handleNotification('reject')">거절</button>
+                <button class="noti-btn btn-accept" onclick="handleNotification('accept')">확인</button>
+            </div>
+        </div>
+    </div>
 
     <div class="container">
         <div class="panel reservation-panel">
@@ -280,6 +313,62 @@
         msgDiv.innerText = text;
         chatMessages.appendChild(msgDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // [6] WebSocket 및 알림 처리 로직
+    let currentTaskData = null;
+    const ws = new WebSocket(`ws://${location.host}/ws/admin/status`); // 관리자용 채널 일단 공용 사용 (필요시 전용 채널 분리)
+
+    ws.onmessage = function(event) {
+        const message = JSON.parse(event.data);
+        console.log("WS 수신:", message);
+
+        if (message.event === "user_action_required") {
+            showNotification(message.data);
+        }
+    };
+
+    function showNotification(data) {
+        currentTaskData = data;
+        document.getElementById('noti-message').innerText = data.message;
+        document.getElementById('notification-overlay').style.display = 'flex';
+        
+        // 브라우저 기본 알림음 (선택 사항)
+        // new Audio('/static/notification.mp3').play().catch(e => {});
+    }
+
+    async function handleNotification(action) {
+        if (!currentTaskData) return;
+        
+        const overlay = document.getElementById('notification-overlay');
+        overlay.style.display = 'none';
+
+        if (action === 'accept') {
+            try {
+                const response = await fetch('/api/v1/employee/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: currentTaskData.task_id,
+                        action_type: currentTaskData.action_type
+                    })
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    aiSpeak("수령 확인이 처리되었습니다. 로봇이 복귀합니다.");
+                } else {
+                    aiSpeak("확인 처리 중 오류가 발생했습니다: " + result.message);
+                }
+            } catch (e) {
+                console.error("확인 요청 실패:", e);
+                aiSpeak("서버 통신에 실패했습니다.");
+            }
+        } else {
+            aiSpeak("수령을 거절하셨습니다. 로봇이 대기합니다.");
+            // 거절 처리는 현재 백엔드 로직에 없으나, 필요시 추가 API 호출 가능
+        }
+        
+        currentTaskData = null;
     }
 </script>
 

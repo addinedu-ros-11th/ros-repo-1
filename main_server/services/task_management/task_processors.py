@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 from main_server.domains.tasks.schemas import Task, TaskType
@@ -10,11 +11,12 @@ logger = logging.getLogger(__name__)
 
 class BaseTaskProcessor(ABC):
     """모든 작업 처리기의 기본 인터페이스"""
-    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service):
+    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager):
         self.fleet_manager = fleet_manager
         self.location_repo = location_repo
         self.task_repo = task_repo
         self.ai_processing_service = ai_processing_service
+        self.connection_manager = connection_manager
 
     @abstractmethod
     async def get_initial_actions(self, task: Task) -> List[Dict[str, Any]]:
@@ -72,6 +74,20 @@ class SnackProcessor(BaseTaskProcessor):
                     }])
 
         elif event == RobotEvent.ARRIVED_AT_DESTINATION:
+            # 도착 알림 및 수령 확인 요청 전송
+            logger.info(f"로봇 {robot.name} 목적지 도착. 사용자 수령 확인 대기 중.")
+            message = {
+                "event": "user_action_required",
+                "data": {
+                    "task_id": task.id,
+                    "robot_id": robot_id,
+                    "action_type": "CONFIRM_SNACK_RECEIPT",
+                    "message": "간식이 도착했습니다. 수령 확인 버튼을 눌러주세요."
+                }
+            }
+            await self.connection_manager.broadcast(json.dumps(message))
+
+        elif event == RobotEvent.DELIVERY_CONFIRMED:
             await self._complete_task(task, robot_id)
 
 class GuideProcessor(BaseTaskProcessor):
@@ -121,6 +137,16 @@ class ItemProcessor(BaseTaskProcessor):
         
         if event == RobotEvent.ARRIVED_AT_SENDER:
             logger.info(f"로봇 {robot.name} 발송처 도착. 사용자 로딩 대기 중.")
+            message = {
+                "event": "user_action_required",
+                "data": {
+                    "task_id": task.id,
+                    "robot_id": robot_id,
+                    "action_type": "CONFIRM_LOADING",
+                    "message": "로봇이 도착했습니다. 물품을 적재하고 확인 버튼을 눌러주세요."
+                }
+            }
+            await self.connection_manager.broadcast(json.dumps(message))
 
         elif event == RobotEvent.LOADING_COMPLETE:
             dest_name = task.details.get("dest_location") or task.target_location_name
@@ -134,6 +160,16 @@ class ItemProcessor(BaseTaskProcessor):
 
         elif event == RobotEvent.ARRIVED_AT_RECEIVER:
             logger.info(f"로봇 {robot.name} 수신처 도착. 수령 확인 대기 중.")
+            message = {
+                "event": "user_action_required",
+                "data": {
+                    "task_id": task.id,
+                    "robot_id": robot_id,
+                    "action_type": "CONFIRM_ITEM_RECEIPT",
+                    "message": "물품이 도착했습니다. 수령 확인 버튼을 눌러주세요."
+                }
+            }
+            await self.connection_manager.broadcast(json.dumps(message))
 
         elif event == RobotEvent.DELIVERY_CONFIRMED:
             base_loc = await self.location_repo.find_by_name("로비")
