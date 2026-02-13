@@ -24,29 +24,31 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x61i_vision.proto\x12\x13\x61i_inference.vision\"\x07\n\x05\x45mpty\"P\n\x15InferenceStateRequest\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x12\n\nmodel_type\x18\x02 \x01(\t\x12\x11\n\tis_active\x18\x03 \x01(\x08\":\n\x16InferenceStateResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\xc1\x01\n\x0fInferenceResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12H\n\x10object_detection\x18\x02 \x01(\x0b\x32,.ai_inference.vision.ObjectDetectionResponseH\x00\x12H\n\x10\x66\x61\x63\x65_recognition\x18\x03 \x01(\x0b\x32,.ai_inference.vision.FaceRecognitionResponseH\x00\x42\x08\n\x06result\" \n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\"q\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12-\n\x03\x62ox\x18\x03 \x01(\x0b\x32 .ai_inference.vision.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id2\xa1\x03\n\x0b\x41IInference\x12`\n\rDetectObjects\x12!.ai_inference.vision.ImageRequest\x1a,.ai_inference.vision.ObjectDetectionResponse\x12\x61\n\x0eRecognizeFaces\x12!.ai_inference.vision.ImageRequest\x1a,.ai_inference.vision.FaceRecognitionResponse\x12o\n\x14UpdateInferenceState\x12*.ai_inference.vision.InferenceStateRequest\x1a+.ai_inference.vision.InferenceStateResponse\x12\\\n\x16StreamInferenceResults\x12\x1a.ai_inference.vision.Empty\x1a$.ai_inference.vision.InferenceResult0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x61i_vision.proto\x12\tai_vision\"\x07\n\x05\x45mpty\"P\n\x15InferenceStateRequest\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x12\n\nmodel_type\x18\x02 \x01(\t\x12\x11\n\tis_active\x18\x03 \x01(\x08\":\n\x16InferenceStateResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"H\n\x0cImageRequest\x12\x10\n\x08image_id\x18\x01 \x01(\t\x12\x17\n\nimage_data\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\r\n\x0b_image_data\"g\n\x17ObjectDetectionResponse\x12\x13\n\x0bobject_name\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12#\n\x03\x62ox\x18\x03 \x01(\x0b\x32\x16.ai_vision.BoundingBox\"B\n\x0b\x42oundingBox\x12\t\n\x01x\x18\x01 \x01(\x05\x12\t\n\x01y\x18\x02 \x01(\x05\x12\r\n\x05width\x18\x03 \x01(\x05\x12\x0e\n\x06height\x18\x04 \x01(\x05\"l\n\x17\x46\x61\x63\x65RecognitionResponse\x12\x13\n\x0bperson_type\x18\x01 \x01(\t\x12\x18\n\x0b\x65mployee_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x42\x0e\n\x0c_employee_id\"S\n\x1cMultiObjectDetectionResponse\x12\x33\n\x07objects\x18\x01 \x03(\x0b\x32\".ai_vision.ObjectDetectionResponse\"\xff\x01\n\x0cVisionResult\x12\x10\n\x08robot_id\x18\x01 \x01(\t\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12>\n\x10object_detection\x18\x03 \x01(\x0b\x32\".ai_vision.ObjectDetectionResponseH\x00\x12>\n\x10\x66\x61\x63\x65_recognition\x18\x04 \x01(\x0b\x32\".ai_vision.FaceRecognitionResponseH\x00\x12@\n\rmulti_objects\x18\x05 \x01(\x0b\x32\'.ai_vision.MultiObjectDetectionResponseH\x00\x42\x08\n\x06result2\xa8\x03\n\rVisionService\x12L\n\rDetectObjects\x12\x17.ai_vision.ImageRequest\x1a\".ai_vision.ObjectDetectionResponse\x12M\n\x0eRecognizeFaces\x12\x17.ai_vision.ImageRequest\x1a\".ai_vision.FaceRecognitionResponse\x12Y\n\x15\x44\x65tectMultipleObjects\x12\x17.ai_vision.ImageRequest\x1a\'.ai_vision.MultiObjectDetectionResponse\x12[\n\x14UpdateInferenceState\x12 .ai_vision.InferenceStateRequest\x1a!.ai_vision.InferenceStateResponse\x12\x42\n\x13StreamVisionResults\x12\x10.ai_vision.Empty\x1a\x17.ai_vision.VisionResult0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ai_vision_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_EMPTY']._serialized_start=40
-  _globals['_EMPTY']._serialized_end=47
-  _globals['_INFERENCESTATEREQUEST']._serialized_start=49
-  _globals['_INFERENCESTATEREQUEST']._serialized_end=129
-  _globals['_INFERENCESTATERESPONSE']._serialized_start=131
-  _globals['_INFERENCESTATERESPONSE']._serialized_end=189
-  _globals['_INFERENCERESULT']._serialized_start=192
-  _globals['_INFERENCERESULT']._serialized_end=385
-  _globals['_IMAGEREQUEST']._serialized_start=387
-  _globals['_IMAGEREQUEST']._serialized_end=419
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=421
-  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=534
-  _globals['_BOUNDINGBOX']._serialized_start=536
-  _globals['_BOUNDINGBOX']._serialized_end=602
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=604
-  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=712
-  _globals['_AIINFERENCE']._serialized_start=715
-  _globals['_AIINFERENCE']._serialized_end=1132
+  _globals['_EMPTY']._serialized_start=30
+  _globals['_EMPTY']._serialized_end=37
+  _globals['_INFERENCESTATEREQUEST']._serialized_start=39
+  _globals['_INFERENCESTATEREQUEST']._serialized_end=119
+  _globals['_INFERENCESTATERESPONSE']._serialized_start=121
+  _globals['_INFERENCESTATERESPONSE']._serialized_end=179
+  _globals['_IMAGEREQUEST']._serialized_start=181
+  _globals['_IMAGEREQUEST']._serialized_end=253
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_start=255
+  _globals['_OBJECTDETECTIONRESPONSE']._serialized_end=358
+  _globals['_BOUNDINGBOX']._serialized_start=360
+  _globals['_BOUNDINGBOX']._serialized_end=426
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_start=428
+  _globals['_FACERECOGNITIONRESPONSE']._serialized_end=536
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_start=538
+  _globals['_MULTIOBJECTDETECTIONRESPONSE']._serialized_end=621
+  _globals['_VISIONRESULT']._serialized_start=624
+  _globals['_VISIONRESULT']._serialized_end=879
+  _globals['_VISIONSERVICE']._serialized_start=882
+  _globals['_VISIONSERVICE']._serialized_end=1306
 # @@protoc_insertion_point(module_scope)

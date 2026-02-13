@@ -15,6 +15,9 @@ service VisionService {
   
   // 복수 객체 인식
   rpc DetectMultipleObjects (ImageRequest) returns (MultiObjectDetectionResponse);
+
+  // 추론 상태 업데이트 (시나리오별 시작/중지)
+  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
   
   // 실시간 비전 스트리밍
   rpc StreamVisionResults (Empty) returns (stream VisionResult);
@@ -25,6 +28,17 @@ service VisionService {
 // ============================================
 
 message Empty {}
+
+message InferenceStateRequest {
+  string robot_id = 1;
+  string model_type = 2; // "SNACK", "EMPLOYEE", "OBSTACLE" 등
+  bool is_active = 3;
+}
+
+message InferenceStateResponse {
+  bool success = 1;
+  string message = 2;
+}
 
 message ImageRequest {
   string image_id = 1;

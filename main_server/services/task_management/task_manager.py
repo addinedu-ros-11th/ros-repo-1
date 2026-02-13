@@ -6,6 +6,7 @@ from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
 from main_server.services.task_management.task_processors import SnackProcessor, GuideProcessor, ItemProcessor
+from main_server.services.ai_management.ai_processing import AIProcessingService
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class TaskManager:
                  task_repo: MySQLTaskRepository, 
                  location_repo: MySQLLocationRepository,
                  fleet_manager: FleetManager,
-                 ai_processing_service: Any = None):
+                 ai_processing_service: AIProcessingService):
         self.task_repo = task_repo
         self.location_repo = location_repo
         self.fleet_manager = fleet_manager

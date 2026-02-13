@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import ai_llm_pb2 as ai__llm__pb2
+import ai_llm_pb2 as ai__llm__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -28,6 +28,7 @@ if _version_not_supported:
 class LLMServiceStub(object):
     """============================================
     LLM Service (Qwen3-4B) - Port 50051
+    자연어 처리 및 구조화된 작업 메시지 생성
     ============================================
     """
 
@@ -38,7 +39,7 @@ class LLMServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ParseNaturalLanguage = channel.unary_unary(
-                '/ai_inference.llm.LLMService/ParseNaturalLanguage',
+                '/ai_llm.LLMService/ParseNaturalLanguage',
                 request_serializer=ai__llm__pb2.NLRequest.SerializeToString,
                 response_deserializer=ai__llm__pb2.StructuredResponse.FromString,
                 _registered_method=True)
@@ -47,6 +48,7 @@ class LLMServiceStub(object):
 class LLMServiceServicer(object):
     """============================================
     LLM Service (Qwen3-4B) - Port 50051
+    자연어 처리 및 구조화된 작업 메시지 생성
     ============================================
     """
 
@@ -67,15 +69,16 @@ def add_LLMServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.llm.LLMService', rpc_method_handlers)
+            'ai_llm.LLMService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.llm.LLMService', rpc_method_handlers)
+    server.add_registered_method_handlers('ai_llm.LLMService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
 class LLMService(object):
     """============================================
     LLM Service (Qwen3-4B) - Port 50051
+    자연어 처리 및 구조화된 작업 메시지 생성
     ============================================
     """
 
@@ -93,223 +96,9 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.llm.LLMService/ParseNaturalLanguage',
+            '/ai_llm.LLMService/ParseNaturalLanguage',
             ai__llm__pb2.NLRequest.SerializeToString,
             ai__llm__pb2.StructuredResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-
-class VisionServiceStub(object):
-    """============================================
-    Vision Service (YOLOv8n) - Port 50052
-    ============================================
-    """
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.DetectObjects = channel.unary_unary(
-                '/ai_inference.llm.VisionService/DetectObjects',
-                request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__llm__pb2.ObjectDetectionResponse.FromString,
-                _registered_method=True)
-        self.RecognizeFaces = channel.unary_unary(
-                '/ai_inference.llm.VisionService/RecognizeFaces',
-                request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__llm__pb2.FaceRecognitionResponse.FromString,
-                _registered_method=True)
-        self.DetectMultipleObjects = channel.unary_unary(
-                '/ai_inference.llm.VisionService/DetectMultipleObjects',
-                request_serializer=ai__llm__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__llm__pb2.MultiObjectDetectionResponse.FromString,
-                _registered_method=True)
-        self.StreamVisionResults = channel.unary_stream(
-                '/ai_inference.llm.VisionService/StreamVisionResults',
-                request_serializer=ai__llm__pb2.Empty.SerializeToString,
-                response_deserializer=ai__llm__pb2.VisionResult.FromString,
-                _registered_method=True)
-
-
-class VisionServiceServicer(object):
-    """============================================
-    Vision Service (YOLOv8n) - Port 50052
-    ============================================
-    """
-
-    def DetectObjects(self, request, context):
-        """객체 인식
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def RecognizeFaces(self, request, context):
-        """얼굴 인식
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def DetectMultipleObjects(self, request, context):
-        """복수 객체 인식
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def StreamVisionResults(self, request, context):
-        """실시간 비전 스트리밍
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_VisionServiceServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'DetectObjects': grpc.unary_unary_rpc_method_handler(
-                    servicer.DetectObjects,
-                    request_deserializer=ai__llm__pb2.ImageRequest.FromString,
-                    response_serializer=ai__llm__pb2.ObjectDetectionResponse.SerializeToString,
-            ),
-            'RecognizeFaces': grpc.unary_unary_rpc_method_handler(
-                    servicer.RecognizeFaces,
-                    request_deserializer=ai__llm__pb2.ImageRequest.FromString,
-                    response_serializer=ai__llm__pb2.FaceRecognitionResponse.SerializeToString,
-            ),
-            'DetectMultipleObjects': grpc.unary_unary_rpc_method_handler(
-                    servicer.DetectMultipleObjects,
-                    request_deserializer=ai__llm__pb2.ImageRequest.FromString,
-                    response_serializer=ai__llm__pb2.MultiObjectDetectionResponse.SerializeToString,
-            ),
-            'StreamVisionResults': grpc.unary_stream_rpc_method_handler(
-                    servicer.StreamVisionResults,
-                    request_deserializer=ai__llm__pb2.Empty.FromString,
-                    response_serializer=ai__llm__pb2.VisionResult.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.llm.VisionService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.llm.VisionService', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class VisionService(object):
-    """============================================
-    Vision Service (YOLOv8n) - Port 50052
-    ============================================
-    """
-
-    @staticmethod
-    def DetectObjects(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ai_inference.llm.VisionService/DetectObjects',
-            ai__llm__pb2.ImageRequest.SerializeToString,
-            ai__llm__pb2.ObjectDetectionResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RecognizeFaces(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ai_inference.llm.VisionService/RecognizeFaces',
-            ai__llm__pb2.ImageRequest.SerializeToString,
-            ai__llm__pb2.FaceRecognitionResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def DetectMultipleObjects(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ai_inference.llm.VisionService/DetectMultipleObjects',
-            ai__llm__pb2.ImageRequest.SerializeToString,
-            ai__llm__pb2.MultiObjectDetectionResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def StreamVisionResults(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/ai_inference.llm.VisionService/StreamVisionResults',
-            ai__llm__pb2.Empty.SerializeToString,
-            ai__llm__pb2.VisionResult.FromString,
             options,
             channel_credentials,
             insecure,

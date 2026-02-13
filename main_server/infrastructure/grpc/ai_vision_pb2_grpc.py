@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import ai_vision_pb2 as ai__vision__pb2
+import ai_vision_pb2 as ai__vision__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -25,8 +25,11 @@ if _version_not_supported:
     )
 
 
-class AIInferenceStub(object):
-    """서비스 정의
+class VisionServiceStub(object):
+    """============================================
+    Vision Service (YOLOv8n) - Port 50052
+    객체 인식 및 얼굴 인식 기능 제공
+    ============================================
     """
 
     def __init__(self, channel):
@@ -36,61 +39,76 @@ class AIInferenceStub(object):
             channel: A grpc.Channel.
         """
         self.DetectObjects = channel.unary_unary(
-                '/ai_inference.vision.AIInference/DetectObjects',
+                '/ai_vision.VisionService/DetectObjects',
                 request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__vision__pb2.ObjectDetectionResponse.FromString,
                 _registered_method=True)
         self.RecognizeFaces = channel.unary_unary(
-                '/ai_inference.vision.AIInference/RecognizeFaces',
+                '/ai_vision.VisionService/RecognizeFaces',
                 request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
                 response_deserializer=ai__vision__pb2.FaceRecognitionResponse.FromString,
                 _registered_method=True)
+        self.DetectMultipleObjects = channel.unary_unary(
+                '/ai_vision.VisionService/DetectMultipleObjects',
+                request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
+                response_deserializer=ai__vision__pb2.MultiObjectDetectionResponse.FromString,
+                _registered_method=True)
         self.UpdateInferenceState = channel.unary_unary(
-                '/ai_inference.vision.AIInference/UpdateInferenceState',
+                '/ai_vision.VisionService/UpdateInferenceState',
                 request_serializer=ai__vision__pb2.InferenceStateRequest.SerializeToString,
                 response_deserializer=ai__vision__pb2.InferenceStateResponse.FromString,
                 _registered_method=True)
-        self.StreamInferenceResults = channel.unary_stream(
-                '/ai_inference.vision.AIInference/StreamInferenceResults',
+        self.StreamVisionResults = channel.unary_stream(
+                '/ai_vision.VisionService/StreamVisionResults',
                 request_serializer=ai__vision__pb2.Empty.SerializeToString,
-                response_deserializer=ai__vision__pb2.InferenceResult.FromString,
+                response_deserializer=ai__vision__pb2.VisionResult.FromString,
                 _registered_method=True)
 
 
-class AIInferenceServicer(object):
-    """서비스 정의
+class VisionServiceServicer(object):
+    """============================================
+    Vision Service (YOLOv8n) - Port 50052
+    객체 인식 및 얼굴 인식 기능 제공
+    ============================================
     """
 
     def DetectObjects(self, request, context):
-        """1:1 요청-응답 방식 (기존)
+        """객체 인식
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def RecognizeFaces(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """얼굴 인식
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DetectMultipleObjects(self, request, context):
+        """복수 객체 인식
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def UpdateInferenceState(self, request, context):
-        """AI 서버 추론 제어 명령 (추가)
+        """추론 상태 업데이트 (시나리오별 시작/중지)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def StreamInferenceResults(self, request, context):
-        """서버 스트리밍 방식 (실시간 구독)
-        서버에서 추론 결과가 발생할 때마다 클라이언트에게 스트림으로 전달합니다.
+    def StreamVisionResults(self, request, context):
+        """실시간 비전 스트리밍
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_AIInferenceServicer_to_server(servicer, server):
+def add_VisionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'DetectObjects': grpc.unary_unary_rpc_method_handler(
                     servicer.DetectObjects,
@@ -102,26 +120,34 @@ def add_AIInferenceServicer_to_server(servicer, server):
                     request_deserializer=ai__vision__pb2.ImageRequest.FromString,
                     response_serializer=ai__vision__pb2.FaceRecognitionResponse.SerializeToString,
             ),
+            'DetectMultipleObjects': grpc.unary_unary_rpc_method_handler(
+                    servicer.DetectMultipleObjects,
+                    request_deserializer=ai__vision__pb2.ImageRequest.FromString,
+                    response_serializer=ai__vision__pb2.MultiObjectDetectionResponse.SerializeToString,
+            ),
             'UpdateInferenceState': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateInferenceState,
                     request_deserializer=ai__vision__pb2.InferenceStateRequest.FromString,
                     response_serializer=ai__vision__pb2.InferenceStateResponse.SerializeToString,
             ),
-            'StreamInferenceResults': grpc.unary_stream_rpc_method_handler(
-                    servicer.StreamInferenceResults,
+            'StreamVisionResults': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamVisionResults,
                     request_deserializer=ai__vision__pb2.Empty.FromString,
-                    response_serializer=ai__vision__pb2.InferenceResult.SerializeToString,
+                    response_serializer=ai__vision__pb2.VisionResult.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_inference.vision.AIInference', rpc_method_handlers)
+            'ai_vision.VisionService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_inference.vision.AIInference', rpc_method_handlers)
+    server.add_registered_method_handlers('ai_vision.VisionService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class AIInference(object):
-    """서비스 정의
+class VisionService(object):
+    """============================================
+    Vision Service (YOLOv8n) - Port 50052
+    객체 인식 및 얼굴 인식 기능 제공
+    ============================================
     """
 
     @staticmethod
@@ -138,7 +164,7 @@ class AIInference(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.vision.AIInference/DetectObjects',
+            '/ai_vision.VisionService/DetectObjects',
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.ObjectDetectionResponse.FromString,
             options,
@@ -165,9 +191,36 @@ class AIInference(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.vision.AIInference/RecognizeFaces',
+            '/ai_vision.VisionService/RecognizeFaces',
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.FaceRecognitionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DetectMultipleObjects(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai_vision.VisionService/DetectMultipleObjects',
+            ai__vision__pb2.ImageRequest.SerializeToString,
+            ai__vision__pb2.MultiObjectDetectionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -192,7 +245,7 @@ class AIInference(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_inference.vision.AIInference/UpdateInferenceState',
+            '/ai_vision.VisionService/UpdateInferenceState',
             ai__vision__pb2.InferenceStateRequest.SerializeToString,
             ai__vision__pb2.InferenceStateResponse.FromString,
             options,
@@ -206,7 +259,7 @@ class AIInference(object):
             _registered_method=True)
 
     @staticmethod
-    def StreamInferenceResults(request,
+    def StreamVisionResults(request,
             target,
             options=(),
             channel_credentials=None,
@@ -219,9 +272,9 @@ class AIInference(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ai_inference.vision.AIInference/StreamInferenceResults',
+            '/ai_vision.VisionService/StreamVisionResults',
             ai__vision__pb2.Empty.SerializeToString,
-            ai__vision__pb2.InferenceResult.FromString,
+            ai__vision__pb2.VisionResult.FromString,
             options,
             channel_credentials,
             insecure,
