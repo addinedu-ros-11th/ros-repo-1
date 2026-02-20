@@ -1,0 +1,810 @@
+"""
+AI Server GUI Log Viewer
+서버 시작/중지 + 실시간 로그 표시 GUI
+tkinter 기반 — 추가 패키지 불필요
+"""
+
+import os
+import sys
+import signal
+import socket
+import subprocess
+import threading
+import tkinter as tk
+from tkinter import scrolledtext, font as tkfont
+from datetime import datetime
+from pathlib import Path
+from urllib.request import urlopen
+from urllib.error import URLError
+
+# ── 경로 설정 ──────────────────────────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+AI_SERVER_MODULE = "ai_server.server"
+PYTHON_EXE = sys.executable
+
+
+# ── 환경변수 헬퍼 (.env 값에 따옴표가 섞여있을 수 있으므로 strip) ──
+def _env(key: str, default: str) -> str:
+    return os.getenv(key, default).strip().strip("'\"")
+
+
+# ── 연결 대상 설정 ─────────────────────────────────────────
+# Main Server 는 DB 와 같은 머신(192.168.1.1)에서 실행
+_MAIN_SERVER_HOST = _env("MAIN_SERVER_HOST", _env("DB_HOST", "192.168.1.1"))
+
+CONNECTION_TARGETS = {
+    "Main Server": {
+        "host": _MAIN_SERVER_HOST,
+        "port": int(_env("SERVER_PORT", "8000")),
+        "proto": "HTTP",
+        "health": "/",
+    },
+    "ROS Bridge": {
+        "host": _env("ROS_BRIDGE_HOST", "localhost"),
+        "port": int(_env("ROS_BRIDGE_PORT", "9090")),
+        "proto": "WS",
+    },
+    "MySQL DB": {
+        "host": _env("DB_HOST", "192.168.1.1"),
+        "port": int(_env("DB_PORT", "3306")),
+        "proto": "TCP",
+    },
+    "LLM gRPC": {
+        "host": "localhost",
+        "port": int(_env("LLM_GRPC_PORT", "50051")),
+        "proto": "TCP",
+    },
+    "Vision gRPC": {
+        "host": "localhost",
+        "port": int(_env("VISION_GRPC_PORT", "50052")),
+        "proto": "TCP",
+    },
+}
+
+CONNECTION_CHECK_INTERVAL_MS = 5000  # 5초마다 체크
+
+# ── 색상/스타일 ────────────────────────────────────────────
+COLORS = {
+    "bg": "#1e1e2e",
+    "fg": "#cdd6f4",
+    "accent": "#89b4fa",
+    "green": "#a6e3a1",
+    "red": "#f38ba8",
+    "yellow": "#f9e2af",
+    "orange": "#fab387",
+    "surface": "#313244",
+    "overlay": "#45475a",
+    "subtext": "#a6adc8",
+}
+
+LOG_COLORS = {
+    "DEBUG": "#89b4fa",
+    "INFO": "#a6e3a1",
+    "WARNING": "#f9e2af",
+    "ERROR": "#f38ba8",
+    "CRITICAL": "#f38ba8",
+}
+
+# ── gRPC 수신 요청 감지 패턴 ───────────────────────────────
+# 서버 로그에서 메인서버 → AI서버 요청을 감지하는 키워드 매핑
+GRPC_REQUEST_PATTERNS = {
+    "자연어 프롬프트 해석 요청": {
+        "rpc": "ParseNaturalLanguage",
+        "icon": "💬",
+        "service": "LLM",
+    },
+    "객체 인식 요청": {"rpc": "DetectObjects", "icon": "📦", "service": "Vision"},
+    "얼굴 인식 요청": {"rpc": "RecognizeFaces", "icon": "👤", "service": "Vision"},
+    "복수 객체 인식 요청": {
+        "rpc": "DetectMultipleObjects",
+        "icon": "📦",
+        "service": "Vision",
+    },
+    "추론 상태 업데이트": {
+        "rpc": "UpdateInferenceState",
+        "icon": "⚡",
+        "service": "Vision",
+    },
+    "비전 결과 스트리밍 시작": {
+        "rpc": "StreamVisionResults",
+        "icon": "📡",
+        "service": "Vision",
+    },
+    "자연어 해석 완료": {
+        "rpc": "ParseNaturalLanguage",
+        "icon": "✅",
+        "service": "LLM",
+        "is_response": True,
+    },
+    "LLM 응답 전송": {
+        "rpc": "LLM → Main Server",
+        "icon": "📤",
+        "service": "LLM",
+        "is_response": True,
+        "is_send": True,
+    },
+    "자연어 해석 중 오류": {
+        "rpc": "ParseNaturalLanguage",
+        "icon": "❌",
+        "service": "LLM",
+        "is_response": True,
+        "is_error": True,
+    },
+}
+
+
+class AIServerGUI:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.process: subprocess.Popen | None = None
+        self.log_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+
+        self._setup_window()
+        self._build_header()
+        self._build_connection_panel()
+        self._build_log_area()
+        self._build_status_bar()
+
+        # 연결 상태 주기적 체크 시작
+        self._check_connections()
+
+        # 종료 시 정리
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self._append_log("AI Server GUI 시작됨", "INFO")
+        self._append_log(f"Python: {PYTHON_EXE}", "DEBUG")
+        self._append_log(f"프로젝트 루트: {PROJECT_ROOT}", "DEBUG")
+
+    # ── 윈도우 설정 ────────────────────────────────────────
+    def _setup_window(self):
+        self.root.title("AI Server — Log Viewer")
+        self.root.geometry("1280x720")
+        self.root.minsize(900, 540)
+        self.root.configure(bg=COLORS["bg"])
+
+        # 아이콘 설정 시도 (실패해도 무시)
+        try:
+            self.root.iconname("AI Server")
+        except Exception:
+            pass
+
+    # ── 헤더 (상태 표시 + 버튼) ────────────────────────────
+    def _build_header(self):
+        header = tk.Frame(self.root, bg=COLORS["surface"], pady=8, padx=12)
+        header.pack(fill=tk.X)
+
+        # 타이틀
+        title_font = tkfont.Font(family="Helvetica", size=14, weight="bold")
+        tk.Label(
+            header,
+            text="🤖 AI Server",
+            font=title_font,
+            bg=COLORS["surface"],
+            fg=COLORS["accent"],
+        ).pack(side=tk.LEFT)
+
+        # 상태 표시
+        self.status_var = tk.StringVar(value="● STOPPED")
+        self.status_label = tk.Label(
+            header,
+            textvariable=self.status_var,
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["red"],
+            padx=16,
+        )
+        self.status_label.pack(side=tk.LEFT)
+
+        # 버튼 프레임
+        btn_frame = tk.Frame(header, bg=COLORS["surface"])
+        btn_frame.pack(side=tk.RIGHT)
+
+        btn_style = dict(
+            font=("Helvetica", 10, "bold"),
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=14,
+            pady=4,
+            bd=0,
+        )
+
+        self.btn_start = tk.Button(
+            btn_frame,
+            text="▶  Start",
+            bg=COLORS["green"],
+            fg=COLORS["bg"],
+            command=self._start_server,
+            **btn_style,
+        )
+        self.btn_start.pack(side=tk.LEFT, padx=4)
+
+        self.btn_stop = tk.Button(
+            btn_frame,
+            text="■  Stop",
+            bg=COLORS["red"],
+            fg=COLORS["bg"],
+            command=self._stop_server,
+            state=tk.DISABLED,
+            **btn_style,
+        )
+        self.btn_stop.pack(side=tk.LEFT, padx=4)
+
+        self.btn_restart = tk.Button(
+            btn_frame,
+            text="↻  Restart",
+            bg=COLORS["orange"],
+            fg=COLORS["bg"],
+            command=self._restart_server,
+            state=tk.DISABLED,
+            **btn_style,
+        )
+        self.btn_restart.pack(side=tk.LEFT, padx=4)
+
+        self.btn_clear = tk.Button(
+            btn_frame,
+            text="🗑  Clear",
+            bg=COLORS["overlay"],
+            fg=COLORS["fg"],
+            command=self._clear_logs,
+            **btn_style,
+        )
+        self.btn_clear.pack(side=tk.LEFT, padx=4)
+
+    # ── 연결 상태 패널 ────────────────────────────────────
+    def _build_connection_panel(self):
+        panel = tk.Frame(self.root, bg=COLORS["surface"], pady=6, padx=12)
+        panel.pack(fill=tk.X)
+
+        # 제목
+        tk.Label(
+            panel,
+            text="연결 상태",
+            font=("Helvetica", 10, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["accent"],
+        ).pack(side=tk.LEFT, padx=(0, 16))
+
+        self._conn_indicators: dict[str, dict] = {}
+
+        for name, cfg in CONNECTION_TARGETS.items():
+            frame = tk.Frame(panel, bg=COLORS["surface"])
+            frame.pack(side=tk.LEFT, padx=8)
+
+            dot_var = tk.StringVar(value="●")
+            dot_label = tk.Label(
+                frame,
+                textvariable=dot_var,
+                font=("Helvetica", 12, "bold"),
+                bg=COLORS["surface"],
+                fg=COLORS["overlay"],  # 초기: 회색 (unknown)
+            )
+            dot_label.pack(side=tk.LEFT)
+
+            port_str = f":{cfg['port']}"
+            text_label = tk.Label(
+                frame,
+                text=f"{name} {port_str}",
+                font=("Helvetica", 9),
+                bg=COLORS["surface"],
+                fg=COLORS["subtext"],
+            )
+            text_label.pack(side=tk.LEFT, padx=(2, 0))
+
+            status_var = tk.StringVar(value="확인 중...")
+            status_label = tk.Label(
+                frame,
+                textvariable=status_var,
+                font=("Helvetica", 8),
+                bg=COLORS["surface"],
+                fg=COLORS["subtext"],
+            )
+            status_label.pack(side=tk.LEFT, padx=(4, 0))
+
+            self._conn_indicators[name] = {
+                "dot_label": dot_label,
+                "status_var": status_var,
+                "status_label": status_label,
+                "cfg": cfg,
+            }
+
+    # ── 연결 상태 체크 ────────────────────────────────────
+    def _check_connections(self):
+        """별도 스레드에서 모든 연결 대상 체크 후 UI 업데이트"""
+
+        def _worker():
+            results = {}
+            for name, info in self._conn_indicators.items():
+                cfg = info["cfg"]
+                ok = self._probe_connection(cfg)
+                results[name] = ok
+            # UI 스레드에서 업데이트
+            self.root.after(0, self._update_connection_ui, results)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        # 다음 체크 예약
+        self.root.after(CONNECTION_CHECK_INTERVAL_MS, self._check_connections)
+
+    def _probe_connection(self, cfg: dict) -> bool:
+        """단일 연결 대상의 도달 가능 여부 확인"""
+        host = cfg["host"]
+        port = cfg["port"]
+        proto = cfg.get("proto", "TCP")
+
+        if proto == "HTTP":
+            # HTTP health check
+            health = cfg.get("health", "/")
+            try:
+                url = f"http://{host}:{port}{health}"
+                resp = urlopen(url, timeout=2)
+                return resp.status == 200
+            except Exception:
+                return False
+        else:
+            # TCP/WS — 포트 연결 가능 여부
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    return True
+            except Exception:
+                return False
+
+    def _update_connection_ui(self, results: dict[str, bool]):
+        """체크 결과를 UI에 반영"""
+        for name, ok in results.items():
+            info = self._conn_indicators[name]
+            if ok:
+                info["dot_label"].configure(fg=COLORS["green"])
+                info["status_var"].set("연결됨")
+                info["status_label"].configure(fg=COLORS["green"])
+            else:
+                info["dot_label"].configure(fg=COLORS["red"])
+                info["status_var"].set("끊김")
+                info["status_label"].configure(fg=COLORS["red"])
+
+    # ── 로그 + 수신 요청 영역 (좌우 분할) ─────────────────
+    def _build_log_area(self):
+        # PanedWindow 로 좌우 분할
+        paned = tk.PanedWindow(
+            self.root,
+            orient=tk.HORIZONTAL,
+            bg=COLORS["overlay"],
+            sashwidth=4,
+            sashrelief=tk.FLAT,
+        )
+        paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        # ── 왼쪽: 서버 로그 ──
+        left_frame = tk.Frame(paned, bg=COLORS["bg"])
+        paned.add(left_frame, stretch="always")
+
+        log_header = tk.Frame(left_frame, bg=COLORS["surface"], pady=4, padx=8)
+        log_header.pack(fill=tk.X)
+        tk.Label(
+            log_header,
+            text="📋 서버 로그",
+            font=("Helvetica", 10, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["accent"],
+        ).pack(side=tk.LEFT)
+
+        log_font = tkfont.Font(family="Consolas", size=10)
+        self.log_text = scrolledtext.ScrolledText(
+            left_frame,
+            wrap=tk.WORD,
+            font=log_font,
+            bg=COLORS["bg"],
+            fg=COLORS["fg"],
+            insertbackground=COLORS["fg"],
+            selectbackground=COLORS["accent"],
+            borderwidth=0,
+            highlightthickness=0,
+            state=tk.DISABLED,
+            padx=8,
+            pady=8,
+        )
+        self.log_text.pack(fill=tk.BOTH, expand=True)
+
+        for level, color in LOG_COLORS.items():
+            self.log_text.tag_configure(level, foreground=color)
+        self.log_text.tag_configure("TIMESTAMP", foreground=COLORS["subtext"])
+        self.log_text.tag_configure("SEPARATOR", foreground=COLORS["overlay"])
+
+        # ── 오른쪽: 수신 요청 패널 ──
+        right_frame = tk.Frame(paned, bg=COLORS["bg"])
+        paned.add(right_frame, stretch="always")
+
+        req_header = tk.Frame(right_frame, bg=COLORS["surface"], pady=4, padx=8)
+        req_header.pack(fill=tk.X)
+        tk.Label(
+            req_header,
+            text="📨 수신 요청 (Main → AI)",
+            font=("Helvetica", 10, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["orange"],
+        ).pack(side=tk.LEFT)
+
+        self._req_count_var = tk.StringVar(value="0건")
+        tk.Label(
+            req_header,
+            textvariable=self._req_count_var,
+            font=("Helvetica", 9, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["yellow"],
+        ).pack(side=tk.RIGHT)
+
+        btn_clear_req = tk.Button(
+            req_header,
+            text="Clear",
+            font=("Helvetica", 8, "bold"),
+            bg=COLORS["overlay"],
+            fg=COLORS["fg"],
+            relief=tk.FLAT,
+            bd=0,
+            padx=8,
+            command=self._clear_requests,
+        )
+        btn_clear_req.pack(side=tk.RIGHT, padx=4)
+
+        req_font = tkfont.Font(family="Consolas", size=10)
+        self.req_text = scrolledtext.ScrolledText(
+            right_frame,
+            wrap=tk.WORD,
+            font=req_font,
+            bg=COLORS["bg"],
+            fg=COLORS["fg"],
+            insertbackground=COLORS["fg"],
+            selectbackground=COLORS["accent"],
+            borderwidth=0,
+            highlightthickness=0,
+            state=tk.DISABLED,
+            padx=8,
+            pady=8,
+        )
+        self.req_text.pack(fill=tk.BOTH, expand=True)
+
+        # 수신 요청 패널 태그
+        self.req_text.tag_configure(
+            "RPC_NAME", foreground=COLORS["accent"], font=("Consolas", 10, "bold")
+        )
+        self.req_text.tag_configure("SERVICE", foreground=COLORS["orange"])
+        self.req_text.tag_configure("DETAIL", foreground=COLORS["fg"])
+        self.req_text.tag_configure("RESPONSE", foreground=COLORS["green"])
+        self.req_text.tag_configure("SEND", foreground="#94e2d5")  # teal: AI→Main
+        self.req_text.tag_configure("FIELD_KEY", foreground=COLORS["yellow"])
+        self.req_text.tag_configure("FIELD_VAL", foreground=COLORS["fg"])
+        self.req_text.tag_configure("ERROR_TAG", foreground=COLORS["red"])
+        self.req_text.tag_configure("TIME", foreground=COLORS["subtext"])
+        self.req_text.tag_configure("DIVIDER", foreground=COLORS["overlay"])
+
+        self._req_count = 0
+
+        # 초기 사시비율: 왼쪽 65%, 오른쪽 35%
+        self.root.update_idletasks()
+        paned.sash_place(0, int(self.root.winfo_width() * 0.62), 0)
+
+    # ── 하단 상태바 ───────────────────────────────────────
+    def _build_status_bar(self):
+        bar = tk.Frame(self.root, bg=COLORS["surface"], pady=4, padx=12)
+        bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+        self.info_var = tk.StringVar(
+            value="LLM gRPC :50051  |  Vision gRPC :50052  |  UDP 영상 :54321"
+        )
+        tk.Label(
+            bar,
+            textvariable=self.info_var,
+            font=("Helvetica", 9),
+            bg=COLORS["surface"],
+            fg=COLORS["subtext"],
+        ).pack(side=tk.LEFT)
+
+        self.pid_var = tk.StringVar(value="PID: —")
+        tk.Label(
+            bar,
+            textvariable=self.pid_var,
+            font=("Helvetica", 9),
+            bg=COLORS["surface"],
+            fg=COLORS["subtext"],
+        ).pack(side=tk.RIGHT)
+
+    # ── 로그 추가 ─────────────────────────────────────────
+    def _append_log(self, message: str, level: str = "INFO"):
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        tag = level if level in LOG_COLORS else "INFO"
+
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.insert(tk.END, f"[{timestamp}] ", "TIMESTAMP")
+        self.log_text.insert(tk.END, f"[{level:^8s}] ", tag)
+        self.log_text.insert(tk.END, f"{message}\n")
+        self.log_text.configure(state=tk.DISABLED)
+        self.log_text.see(tk.END)
+
+    def _append_raw(self, line: str):
+        """서버 출력을 파싱해서 적절한 로그 레벨로 표시 + 수신 요청 감지"""
+        line = line.rstrip()
+        if not line:
+            return
+
+        level = "INFO"
+        for lvl in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            if f" - {lvl} - " in line or f"- {lvl} -" in line:
+                level = lvl
+                break
+
+        # 로그 패널에 표시
+        self.log_text.configure(state=tk.NORMAL)
+        tag = level if level in LOG_COLORS else "INFO"
+        self.log_text.insert(tk.END, line + "\n", tag)
+        self.log_text.configure(state=tk.DISABLED)
+        self.log_text.see(tk.END)
+
+        # gRPC 수신 요청 감지 → 수신 요청 패널에 표시
+        for keyword, info in GRPC_REQUEST_PATTERNS.items():
+            if keyword in line:
+                self._append_request(line, info)
+                break
+
+    # ── 수신 요청 패널에 추가 ─────────────────────────────
+    def _append_request(self, raw_line: str, info: dict):
+        """감지된 gRPC 요청을 수신 요청 패널에 시각적으로 표시"""
+        ts = datetime.now().strftime("%H:%M:%S")
+        icon = info["icon"]
+        rpc = info["rpc"]
+        service = info["service"]
+        is_resp = info.get("is_response", False)
+        is_send = info.get("is_send", False)
+        is_error = info.get("is_error", False)
+
+        # 로그 내용에서 세부사항 추출 (마지막 ' - ' 이후)
+        detail = ""
+        if " - " in raw_line:
+            parts = raw_line.split(" - ", maxsplit=3)
+            detail = parts[-1].strip() if len(parts) > 1 else raw_line
+
+        self.req_text.configure(state=tk.NORMAL)
+
+        if is_error:
+            # 에러 표시
+            self.req_text.insert(tk.END, f"  {ts} ", "TIME")
+            self.req_text.insert(tk.END, f"{icon} ", "ERROR_TAG")
+            self.req_text.insert(tk.END, f"{rpc} 오류\n", "ERROR_TAG")
+            if detail:
+                self.req_text.insert(tk.END, f"         {detail}\n", "ERROR_TAG")
+
+        elif is_send:
+            # LLM 응답 전송 (AI → Main) — 상세 필드 파싱
+            self.req_text.insert(tk.END, f"  {ts} ", "TIME")
+            self.req_text.insert(tk.END, f"{icon} ", "SEND")
+            self.req_text.insert(tk.END, f"{rpc}\n", "SEND")
+
+            # 상세 필드 파싱: task_type=..., confidence=..., fields={...}
+            parsed = self._parse_llm_response(detail)
+            if parsed:
+                if "task_type" in parsed:
+                    self.req_text.insert(tk.END, "         ", "TIME")
+                    self.req_text.insert(tk.END, "task_type: ", "FIELD_KEY")
+                    self.req_text.insert(tk.END, f"{parsed['task_type']}\n", "RPC_NAME")
+                if "confidence" in parsed:
+                    self.req_text.insert(tk.END, "         ", "TIME")
+                    self.req_text.insert(tk.END, "confidence: ", "FIELD_KEY")
+                    conf_val = parsed["confidence"]
+                    conf_tag = (
+                        "RESPONSE"
+                        if float(conf_val) >= 0.7
+                        else "ERROR_TAG" if float(conf_val) < 0.3 else "FIELD_VAL"
+                    )
+                    self.req_text.insert(tk.END, f"{conf_val}\n", conf_tag)
+                if "fields" in parsed and parsed["fields"]:
+                    self.req_text.insert(tk.END, "         ", "TIME")
+                    self.req_text.insert(tk.END, "fields:\n", "FIELD_KEY")
+                    for fk, fv in parsed["fields"].items():
+                        self.req_text.insert(tk.END, f"           ", "TIME")
+                        self.req_text.insert(tk.END, f"{fk}: ", "FIELD_KEY")
+                        self.req_text.insert(tk.END, f"{fv}\n", "FIELD_VAL")
+            elif detail:
+                self.req_text.insert(tk.END, f"         {detail}\n", "DETAIL")
+
+        elif is_resp:
+            # 응답 완료 표시
+            self.req_text.insert(tk.END, f"  {ts} ", "TIME")
+            self.req_text.insert(tk.END, f"{icon} ", "RESPONSE")
+            self.req_text.insert(tk.END, f"← {rpc} ", "RESPONSE")
+            self.req_text.insert(tk.END, f"완료\n", "RESPONSE")
+            if detail:
+                self.req_text.insert(tk.END, f"         {detail}\n", "DETAIL")
+        else:
+            # 새 요청 표시
+            self._req_count += 1
+            self._req_count_var.set(f"{self._req_count}건")
+
+            self.req_text.insert(tk.END, f"─" * 42 + "\n", "DIVIDER")
+            self.req_text.insert(tk.END, f"  {ts} ", "TIME")
+            self.req_text.insert(tk.END, f"{icon} ", "RPC_NAME")
+            self.req_text.insert(tk.END, f"{rpc}", "RPC_NAME")
+            self.req_text.insert(tk.END, f"  [{service}]\n", "SERVICE")
+            if detail:
+                self.req_text.insert(tk.END, f"         {detail}\n", "DETAIL")
+
+        self.req_text.configure(state=tk.DISABLED)
+        self.req_text.see(tk.END)
+
+    def _parse_llm_response(self, detail: str) -> dict | None:
+        """
+        LLM 응답 전송 로그를 파싱하여 task_type, confidence, fields를 추출.
+        예: 'LLM 응답 전송 [req_id=abc]: task_type=SNACK_DELIVERY, confidence=0.95, fields={...}'
+        """
+        import re
+
+        result = {}
+        try:
+            # task_type
+            m = re.search(r"task_type=(\w+)", detail)
+            if m:
+                result["task_type"] = m.group(1)
+            # confidence
+            m = re.search(r"confidence=([\d.]+)", detail)
+            if m:
+                result["confidence"] = m.group(1)
+            # fields={...}
+            m = re.search(r"fields=\{(.+)\}", detail)
+            if m:
+                fields_str = m.group(1)
+                fields = {}
+                # 'key': 'value' 패턴 파싱
+                for pair in re.finditer(
+                    r"'(\w+)'\s*:\s*'([^']*)'|'(\w+)'\s*:\s*([\d.]+)", fields_str
+                ):
+                    key = pair.group(1) or pair.group(3)
+                    val = pair.group(2) or pair.group(4)
+                    if key and val:
+                        fields[key] = val
+                result["fields"] = fields
+        except Exception:
+            return None
+        return result if result else None
+
+    def _clear_requests(self):
+        """수신 요청 패널 초기화"""
+        self.req_text.configure(state=tk.NORMAL)
+        self.req_text.delete("1.0", tk.END)
+        self.req_text.configure(state=tk.DISABLED)
+        self._req_count = 0
+        self._req_count_var.set("0건")
+
+    # ── 서버 시작 ─────────────────────────────────────────
+    def _start_server(self):
+        if self.process and self.process.poll() is None:
+            self._append_log("서버가 이미 실행 중입니다", "WARNING")
+            return
+
+        self._append_log("=" * 56, "INFO")
+        self._append_log("AI Server 시작 중...", "INFO")
+        self._append_log("=" * 56, "INFO")
+
+        env = os.environ.copy()
+        pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{PROJECT_ROOT}:{pythonpath}"
+        # 로그가 즉시 출력되도록 버퍼링 비활성화
+        env["PYTHONUNBUFFERED"] = "1"
+
+        try:
+            self.process = subprocess.Popen(
+                [PYTHON_EXE, "-m", AI_SERVER_MODULE],
+                cwd=str(PROJECT_ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                preexec_fn=os.setsid,
+            )
+        except Exception as e:
+            self._append_log(f"서버 시작 실패: {e}", "ERROR")
+            return
+
+        self._stop_event.clear()
+        self.log_thread = threading.Thread(target=self._read_output, daemon=True)
+        self.log_thread.start()
+
+        self._set_running_state(True)
+        self.pid_var.set(f"PID: {self.process.pid}")
+        self._append_log(f"서버 프로세스 시작됨 (PID {self.process.pid})", "INFO")
+
+        # 프로세스 종료 감시
+        threading.Thread(target=self._watch_process, daemon=True).start()
+
+    # ── 서버 중지 ─────────────────────────────────────────
+    def _stop_server(self):
+        if not self.process or self.process.poll() is not None:
+            self._append_log("실행 중인 서버가 없습니다", "WARNING")
+            self._set_running_state(False)
+            return
+
+        self._append_log("서버 종료 요청 중...", "WARNING")
+        self._stop_event.set()
+
+        try:
+            # 프로세스 그룹 전체에 SIGTERM
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            try:
+                self.process.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                self._append_log("SIGTERM 타임아웃 → SIGKILL 전송", "ERROR")
+                os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                self.process.wait(timeout=5)
+        except ProcessLookupError:
+            pass
+        except Exception as e:
+            self._append_log(f"종료 중 오류: {e}", "ERROR")
+
+        self._set_running_state(False)
+        self._append_log("서버가 종료되었습니다", "INFO")
+        self.pid_var.set("PID: —")
+
+    # ── 재시작 ────────────────────────────────────────────
+    def _restart_server(self):
+        self._append_log("서버 재시작 중...", "WARNING")
+        self._stop_server()
+        self.root.after(1000, self._start_server)
+
+    # ── 출력 읽기 (별도 스레드) ───────────────────────────
+    def _read_output(self):
+        try:
+            for line in iter(self.process.stdout.readline, b""):
+                if self._stop_event.is_set():
+                    break
+                decoded = line.decode("utf-8", errors="replace")
+                # UI 스레드에서 로그 추가
+                self.root.after(0, self._append_raw, decoded)
+        except Exception:
+            pass
+
+    # ── 프로세스 종료 감시 ────────────────────────────────
+    def _watch_process(self):
+        if self.process:
+            retcode = self.process.wait()
+            if not self._stop_event.is_set():
+                self.root.after(
+                    0,
+                    self._append_log,
+                    f"서버가 예기치 않게 종료됨 (exit code: {retcode})",
+                    "ERROR",
+                )
+                self.root.after(0, self._set_running_state, False)
+                self.root.after(0, self.pid_var.set, "PID: —")
+
+    # ── UI 상태 전환 ──────────────────────────────────────
+    def _set_running_state(self, running: bool):
+        if running:
+            self.status_var.set("● RUNNING")
+            self.status_label.configure(fg=COLORS["green"])
+            self.btn_start.configure(state=tk.DISABLED)
+            self.btn_stop.configure(state=tk.NORMAL)
+            self.btn_restart.configure(state=tk.NORMAL)
+        else:
+            self.status_var.set("● STOPPED")
+            self.status_label.configure(fg=COLORS["red"])
+            self.btn_start.configure(state=tk.NORMAL)
+            self.btn_stop.configure(state=tk.DISABLED)
+            self.btn_restart.configure(state=tk.DISABLED)
+
+    # ── 로그 초기화 ──────────────────────────────────────
+    def _clear_logs(self):
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+        self._append_log("로그 초기화됨", "INFO")
+
+    # ── 종료 처리 ─────────────────────────────────────────
+    def _on_close(self):
+        if self.process and self.process.poll() is None:
+            self._stop_server()
+        self.root.destroy()
+
+
+def main():
+    root = tk.Tk()
+    AIServerGUI(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

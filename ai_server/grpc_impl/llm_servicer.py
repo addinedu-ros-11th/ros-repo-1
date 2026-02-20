@@ -78,6 +78,14 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
             logger.info(
                 f"자연어 해석 완료 [req_id={request.req_id}]: task_type={task_type_str}, confidence={result.get('confidence', 0.0)}"
             )
+            # 메인서버 전송용 상세 로그 (GUI에서 파싱)
+            fields_summary = {k: v for k, v in fields.items() if v}
+            logger.info(
+                f"LLM 응답 전송 [req_id={request.req_id}]: "
+                f"task_type={task_type_str}, "
+                f"confidence={result.get('confidence', 0.0):.2f}, "
+                f"fields={fields_summary}"
+            )
             return response
 
         except Exception as e:
