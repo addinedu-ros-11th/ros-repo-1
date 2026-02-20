@@ -1,4 +1,4 @@
-image: mymap.pgm
+image: ./main_server/domains/map/mymap.pgm
 mode: trinary
 resolution: 0.050
 origin: [-5.697, -4.107, 0]

@@ -6,7 +6,11 @@ class LocationName(Enum):
     OFFICE_1 = "office_1"
     OFFICE_2 = "office_2"
     OFFICE_3 = "office_3"
-    SNACK_BAR = "snack_bar"
+    SNACK_ENTRANCE = "snack_entrance"
+    SNACK_01 = "snack_01"
+    SNACK_02 = "snack_02"
+    SNACK_03 = "snack_03"
+    STUFF_STROAGE = "stuff_storage"
     SMALL_MEETING_ROOM = "small_meeting_room"
     LARGE_MEETING_ROOM = "large_meeting_room"
     CHARGER_1 = "charger_1"
@@ -24,7 +28,11 @@ WAYPOINTS: Dict[LocationName, Pose] = {
     LocationName.OFFICE_1: Pose(x=0.5, y=1.2, theta=0.0),
     LocationName.OFFICE_2: Pose(x=1.5, y=1.2, theta=0.0),
     LocationName.OFFICE_3: Pose(x=2.5, y=1.2, theta=0.0),
-    LocationName.SNACK_BAR: Pose(x=4.0, y=0.5, theta=0.0),
+    LocationName.SNACK_ENTRANCE: Pose(x=4.0, y=0.5, theta=0.0),
+    LocationName.SNACK_01: Pose(x=4.0, y=0.5, theta=0.0),
+    LocationName.SNACK_02: Pose(x=4.0, y=0.5, theta=0.0),
+    LocationName.SNACK_03: Pose(x=4.0, y=0.5, theta=0.0),
+    LocationName.STUFF_STROAGE: Pose(x=4.0, y=0.5, theta=0.0),
     LocationName.SMALL_MEETING_ROOM: Pose(x=3.5, y=3.0, theta=0.0),
     LocationName.LARGE_MEETING_ROOM: Pose(x=1.0, y=3.0, theta=0.0),
     LocationName.CHARGER_1: Pose(x=0.1, y=0.1, theta=0.0),

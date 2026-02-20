@@ -11,10 +11,12 @@ def generate_launch_description() -> LaunchDescription:
     robot_ns = LaunchConfiguration("robot_ns")
     enable_rosbridge = LaunchConfiguration("enable_rosbridge")
     rosbridge_port = LaunchConfiguration("rosbridge_port")
+    robot_id = LaunchConfiguration("robot_id")
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_ns", default_value="robot"),
+            DeclareLaunchArgument("robot_id", default_value="1"),
             DeclareLaunchArgument("enable_rosbridge", default_value="true"),
             DeclareLaunchArgument("rosbridge_port", default_value="9090"),
             DeclareLaunchArgument("mock_mode", default_value="true"),
@@ -34,6 +36,7 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         launch_arguments={
                             "robot_name": robot_ns,
+                            "robot_id": robot_id,
                             "mock_mode": LaunchConfiguration("mock_mode"),
                             "execution_delay_sec": LaunchConfiguration("execution_delay_sec"),
                         }.items(),

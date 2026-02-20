@@ -8,6 +8,7 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_name", default_value="robot"),
+            DeclareLaunchArgument("robot_id", default_value="1"),
             DeclareLaunchArgument("mock_mode", default_value="true"),
             DeclareLaunchArgument("execution_delay_sec", default_value="1.5"),
             Node(
@@ -17,6 +18,7 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[
                     {
                         "robot_name": LaunchConfiguration("robot_name"),
+                        "robot_id": LaunchConfiguration("robot_id"),
                         "mock_mode": LaunchConfiguration("mock_mode"),
                         "execution_delay_sec": LaunchConfiguration("execution_delay_sec"),
                     }

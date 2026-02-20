@@ -8,6 +8,8 @@ from main_server.infrastructure.database.repositories.mysql_location_repository 
 from main_server.services.task_management.task_processors import SnackProcessor, GuideProcessor, ItemProcessor
 from main_server.services.ai_management.ai_processing import AIProcessingService
 from main_server.web.connection_manager import ConnectionManager
+from main_server.domains.map.location import LocationName, Pose
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,30 +33,43 @@ class TaskManager:
             TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
         }
-
+        
     async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
         """AI 해석 결과로 태스크를 생성하고 로봇을 배차합니다."""
         task_type_str = ai_result.get("task_type")
         fields = ai_result.get("fields", {})
-        
-        dest_name = fields.get("location") or fields.get("dest_location", "lobby")
+
+        # 1. 목적지 이름 추출 (기본값: 충전소)
+        dest_name = fields.get("location") or fields.get("dest_location") or LocationName.CHARGER_1.value
+
+        # 2. 리포지토리에서 좌표 정보 조회 (DB 또는 하드코딩된 WAYPOINTS)
         location_data = await self.location_repo.find_by_name(dest_name)
-        target_pose = (location_data["coordinate_x"], location_data["coordinate_y"]) if location_data else (0.0, 0.0)
+
+        if location_data:
+            target_pose = (location_data["coordinate_x"], location_data["coordinate_y"])
+            location_id = location_data.get("location_id")
+        else:
+            # 조회 실패 시 기본 위치(충전소) 좌표 사용
+            logger.warning(f"목적지 '{dest_name}'를 찾을 수 없어 기본 위치로 설정합니다.")
+            target_pose = (0.0, 0.0) # 실제로는 CHARGER_1의 좌표를 명시하는 것이 좋음
+            location_id = None
 
         task_data = {
             "task_type": task_type_str,
             "status": TaskStatus.PENDING,
             "details": fields,
             "target_location_name": dest_name,
-            "destination_id": location_data["location_id"] if location_data else None
+            "destination_id": location_id
         }
 
         task = await self.task_repo.create(task_data)
-        
+
         optimal_robot = await self.fleet_manager.find_optimal_robot(target_pose)
         if optimal_robot:
             await self.assign_and_dispatch(optimal_robot, task)
             return task
+
+        logger.warning(f"태스크 {task.id}를 처리할 적절한 로봇이 없습니다.")
         return None
 
     async def assign_and_dispatch(self, robot, task):
