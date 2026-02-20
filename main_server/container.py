@@ -12,6 +12,9 @@ from main_server.infrastructure.database.repositories.mysql_robot_repository imp
 from main_server.domains.tasks.repository import ITaskRepository
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
+from main_server.infrastructure.database.repositories.mysql_admin_repository import MySQLAdminRepository
+from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
+from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
 
 # --- Communication Instances ---
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
@@ -44,6 +47,9 @@ class Container:
         self.fleet_manager = None
         self.task_manager = None
         self.connection_manager = None
+        self.admin_repository = None
+        self.product_repository = None
+        self.log_repository = None
 
     def services(self):
         """
@@ -59,6 +65,11 @@ class Container:
         self.robot_repo: IRobotRepository = MySQLRobotRepository()
         self.task_repo: ITaskRepository = MySQLTaskRepository()
         self.location_repo = MySQLLocationRepository()
+
+        self.admin_repository = MySQLAdminRepository()
+        self.product_repository = MySQLProductRepository()
+        self.log_repository = MySQLLogRepository()
+        
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
         self.connection_manager = connection_manager # WebSocket 관리자
 
