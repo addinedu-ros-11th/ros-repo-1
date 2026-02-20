@@ -98,3 +98,4 @@ def read_root():
 
 # uvicorn으로 이 앱을 실행하려면 터미널에서 다음 명령어를 사용하세요:
 # uvicorn main_server.app:app --reload
+# 127.0.0.1:8000

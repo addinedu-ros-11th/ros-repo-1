@@ -26,9 +26,19 @@ class IRobotCommunicator(Protocol):
 
     def listen_for_status(self, callback: Any):
         """
-        로봇으로부터 상태 업데이트를 비동기적으로 수신 대기합니다.
+        [Deprecated] 로봇으로부터 통합 상태 업데이트를 비동기적으로 수신 대기합니다.
         
         Args:
+            callback (Callable): 상태 데이터를 수신했을 때 호출할 함수.
+        """
+        ...
+
+    def listen_for_robot_status(self, robot_name: str, callback: Any):
+        """
+        특정 로봇으로부터 상태 업데이트를 비동기적으로 수신 대기합니다. (네임스페이스 지원)
+        
+        Args:
+            robot_name (str): 구독할 로봇의 이름.
             callback (Callable): 상태 데이터를 수신했을 때 호출할 함수.
         """
         ...

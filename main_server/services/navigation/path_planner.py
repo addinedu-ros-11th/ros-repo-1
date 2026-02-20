@@ -1,4 +1,7 @@
 import logging
+import yaml
+import numpy as np
+from PIL import Image
 from typing import List, Optional, Dict
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
@@ -12,11 +15,65 @@ class PathPlannerService:
     """
     pathfinding 라이브러리를 사용하여 로봇의 전역 경로를 계획하는 서비스.
     """
-    def __init__(self):
-        # 1: 이동 가능, 0: 장애물 (pathfinding 라이브러리는 1 이상을 이동 가능으로 판단)
-        # 100x100 그리드 맵 예시
-        self.matrix = [[1] * 100 for _ in range(100)]
-        self.grid = Grid(matrix=self.matrix)
+    def __init__(self, yaml_path: str):
+        self.load_map_config(yaml_path)
+        self.finder = AStarFinder(diagonal_movement=DiagonalMovement.always)
+
+    def load_map_config(self, yaml_path: str):
+            """YAML 파일에서 해상도와 원점 정보를 읽고 PGM 이미지를 로드합니다."""
+            with open(yaml_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            self.resolution = config['resolution']  # 예: 0.05 (5cm)
+            self.origin = config['origin']          # [x, y, yaw]
+            pgm_filename = config['image']
+            
+            # PGM 파일 읽기 (절대경로 처리가 필요할 수 있음)
+            map_image = Image.open(pgm_filename)
+            # 0(검정, 장애물) ~ 255(흰색, 자유공간)
+            raw_data = np.array(map_image)
+
+            # 1. 이진화 (ROS 표준: 255는 통로, 0은 벽, 205는 미탐색)
+            # pathfinding용: 1(이동가능), 0(장애물)
+            binary_map = np.where(raw_data >= 250, 1, 0).astype(np.uint8)
+
+            # 2. 로봇 크기만큼 Inflation 적용
+            # 로봇 12cm / 해상도 5cm = 약 2.4칸 -> 안전하게 2~3칸 팽창
+            self.matrix = self.inflate_map(binary_map, inflation_cells=3)
+            self.grid = Grid(matrix=self.matrix.tolist())
+            
+            logger.info(f"Map Loaded: {self.matrix.shape} grid size with resolution {self.resolution}")
+
+    def inflate_map(self, matrix: np.ndarray, inflation_cells: int) -> np.ndarray:
+        """벽(0) 주변을 지정된 셀 만큼 0으로 채워 로봇 충돌을 방지합니다."""
+        inflated = np.copy(matrix)
+        rows, cols = matrix.shape
+        
+        # 실제로는 OpenCV의 erode/dilate를 쓰면 빠르지만, 
+        # 간단한 구현을 위해 벽인 곳 주변을 0으로 덮어씁니다.
+        wall_indices = np.argwhere(matrix == 0)
+        for r, c in wall_indices:
+            for dr in range(-inflation_cells, inflation_cells + 1):
+                for dc in range(-inflation_cells, inflation_cells + 1):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols:
+                        inflated[nr, nc] = 0
+        return inflated
+    
+    def world_to_grid(self, x_m: float, y_m: float):
+        """실제 거리(m)를 그리드 인덱스로 변환"""
+        grid_x = int((x_m - self.origin[0]) / self.resolution)
+        grid_y = int((y_m - self.origin[1]) / self.resolution)
+        # PGM 이미지는 좌상단이 (0,0)이고 ROS 좌표는 좌하단 기준일 수 있으므로 
+        # 맵 파일 특성에 따라 y축 반전이 필요할 수 있습니다.
+        return grid_x, grid_y
+
+    def grid_to_world(self, gx: int, gy: int):
+        """그리드 인덱스를 실제 거리(m)로 변환"""
+        x_m = (gx * self.resolution) + self.origin[0]
+        y_m = (gy * self.resolution) + self.origin[1]
+        return x_m, y_m
+
 
     async def plan_global_path(
         self, 
@@ -28,16 +85,21 @@ class PathPlannerService:
         pathfinding 라이브러리의 A* 알고리즘을 사용하여 경로를 계산합니다.
         """
         # 시작점과 목적지 설정
-        start_node = self.grid.node(int(robot.pose_x), int(robot.pose_y))
-        end_node = self.grid.node(int(goal_x), int(goal_y))
+        start_goal_x, start_goal_y = self.world_to_grid(robot.pose_x, robot.pose_y)
+        end_goal_x, end_goal_y = self.world_to_grid(goal_x, goal_y)
 
-        # Finder 초기화 (대각선 이동 허용)
-        finder = AStarFinder(diagonal_movement=DiagonalMovement.always)
+        # 그리드 범위 체크
+        if not (0 <= start_goal_x < self.grid.width and 0 <= start_goal_y < self.grid.height):
+            logger.error("시작점이 맵 밖에 있습니다.")
+            return None
+        
+        start_node = self.grid.node(start_goal_x, start_goal_y)
+        end_node = self.grid.node(end_goal_x, end_goal_y)
         
         logger.info(f"[PathPlanner] A* 계산 시작: ({start_node.x}, {start_node.y}) -> ({end_node.x}, {end_node.y})")
 
         # 경로 계산
-        path, runs = finder.find_path(start_node, end_node, self.grid)
+        path, runs = self.finder.find_path(start_node, end_node, self.grid)
         
         # 그리드 상태 초기화 (다음 계산을 위해 필요)
         self.grid.cleanup()
@@ -48,14 +110,10 @@ class PathPlannerService:
 
         logger.info(f"경로 계산 완료 (단계: {runs}, 길이: {len(path)})")
 
-        # 결과 반환 (딕셔너리 리스트 형태)
-        return [{"x": float(node.x), "y": float(node.y)} for node in path]
+        result_path = []
+        for node in path:
+            world_x, world_y = self.grid_to_world(node.x, node.y)
+            result_path.append({"x": world_x, "y": world_y})
 
-    def update_map(self, new_matrix: List[List[int]]):
-        """
-        로봇으로부터 받은 점유 격자 지도(Occupancy Grid) 정보를 업데이트합니다.
-        ROS 2의 0~100 값을 라이브러리용 0(벽), 1(길)로 변환해야 합니다.
-        """
-        # 예: ROS 2에서 100(장애물)은 0으로, 0(자유공간)은 1로 변환
-        self.matrix = [[(1 if val < 50 else 0) for val in row] for row in new_matrix]
-        self.grid = Grid(matrix=self.matrix)
+        # 결과 반환 (딕셔너리 리스트 형태)
+        return result_path

@@ -4,8 +4,9 @@ from typing import List, Optional, Dict, Any
 
 from main_server.domains.robots.schemas import Robot, RobotStatus
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
-from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
+from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridgeCommunicator
 from main_server.web.connection_manager import ConnectionManager
+from main_server.services.navigation.path_planner import PathPlannerService
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,12 @@ class FleetManager:
     """
     def __init__(self,
                  robot_repo: MySQLRobotRepository,
-                 robot_communicator: IRobotCommunicator,
+                 robot_communicator: ROSBridgeCommunicator,
                  connection_manager: ConnectionManager):
         self.robot_repo = robot_repo
         self.robot_communicator = robot_communicator
         self.connection_manager = connection_manager
+        self.path_planner = PathPlannerService('./main_server/domains/map/mymap.yaml')
         logger.info("FleetManager 초기화 완료.")
 
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
@@ -29,11 +31,29 @@ class FleetManager:
         available_robots = [r for r in idle_robots if r.battery_level > 20]
         
         if not available_robots: return None
-        
-        best_robot = min(
-            available_robots, 
-            key=lambda r: math.sqrt((r.pose_x - target_pose[0])**2 + (r.pose_y - target_pose[1])**2)
-        )
+        robot_distances = []
+
+        for robot in available_robots:
+            # 1. 각 로봇에서 목적지까지의 실제 Global Path를 계산
+            path = await self.path_planner.plan_global_path(
+                robot, target_pose[0], target_pose[1]
+            )
+            
+            if path:
+                # 2. 경로가 존재하면 경로의 노드 개수(또는 실제 거리 합산)를 저장
+                # path는 [{'x':...}, {'y':...}] 형태의 리스트이므로 len(path)가 곧 비용입니다.
+                robot_distances.append((robot, len(path)))
+            else:
+                # 경로가 없는 로봇(도달 불가능)은 제외
+                continue
+
+        if not robot_distances:
+            logger.warning("목적지에 도달 가능한 로봇이 없습니다.")
+            return None
+
+        # 3. 경로 길이가 가장 짧은 로봇 반환
+        best_robot = min(robot_distances, key=lambda x: x[1])[0]
+
         return best_robot
 
     async def update_robot_task_status(self, robot_id: int, task_id: Optional[int], status: RobotStatus) -> Optional[Robot]:
