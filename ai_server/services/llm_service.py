@@ -31,36 +31,16 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 작업 유형 (task_type):
 1. SNACK_DELIVERY: 간식 배달 (예: "커피 갖다줘", "간식 가져와줘")
 2. ITEM_DELIVERY: 물품 배달 (예: "서류 전달해줘", "노트북 갖다줘")
-3. PICKUP_ITEM: 물품 수거 (예: "박스 가져와", "물건 수거해줘")
-4. GUIDE_GUEST: 방문객 안내 (예: "손님 안내해줘", "방문자 가이드")
-5. NAVIGATE_TO_LOCATION: 위치로 이동 (예: "회의실로 가줘", "로비로 이동")
-6. FOLLOW_PERSON: 사람 따라가기 (예: "나를 따라와", "김철수씨 따라가")
-7. CALL_ROBOT: 로봇 호출 (예: "로봇 불러줘", "여기로 와")
-8. RETURN_TO_BASE: 복귀 명령 (예: "돌아가", "충전하러 가")
-9. CANCEL_TASK: 작업 취소 (예: "취소해줘", "그만해")
-10. PAUSE_TASK: 일시정지 (예: "잠깐 멈춰", "대기해")
-11. RESUME_TASK: 재개 (예: "다시 시작", "계속해")
-12. CONTROL_LIGHT: 조명 제어 (예: "불 켜줘", "조명 꺼줘")
-13. CONTROL_TEMPERATURE: 온도 제어 (예: "온도 올려줘", "따뜻하게 해줘")
-14. CONTROL_AC: 에어컨 제어 (예: "에어컨 켜줘", "냉방 시작")
-15. CONTROL_DOOR: 문 제어 (예: "문 잠가줘", "문 열어줘")
-16. QUERY_ROBOT_STATUS: 로봇 상태 조회 (예: "로봇 상태는?", "배터리 얼마나 남았어?")
-17. QUERY_LOCATION: 위치 조회 (예: "회의실이 어디야?", "로비 어디에 있어?")
-18. QUERY_AVAILABILITY: 가용성 조회 (예: "회의실 비어있어?", "자리 있어?")
-19. FIND_PERSON: 사람 찾기 (예: "김철수 어디있어?", "박영희씨 찾아줘")
-20. FIND_ITEM: 물건 찾기 (예: "내 노트북 어디있어?", "서류 찾아줘")
-21. RESERVE_MEETING_ROOM: 회의실 예약 (예: "회의실 예약해줘", "2시에 회의실 잡아줘")
-22. CANCEL_RESERVATION: 예약 취소 (예: "회의실 예약 취소", "예약 해제해줘")
-23. CHECK_ROOM_STATUS: 회의실 상태 확인 (예: "회의실 상태 보여줘", "어느 방 사용중이야?")
-24. PATROL_AREA: 순찰 (예: "2층 순찰해줘", "사무실 한 바퀴 돌아")
-25. MONITOR_ENVIRONMENT: 환경 모니터링 (예: "환경 체크해줘", "온도 습도 확인해")
-26. GENERAL_QUESTION: 일반 질문 (예: "오늘 날씨 어때?", "회사 규정 알려줘")
-27. GREETING: 인사 (예: "안녕", "반가워")
+3. CONTROL_LIGHT: 조명 제어 (예: "불 켜줘", "조명 꺼줘")
+4. CONTROL_TEMPERATURE: 온도 제어 (예: "온도 올려줘", "따뜻하게 해줘")
+5. CONTROL_AC: 에어컨 제어 (예: "에어컨 켜줘", "냉방 시작")
+6. CONTROL_DOOR: 문 제어 (예: "문 잠가줘", "문 열어줘")
+7. GENERAL_QUESTION: 일반 질문 (예: "오늘 날씨 어때?", "회사 규정 알려줘")
+8. GREETING: 인사 (예: "안녕", "반가워")
 
 추출할 필드 (없으면 null):
 - location: 위치/장소
 - item: 물품명
-- person_name: 사람 이름
 - source_location: 출발지
 - dest_location: 목적지
 - quantity: 수량 (숫자)
@@ -68,12 +48,6 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 - command: IoT 명령 (TURN_ON/TURN_OFF/SET_VALUE/LOCK/UNLOCK)
 - target_value: 목표 값 (온도 등, 숫자)
 - room_id: 방 ID
-- meeting_room_id: 회의실 ID
-- start_time: 시작 시간
-- end_time: 종료 시간
-- attendee_count: 참석자 수 (숫자)
-- area: 구역
-- waypoints: 경유지 목록 (배열)
 - keywords: 키워드 목록 (배열)
 - message: 일반 메시지
 
@@ -88,10 +62,9 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 
 중요:
 - 아래 허용된 필드만 사용하세요 (다른 키 사용 금지)
-    location, item, person_name, source_location, dest_location,
+    location, item, source_location, dest_location,
     quantity, device_type, command, target_value, room_id,
-    meeting_room_id, start_time, end_time, attendee_count,
-    area, waypoints, keywords, message
+    keywords, message
 - 해당하지 않는 필드는 포함하지 마세요
 - JSON 외의 다른 텍스트는 절대 포함하지 마세요
 - 배열 필드는 ["item1", "item2"] 형식으로"""
@@ -245,11 +218,7 @@ class LLMService:
         if not task_type:
             return "UNKNOWN"
         upper = str(task_type).strip().upper()
-        alias_map = {
-            "QUERY_ROOM_STATUS": "CHECK_ROOM_STATUS",
-            "ROOM_STATUS": "CHECK_ROOM_STATUS",
-            "MEETING_ROOM_STATUS": "CHECK_ROOM_STATUS",
-        }
+        alias_map = {}
         return alias_map.get(upper, upper)
 
     def _normalize_fields(self, fields: Dict[str, Any]) -> Dict[str, Any]:
@@ -265,13 +234,11 @@ class LLMService:
             "dest": "dest_location",
             "from_location": "source_location",
             "pickup_location": "source_location",
-            "query": "query_type",
         }
 
         allowed_fields = {
             "location",
             "item",
-            "person_name",
             "source_location",
             "dest_location",
             "quantity",
@@ -279,12 +246,6 @@ class LLMService:
             "command",
             "target_value",
             "room_id",
-            "meeting_room_id",
-            "start_time",
-            "end_time",
-            "attendee_count",
-            "area",
-            "waypoints",
             "keywords",
             "message",
         }
