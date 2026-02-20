@@ -294,16 +294,38 @@
         appendMessage('ai', text);
     }
 
-    function sendMessage() {
+    async function sendMessage() {
         const input = document.getElementById('user-input');
         const text = input.value.trim();
         if (!text) return;
+        
         appendMessage('user', text);
-        
-        // 여기서 실제 LLM 서버와 통신하게 됩니다.
-        console.log("LLM 서버로 전송:", text);
-        
         input.value = '';
+
+        try {
+            const response = await fetch('/api/v1/employee/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                let aiMsg = result.message;
+                if (result.ai_fields) {
+                    aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
+                }
+                aiSpeak(aiMsg);
+            } else if (result.status === 'retry') {
+                aiSpeak(`죄송합니다. ${result.message}\n(분석 결과: ${result.ai_result.task_type})`);
+            } else {
+                aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
+            }
+        } catch (e) {
+            console.error("명령 전송 실패:", e);
+            aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
+        }
     }
 
     function appendMessage(sender, text) {

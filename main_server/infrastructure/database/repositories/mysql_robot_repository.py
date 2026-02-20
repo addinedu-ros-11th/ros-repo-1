@@ -9,7 +9,7 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
     MySQL 데이터베이스에서 로봇 데이터를 관리하는 구체적인 리포지토리 클래스입니다.
     """
     def __init__(self):
-        super().__init__(table_name="robots", model=Robot)
+        super().__init__(table_name="Robots", model=Robot)
 
     async def get_by_id(self, robot_id: int) -> Optional[Robot]:
         return await super().get_by_id(robot_id)
