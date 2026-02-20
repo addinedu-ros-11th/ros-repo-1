@@ -10,7 +10,7 @@
     <div class="sidebar">
         <h2>관리자 메뉴</h2>
         <ul class="sidebar-menu">
-            <li id="menu-robot-mgmt" class="active" onclick="showTab('robot-mgmt')">🤖 로봇 관리</li>
+            <li id="menu-robot-mgmt"  onclick="showTab('robot-mgmt')">🤖 로봇 관리</li>
             <li id="menu-office-mgmt" onclick="showTab('office-mgmt')">🏢 사무실 관리</li>
             <li id="menu-visitor-res" onclick="showTab('visitor-res')">📅 방문객 예약 현황</li>
             <li id="menu-sys-logs" onclick="showTab('sys-logs')">📜 시스템 동작 로그</li>
@@ -96,7 +96,10 @@
             document.getElementById(tabId).style.display = 'block';
             document.getElementById('menu-' + tabId).classList.add('active');
             
-            // 탭이 열릴 때 백엔드가 이미 완성해둔 데이터를 호출만 함
+            // [추가] 현재 선택한 탭 ID를 브라우저에 저장
+            localStorage.setItem('activeTab', tabId);
+            
+            // 데이터 호출 로직
             if(tabId === 'office-mgmt') fetchOfficeStatus();
             if(tabId === 'visitor-res') fetchVisitors();
             if(tabId === 'sys-logs') fetchLogs();
@@ -172,6 +175,28 @@
                 </tr>
             `).join('');
         }
+
+        /* 로그아웃 시 탭 저장 정보 삭제 */
+        function logout() {
+            if (confirm("로그아웃 하시겠습니까?")) {
+                localStorage.removeItem('activeTab'); // 저장된 탭 정보 삭제
+                sessionStorage.clear();
+                window.location.href = '/'; 
+            }
+        }
+
+        /* 페이지 로드 시 자동으로 로봇 관리 탭 실행 */
+        window.onload = function() {
+            // 1. 브라우저 창고에서 이전에 보던 탭이 있는지 확인
+            const lastTab = localStorage.getItem('activeTab');
+            
+            // 2. 보던 탭이 있으면 그 탭을 열고, 없으면 기본값인 'robot-mgmt'를 엶
+            if (lastTab && document.getElementById(lastTab)) {
+                showTab(lastTab);
+            } else {
+                showTab('robot-mgmt');
+            }
+        };
     </script>
 </body>
 </html>
