@@ -23,7 +23,18 @@ class FleetManager:
         self.robot_communicator = robot_communicator
         self.connection_manager = connection_manager
         self.path_planner = PathPlannerService('./main_server/domains/map/mymap.yaml')
+        self.forbidden_zones: List[Dict] = []
         logger.info("FleetManager 초기화 완료.")
+
+    def update_forbidden_zones(self, zones: List[Dict]):
+        """금지 구역 목록을 저장하고 경로 계획기에 반영합니다."""
+        self.forbidden_zones = zones
+        self.path_planner.update_forbidden_zones(zones)
+        logger.info(f"FleetManager: 금지 구역 {len(zones)}개 업데이트 완료.")
+
+    def get_forbidden_zones(self) -> List[Dict]:
+        """현재 설정된 금지 구역 목록을 반환합니다."""
+        return self.forbidden_zones
 
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
         """목적지에 가장 적합한 로봇을 검색합니다."""

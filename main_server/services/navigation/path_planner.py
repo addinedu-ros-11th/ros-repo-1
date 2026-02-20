@@ -39,10 +39,43 @@ class PathPlannerService:
 
             # 2. 로봇 크기만큼 Inflation 적용
             # 로봇 12cm / 해상도 5cm = 약 2.4칸 -> 안전하게 2~3칸 팽창
-            self.matrix = self.inflate_map(binary_map, inflation_cells=3)
+            self.static_matrix = self.inflate_map(binary_map, inflation_cells=3)
+            # 초기 그리드는 정적 장애물만 포함
+            self.matrix = np.copy(self.static_matrix)
             self.grid = Grid(matrix=self.matrix.tolist())
+            self.forbidden_zones: List[Dict] = []
             
             logger.info(f"Map Loaded: {self.matrix.shape} grid size with resolution {self.resolution}")
+
+    def update_forbidden_zones(self, zones: List[Dict]):
+        """관리자가 설정한 금지 구역을 지도 데이터에 반영합니다."""
+        self.forbidden_zones = zones
+        # 정적 맵에서 다시 시작
+        new_matrix = np.copy(self.static_matrix)
+        rows, cols = new_matrix.shape
+
+        for zone in zones:
+            # UI에서 전달된 left, top, width, height (픽셀 단위)
+            # 맵 이미지 좌표계와 일치한다고 가정
+            z_left = int(zone.get('left', 0))
+            z_top = int(zone.get('top', 0))
+            z_width = int(zone.get('width', 0))
+            z_height = int(zone.get('height', 0))
+
+            # 그리드 인덱스 범위 계산 (행: top~top+height, 열: left~left+width)
+            r_start, r_end = max(0, z_top), min(rows, z_top + z_height)
+            c_start, c_end = max(0, z_left), min(cols, z_left + z_width)
+
+            if r_start < r_end and c_start < c_end:
+                new_matrix[r_start:r_end, c_start:c_end] = 0
+                logger.info(f"금지 구역 적용: ({c_start}, {r_start}) ~ ({c_end}, {r_end})")
+
+        self.matrix = new_matrix
+        # pathfinding 라이브러리의 Grid는 매번 새로 생성하거나 
+        # 기존 노드의 walkable 상태를 업데이트해야 함. 
+        # 여기서는 단순함을 위해 매번 새로 생성하거나 필드만 업데이트.
+        self.grid = Grid(matrix=self.matrix.tolist())
+        logger.info(f"금지 구역 {len(zones)}개 반영 완료.")
 
     def inflate_map(self, matrix: np.ndarray, inflation_cells: int) -> np.ndarray:
         """벽(0) 주변을 지정된 셀 만큼 0으로 채워 로봇 충돌을 방지합니다."""
