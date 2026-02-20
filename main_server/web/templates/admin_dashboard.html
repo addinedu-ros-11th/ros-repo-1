@@ -88,34 +88,90 @@
     </div>
 
     <script>
-        /* UI 상태 제어 (최소화) */
+        /* 탭 전환 및 데이터 로드 트리거 */
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.sidebar-menu li').forEach(l => l.classList.remove('active'));
+            
             document.getElementById(tabId).style.display = 'block';
             document.getElementById('menu-' + tabId).classList.add('active');
             
-            // 탭 변경 시 해당 데이터 1회 로드
-            if(tabId === 'visitor-res') fetchVisitors();
+            // 탭이 열릴 때 백엔드가 이미 완성해둔 데이터를 호출만 함
             if(tabId === 'office-mgmt') fetchOfficeStatus();
+            if(tabId === 'visitor-res') fetchVisitors();
+            if(tabId === 'sys-logs') fetchLogs();
         }
 
-        /* 백엔드 API 호출 통로 (간판 역할) */
-        async function fetchRealtimeRobots() {
-            const res = await fetch('/api/v1/admin/robots/status');
+        /* 1. 사무실 관리 (회의실 & 간식) */
+        async function fetchOfficeStatus() {
+            const res = await fetch('/api/v1/admin/office-status');
             const data = await res.json();
-            // 백엔드가 준 좌표 데이터로 지도만 업데이트
-            renderMap(data); 
+            
+            // 백엔드가 준 processed_rooms 그대로 출력
+            document.getElementById('meeting-room-tbody').innerHTML = data.rooms.map(room => `
+                <tr>
+                    <td>${room.name}</td>
+                    <td><span class="status-badge ${room.status === '사용 중' ? 'busy' : 'free'}">${room.status}</span></td>
+                    <td>${room.user}</td>
+                    <td>${room.time}</td>
+                </tr>
+            `).join('');
+
+            // 백엔드가 준 snacks 그대로 출력
+            document.getElementById('snack-status-tbody').innerHTML = data.snacks.map(snack => `
+                <tr>
+                    <td>${snack.name}</td>
+                    <td>${snack.quantity}</td>
+                    <td><b style="color: ${snack.status === '부족' ? '#e74c3c' : '#2ecc71'}">${snack.status}</b></td>
+                </tr>
+            `).join('');
         }
 
+        /* 2. 방문객 예약 현황 */
         async function fetchVisitors() {
             const res = await fetch('/api/v1/admin/visitors');
             const data = await res.json();
-            // 백엔드에서 받은 리스트를 테이블에 주입
+
+            // 백엔드가 분류해서 준 pending 리스트
+            document.getElementById('pending-visitor-list').innerHTML = data.pending.map(v => `
+                <tr>
+                    <td>${v.visitor}</td>
+                    <td>${v.purpose}</td>
+                    <td>${v.date}</td>
+                    <td>${v.host}</td>
+                    <td>
+                        <button class="btn-approve" onclick="updateStatus(${v.id}, 'VERIFIED')">승인</button>
+                        <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">거절</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // 백엔드가 분류해서 준 confirmed 리스트
+            document.getElementById('visitor-list').innerHTML = data.confirmed.map(v => `
+                <tr>
+                    <td>${v.date}</td>
+                    <td>${v.time}</td>
+                    <td>${v.host}</td>
+                    <td>${v.visitor}</td>
+                </tr>
+            `).join('');
         }
 
-        // 초기 실행
-        setInterval(fetchRealtimeRobots, 1000); // 로봇 관제만 자동 업데이트
+        /* 3. 시스템 로그 */
+        async function fetchLogs() {
+            const res = await fetch('/api/v1/admin/logs');
+            const logs = await res.json();
+            
+            // 백엔드가 포맷팅까지 끝낸 logs 그대로 출력
+            document.getElementById('log-list').innerHTML = logs.map(log => `
+                <tr>
+                    <td>${log.date}</td>
+                    <td>${log.time}</td>
+                    <td>${log.robot_name}</td>
+                    <td><span class="log-badge ${log.status.toLowerCase()}">${log.status}</span></td>
+                </tr>
+            `).join('');
+        }
     </script>
 </body>
 </html>

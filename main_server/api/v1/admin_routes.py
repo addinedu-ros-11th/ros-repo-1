@@ -17,45 +17,51 @@ router = APIRouter(
 )
 
 # ---------------------------------------------------------
-# 1. 사무실 관리 (회의실 & 간식 현황)
+# 1. 사무실 관리 (UI가 바로 렌더링할 수 있게 가공)
 # ---------------------------------------------------------
 @router.get("/office-status")
 async def get_office_status():
-    # 수정: location_repo가 아닌 admin_repo를 사용
-    rooms = await container.admin_repository.get_meeting_room_status()
-    snacks = await container.product_repository.get_snack_inventory()
+    """프론트엔드 테이블에 바로 꽂을 수 있는 형태로 데이터를 정제해서 반환"""
+    # DB에서 원본 데이터 가져오기
+    raw_rooms = await container.admin_repository.get_meeting_room_status()
+    raw_snacks = await container.product_repository.get_snack_inventory()
     
+    # 백엔드에서 미리 UI용으로 가공 (데이터 정제 로직)
+    processed_rooms = []
+    for r in raw_rooms:
+        processed_rooms.append({
+            "name": r['name'],
+            "status": r['status'],  # '사용 중' or '비어 있음'
+            "user": r.get('user', '-'),
+            "time": r.get('time', '-')
+        })
+
     return {
-        "rooms": rooms,
-        "snacks": snacks
+        "rooms": processed_rooms,
+        "snacks": raw_snacks  # SnackRepo에서 이미 가공됨
     }
 
 # ---------------------------------------------------------
-# 2. 방문객 예약 관리 (대기 & 확정 목록)
+# 2. 방문객 예약 관리 (PENDING과 나머지를 백엔드에서 분리)
 # ---------------------------------------------------------
 @router.get("/visitors")
 async def get_visitor_management():
-    # 수정: visitor 전용 대신 통합 관리하는 admin_repo 사용
+    """프론트에서 필터링할 필요 없게 아예 나눠서 전달"""
     all_visitors = await container.admin_repository.get_visitor_dashboard_data()
     
-    pending = [v for v in all_visitors if v['status'] == 'PENDING']
-    confirmed = [v for v in all_visitors if v['status'] != 'PENDING']
-    
+    # 백엔드에서 비즈니스 로직 처리 (상태별 분류)
     return {
-        "pending": pending,
-        "confirmed": confirmed
+        "pending": [v for v in all_visitors if v['status'] == 'PENDING'],
+        "confirmed": [v for v in all_visitors if v['status'] != 'PENDING']
     }
 
 # ---------------------------------------------------------
-# 3. 시스템 동작 로그 (SR-019)
+# 3. 시스템 동작 로그 (가독성 좋게 포맷팅)
 # ---------------------------------------------------------
 @router.get("/logs")
 async def get_system_logs():
-    """
-    System_Logs 및 Robots 테이블을 연동하여 최신 로그를 반환합니다. (SR-018 관련)
-    """
-    # MySQLLogRepository(신규)에서 최신 로그 100개 조회
-    logs = await container.log_repository.get_recent_system_logs(limit=100)
+    """로그 데이터를 시간순으로 정렬하고 UI 규격에 맞춰 반환"""
+    logs = await container.log_repository.get_recent_system_logs(limit=50)
     return logs
 
 # ---------------------------------------------------------
