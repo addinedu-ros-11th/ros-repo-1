@@ -5,7 +5,7 @@
 - This workspace is intended for ROS 2 Jazzy only.
 - `office_robot_bringup` launch brings up the executor (and optional rosbridge).
 - Namespaced topics exist per robot:
-  - `/<robot_ns>/task` (std_msgs/String)
+  - `/<robot_ns>/commands` (std_msgs/String)
   - `/<robot_ns>/status` (std_msgs/String)
   - `/<robot_ns>/event` (std_msgs/String)
 
@@ -15,12 +15,12 @@
 - All executor topics live under the namespace via `PushRosNamespace`.
 
 ## Topic Contracts (v0, mock)
-- `task` (String JSON):
-  - Example: `{"task_id": 1, "task_type": "item_delivery", "destination": {"x": 1.2, "y": -0.4}}`
+- `commands` (String JSON):
+  - Example: `{"robot_name":"robot","type":"ACTION_SEQUENCE","payload":[{"action":"GOTO","params":{"x":1.2,"y":-0.4},"on_success":"ARRIVED_AT_DESTINATION"}]}`
 - `status` (String JSON):
-  - Example: `{"robot": "robot_a", "state": "in_progress", "task_id": 1}`
+  - Example: `{"robot_id":1,"robot_name":"robot","status":"MOVING","location":[1.2,-0.4],"battery":100.0,"event":"ARRIVED_AT_DESTINATION"}`
 - `event` (String JSON):
-  - Example: `{"robot": "robot_a", "event": "task_completed", "task_id": 1}`
+  - Example: `{"robot_id":1,"robot_name":"robot","event":"ARRIVED_AT_DESTINATION","task_id":1}`
 
 ## How to Run
 ```bash
@@ -32,5 +32,5 @@ ros2 launch office_robot_bringup bringup.launch.py robot_ns:=robot_a
 
 ## Quick Test (publish a task)
 ```bash
-ros2 topic pub /robot_a/task std_msgs/String "{data: '{\"task_id\": 1, \"task_type\": \"snack_delivery\", \"destination\": {\"x\": 2.0, \"y\": 3.0}}'}"
+ros2 topic pub /robot/commands std_msgs/String "{data: '{\"robot_name\":\"robot\",\"type\":\"ACTION_SEQUENCE\",\"payload\":[{\"action\":\"GOTO\",\"params\":{\"x\":2.0,\"y\":3.0},\"on_success\":\"ARRIVED_AT_DESTINATION\"}] }'}"
 ```

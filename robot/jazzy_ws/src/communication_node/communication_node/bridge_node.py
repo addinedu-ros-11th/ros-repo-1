@@ -1,7 +1,6 @@
 import socket
 import struct
 import threading
-import time
 from collections import deque
 from typing import Deque, Optional, Tuple
 
@@ -119,20 +118,21 @@ class CommunicationBridgeNode(Node):
 
     def _send_udp_frame(self, data: bytes) -> None:
         self._frame_id = (self._frame_id + 1) & 0xFFFFFFFF
-        timestamp = time.time_ns() & 0xFFFFFFFFFFFFFFFF
         payload_max = max(1, min(self.udp_payload_max, 1400))
         total_chunks = (len(data) + payload_max - 1) // payload_max
         if total_chunks == 0:
             return
-        if total_chunks > 65535:
-            self.get_logger().warn("Frame too large to chunk within u16 limit.")
+        if total_chunks > 0xFFFFFFFF:
+            self.get_logger().warn("Frame too large to chunk within u32 limit.")
             return
 
         for idx in range(total_chunks):
             start = idx * payload_max
             end = min(start + payload_max, len(data))
             chunk = data[start:end]
-            header = struct.pack(">IQHH", self._frame_id, timestamp, idx, total_chunks)
+            # ai_server/services/video_receiver.py expects legacy header:
+            # [frame_id:u32][packet_id:u32][total_packets:u32]
+            header = struct.pack("<III", self._frame_id, idx, total_chunks)
             packet = header + chunk
             try:
                 self._udp_sock.sendto(packet, self._udp_target)

@@ -13,7 +13,7 @@ templates = Jinja2Templates(directory="main_server/web/templates")
 user_repo = UserRepository()
 
 # 1. 로그인 페이지 렌더링
-@router.get("/web", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
@@ -26,9 +26,9 @@ async def login(request: Request, username: str = Form(...), password: str = For
     # 검증 (단순 비교 버전)
     if user and user.password_hash == password:
         if user.role == "ADMIN":
-            return RedirectResponse(url="/web/admin", status_code=303)
+            return RedirectResponse(url="/admin", status_code=303)
         elif user.role == "STAFF":
-            return RedirectResponse(url="/web/employee", status_code=303)
+            return RedirectResponse(url="/employee", status_code=303)
 
     # 실패 시 에러 메시지와 함께 다시 로그인창으로
     return templates.TemplateResponse("login.html", {
@@ -37,11 +37,11 @@ async def login(request: Request, username: str = Form(...), password: str = For
     })
 
 # 3. 관리자 대시보드
-@router.get("/web/admin", response_class=HTMLResponse)
+@router.get("/admin", response_class=HTMLResponse)
 async def serve_admin_dashboard(request: Request):
     return templates.TemplateResponse("admin_dashboard.html", {"request": request})
 
 # 4. 직원 전용 앱
-@router.get("/web/employee", response_class=HTMLResponse)
+@router.get("/employee", response_class=HTMLResponse)
 async def serve_employee_app(request: Request):
     return templates.TemplateResponse("employee_app.html", {"request": request})
