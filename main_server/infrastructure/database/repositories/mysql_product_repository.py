@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from .base_repository import BaseRepository
 
@@ -21,3 +21,11 @@ class MySQLProductRepository(BaseRepository):
             WHERE type = 'SNACK'
         """
         return await self._execute(query, fetch="all")
+        
+    async def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """ScenarioDataHandler 호환용: 이름으로 제품 조회"""
+        query = f"SELECT * FROM {self.table_name} WHERE name = %s"
+        result = await self._execute(query, (name,), fetch="one")
+        if result:
+            return result
+        return None

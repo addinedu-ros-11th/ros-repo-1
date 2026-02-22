@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 # 담당자님의 요청대로 api/v1에 만든 로직을 호출하거나, 직접 리포지토리를 사용합니다.
-from ..infrastructure.database.repositories.mysql_user_repository import UserRepository
+from ..infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
 
 router = APIRouter(
     tags=["Web UI"],
@@ -10,7 +10,7 @@ router = APIRouter(
 )
 
 templates = Jinja2Templates(directory="main_server/web/templates")
-user_repo = UserRepository()
+user_repo = MySQLUserRepository()
 
 # 1. 로그인 페이지 렌더링
 @router.get("/", response_class=HTMLResponse)

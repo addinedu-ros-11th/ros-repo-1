@@ -1,17 +1,28 @@
 import logging
 from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
 from main_server.infrastructure.database.connection import Database
 from main_server.domains.map.location import LocationName, Pose, WAYPOINTS
+from .base_repository import BaseRepository
 import aiomysql
 
 logger = logging.getLogger(__name__)
 
-class MySQLLocationRepository:
+class LocationModel(BaseModel):
+    location_id: int
+    name: str
+    type: Optional[str] = None
+    coordinate_x: float
+    coordinate_y: float
+    theta: float
+    is_restricted: int = 0
+
+class MySQLLocationRepository(BaseRepository):
     """
     MySQL 데이터베이스를 사용하여 POI(Point of Interest) 위치 정보를 관리하는 리포지토리.
     """
     def __init__(self):
-        pass
+        super().__init__(table_name="Locations", model=LocationModel)
 
     async def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """
@@ -51,12 +62,15 @@ class MySQLLocationRepository:
 
         return None
 
+    async def find_by_id(self, location_id: int) -> Optional[Dict[str, Any]]:
+        """ScenarioDataHandler 호환용: ID로 위치 조회"""
+        model = await super().get_by_id(location_id)
+        if model:
+            return model.model_dump() # dict 형태로 반환
+        return None
+
     async def get_all_locations(self) -> List[Dict[str, Any]]:
         """
         모든 등록된 장소 정보를 가져옵니다.
         """
-        async with Database.get_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                sql = "SELECT * FROM Locations"
-                await cur.execute(sql)
-                return await cur.fetchall()
+        return await super().get_all()

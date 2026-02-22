@@ -24,25 +24,23 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x61i_llm.proto\x12\x06\x61i_llm\",\n\tNLRequest\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\"\x9e\x01\n\x12StructuredResponse\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12#\n\ttask_type\x18\x02 \x01(\x0e\x32\x10.ai_llm.TaskType\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x12-\n\nstruct_msg\x18\x04 \x01(\x0b\x32\x19.ai_llm.StructuredMessage\x12\x10\n\x08raw_text\x18\x05 \x01(\t\"\xd4\x03\n\x11StructuredMessage\x12\x15\n\x08location\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x11\n\x04item\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x1c\n\x0fsource_location\x18\x05 \x01(\tH\x02\x88\x01\x01\x12\x1a\n\rdest_location\x18\x06 \x01(\tH\x03\x88\x01\x01\x12\x15\n\x08quantity\x18\x07 \x01(\x05H\x04\x88\x01\x01\x12/\n\x0b\x64\x65vice_type\x18\x08 \x01(\x0e\x32\x15.ai_llm.IoTDeviceTypeH\x05\x88\x01\x01\x12,\n\x07\x63ommand\x18\t \x01(\x0e\x32\x16.ai_llm.IoTCommandTypeH\x06\x88\x01\x01\x12\x19\n\x0ctarget_value\x18\n \x01(\x02H\x07\x88\x01\x01\x12\x14\n\x07room_id\x18\x0b \x01(\tH\x08\x88\x01\x01\x12\x14\n\x07message\x18\x13 \x01(\tH\t\x88\x01\x01\x12\x10\n\x08keywords\x18\x14 \x03(\tB\x0b\n\t_locationB\x07\n\x05_itemB\x12\n\x10_source_locationB\x10\n\x0e_dest_locationB\x0b\n\t_quantityB\x0e\n\x0c_device_typeB\n\n\x08_commandB\x0f\n\r_target_valueB\n\n\x08_room_idB\n\n\x08_message*\xb0\x01\n\x08TaskType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x12\n\x0eSNACK_DELIVERY\x10\x01\x12\x11\n\rITEM_DELIVERY\x10\x02\x12\x11\n\rCONTROL_LIGHT\x10\x1e\x12\x17\n\x13\x43ONTROL_TEMPERATURE\x10\x1f\x12\x0e\n\nCONTROL_AC\x10 \x12\x10\n\x0c\x43ONTROL_DOOR\x10!\x12\x14\n\x10GENERAL_QUESTION\x10\x46\x12\x0c\n\x08GREETING\x10G*_\n\rIoTDeviceType\x12\x0f\n\x0bIOT_UNKNOWN\x10\x00\x12\t\n\x05LIGHT\x10\x01\x12\x0e\n\nTHERMOSTAT\x10\x02\x12\x13\n\x0f\x41IR_CONDITIONER\x10\x03\x12\r\n\tDOOR_LOCK\x10\x04*e\n\x0eIoTCommandType\x12\x13\n\x0fIOT_CMD_UNKNOWN\x10\x00\x12\x0b\n\x07TURN_ON\x10\x01\x12\x0c\n\x08TURN_OFF\x10\x02\x12\r\n\tSET_VALUE\x10\x03\x12\x08\n\x04LOCK\x10\x04\x12\n\n\x06UNLOCK\x10\x05\x32S\n\nLLMService\x12\x45\n\x14ParseNaturalLanguage\x12\x11.ai_llm.NLRequest\x1a\x1a.ai_llm.StructuredResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x61i_llm.proto\x12\x06\x61i_llm\",\n\tNLRequest\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\"/\n\x08ItemInfo\x12\x11\n\titem_name\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\"\x9e\x01\n\x12StructuredResponse\x12\x0e\n\x06req_id\x18\x01 \x01(\t\x12#\n\ttask_type\x18\x02 \x01(\x0e\x32\x10.ai_llm.TaskType\x12\x12\n\nconfidence\x18\x03 \x01(\x02\x12-\n\nstruct_msg\x18\x04 \x01(\x0b\x32\x19.ai_llm.StructuredMessage\x12\x10\n\x08raw_text\x18\x05 \x01(\t\"\xf6\x02\n\x11StructuredMessage\x12\x15\n\x08location\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x1b\n\x0erequester_name\x18\n \x01(\tH\x01\x88\x01\x01\x12\x1a\n\rreceiver_name\x18\x0b \x01(\tH\x02\x88\x01\x01\x12\x19\n\x0cvisitor_name\x18\x0c \x01(\tH\x03\x88\x01\x01\x12\x1c\n\x0fsource_location\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x1a\n\rdest_location\x18\x06 \x01(\tH\x05\x88\x01\x01\x12\x1f\n\x05items\x18\x07 \x03(\x0b\x32\x10.ai_llm.ItemInfo\x12\x14\n\x07message\x18\x13 \x01(\tH\x06\x88\x01\x01\x12\x10\n\x08keywords\x18\x14 \x03(\tB\x0b\n\t_locationB\x11\n\x0f_requester_nameB\x10\n\x0e_receiver_nameB\x0f\n\r_visitor_nameB\x12\n\x10_source_locationB\x10\n\x0e_dest_locationB\n\n\x08_message*s\n\x08TaskType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x12\n\x0eSNACK_DELIVERY\x10\x01\x12\x11\n\rITEM_DELIVERY\x10\x02\x12\x0f\n\x0bGUIDE_GUEST\x10\x03\x12\x14\n\x10GENERAL_QUESTION\x10\x46\x12\x0c\n\x08GREETING\x10G2S\n\nLLMService\x12\x45\n\x14ParseNaturalLanguage\x12\x11.ai_llm.NLRequest\x1a\x1a.ai_llm.StructuredResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ai_llm_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_TASKTYPE']._serialized_start=703
-  _globals['_TASKTYPE']._serialized_end=879
-  _globals['_IOTDEVICETYPE']._serialized_start=881
-  _globals['_IOTDEVICETYPE']._serialized_end=976
-  _globals['_IOTCOMMANDTYPE']._serialized_start=978
-  _globals['_IOTCOMMANDTYPE']._serialized_end=1079
+  _globals['_TASKTYPE']._serialized_start=657
+  _globals['_TASKTYPE']._serialized_end=772
   _globals['_NLREQUEST']._serialized_start=24
   _globals['_NLREQUEST']._serialized_end=68
-  _globals['_STRUCTUREDRESPONSE']._serialized_start=71
-  _globals['_STRUCTUREDRESPONSE']._serialized_end=229
-  _globals['_STRUCTUREDMESSAGE']._serialized_start=232
-  _globals['_STRUCTUREDMESSAGE']._serialized_end=700
-  _globals['_LLMSERVICE']._serialized_start=1081
-  _globals['_LLMSERVICE']._serialized_end=1164
+  _globals['_ITEMINFO']._serialized_start=70
+  _globals['_ITEMINFO']._serialized_end=117
+  _globals['_STRUCTUREDRESPONSE']._serialized_start=120
+  _globals['_STRUCTUREDRESPONSE']._serialized_end=278
+  _globals['_STRUCTUREDMESSAGE']._serialized_start=281
+  _globals['_STRUCTUREDMESSAGE']._serialized_end=655
+  _globals['_LLMSERVICE']._serialized_start=774
+  _globals['_LLMSERVICE']._serialized_end=857
 # @@protoc_insertion_point(module_scope)
