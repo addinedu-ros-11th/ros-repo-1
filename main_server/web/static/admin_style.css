@@ -57,30 +57,35 @@ body {
 .tab-content { display: none; } /* 기본적으로 숨김 */
 
 /* [로봇 관제 지도] */
-#map-container { 
-    position: relative;
-    /*width를 바꿔 지도 크기 변경*/
-    width: 100%;
-    height: 600px;
-    background-color: white;
-    /* #eee 대신 #ddd(조금 더 진함) 또는 rgba(0,0,0,0.1) 사용 */
-    background-image: 
-        linear-gradient(#ddd 1px, transparent 1px),
-        linear-gradient(90deg, #ddd 1px, transparent 1px);
-    background-size: 40px 40px;
-    border: 2px solid #333;
-    margin-top: 20px;
+/* [admin_style.css 하단에 추가 또는 수정] */
+
+#map-container {
+    width: 1000px;
+    height: 600px; /* 세트장 비율에 맞춰 조정 */
+    background-color: #eee; /* 로딩 전 배경색 */
+    border: 2px solid #34495e;
     overflow: hidden;
-    cursor: crosshair;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #map-inner {
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
-    z-index: 2; /* 격자 배경(1)보다 위에 위치 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#real-map-img {
+    /* 이미지가 컨테이너 안에 꽉 차되 비율을 유지하도록 설정 */
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; 
+    /* 미니어처 세트장이므로 픽셀이 뭉개지지 않게 렌더링 */
+    image-rendering: pixelated; 
 }
 
 /* 지도와 버튼을 감싸는 컨테이너 */
