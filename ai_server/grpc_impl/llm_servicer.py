@@ -114,24 +114,14 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
             if value is not None and value != "":
                 struct_msg_kwargs[key] = value
 
-        def coerce_int(key: str, value: Any):
-            try:
-                set_if_present(key, int(value))
-            except (ValueError, TypeError):
-                logger.warning(f"정수 변환 실패: {key}={value}")
-
-        def coerce_float(key: str, value: Any):
-            try:
-                set_if_present(key, float(value))
-            except (ValueError, TypeError):
-                logger.warning(f"실수 변환 실패: {key}={value}")
-
+        # 문자열 필드 직접 매핑
         direct_fields = [
             "location",
-            "item",
+            "requester_name",
+            "receiver_name",
+            "visitor_name",
             "source_location",
             "dest_location",
-            "room_id",
             "message",
         ]
 
@@ -139,24 +129,26 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
             if field_name in fields:
                 set_if_present(field_name, fields[field_name])
 
-        if "quantity" in fields:
-            coerce_int("quantity", fields["quantity"])
-        if "target_value" in fields:
-            coerce_float("target_value", fields["target_value"])
-
-        if "device_type" in fields and fields["device_type"]:
-            struct_msg_kwargs["device_type"] = getattr(
-                ai_llm_pb2.IoTDeviceType,
-                fields["device_type"],
-                ai_llm_pb2.IoTDeviceType.IOT_UNKNOWN,
-            )
-
-        if "command" in fields and fields["command"]:
-            struct_msg_kwargs["command"] = getattr(
-                ai_llm_pb2.IoTCommandType,
-                fields["command"],
-                ai_llm_pb2.IoTCommandType.IOT_CMD_UNKNOWN,
-            )
+        # items: repeated ItemInfo 변환
+        if "items" in fields and isinstance(fields["items"], list):
+            items_list = []
+            for item_data in fields["items"]:
+                if isinstance(item_data, dict):
+                    item_name = item_data.get("item_name", "")
+                    quantity = 1
+                    try:
+                        quantity = int(item_data.get("quantity", 1))
+                    except (ValueError, TypeError):
+                        pass
+                    if item_name:
+                        items_list.append(
+                            ai_llm_pb2.ItemInfo(
+                                item_name=item_name,
+                                quantity=quantity,
+                            )
+                        )
+            if items_list:
+                struct_msg_kwargs["items"] = items_list
 
         if isinstance(fields.get("keywords"), list):
             struct_msg_kwargs["keywords"] = fields["keywords"]

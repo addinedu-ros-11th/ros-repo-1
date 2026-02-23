@@ -15,12 +15,12 @@ service VisionService {
   
   // 복수 객체 인식
   rpc DetectMultipleObjects (ImageRequest) returns (MultiObjectDetectionResponse);
+
+  // 추론 상태 업데이트 (시나리오별 시작/중지)
+  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
   
   // 실시간 비전 스트리밍
   rpc StreamVisionResults (Empty) returns (stream VisionResult);
-  
-  // 추론 상태 제어 (메인서버 통신 확인용)
-  rpc UpdateInferenceState (InferenceStateRequest) returns (InferenceStateResponse);
 }
 
 // ============================================

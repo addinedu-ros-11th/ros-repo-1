@@ -80,13 +80,20 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
             fields = []
             for key in (
                 "location",
-                "item",
+                "requester_name",
+                "receiver_name",
+                "visitor_name",
                 "source_location",
                 "dest_location",
-                "room_id",
             ):
                 if struct_msg.HasField(key):
                     fields.append(f"{key}={getattr(struct_msg, key)}")
+
+            if len(struct_msg.items) > 0:
+                items_str = ", ".join(
+                    f"{item.item_name}x{item.quantity}" for item in struct_msg.items
+                )
+                fields.append(f"items=[{items_str}]")
 
             if fields:
                 logger.info(f"📋 Structured: {', '.join(fields)}")

@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 ENTITY_SYSTEM_PROMPT = """당신은 사무실 로봇을 위한 명령어 파서입니다.
 사용자의 요청에서 다음 정보만 추출하세요:
 1. location (장소): 예) 회의실, 로비, 사무실, 301호, A동 등
-2. item (물품): 예) 커피, 서류, 노트북, 상자 등
+2. items (물품 목록): 예) [{"item_name": "커피", "quantity": 2}]
+3. requester_name (요청자 이름): 예) 홍길동
+4. receiver_name (수신자 이름): 예) 김철수
 
 반드시 다음 JSON 형식으로만 답변하세요:
-{"location": "장소이름 또는 null", "item": "물품이름 또는 null"}
+{"location": "장소이름 또는 null", "items": [{"item_name": "물품명", "quantity": 1}] 또는 null, "requester_name": "이름 또는 null", "receiver_name": "이름 또는 null"}
 
 중요:
-- 장소나 물품이 없으면 null로 표시
+- 해당 없는 필드는 null로 표시
 - JSON 형식 외의 다른 텍스트는 절대 포함하지 마세요
 - 추가 설명이나 인사말도 하지 마세요"""
 
@@ -30,26 +32,21 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 
 작업 유형 (task_type):
 1. SNACK_DELIVERY: 간식 배달 (예: "커피 갖다줘", "간식 가져와줘")
-2. ITEM_DELIVERY: 물품 배달 (예: "서류 전달해줘", "노트북 갖다줘")
-3. CONTROL_LIGHT: 조명 제어 (예: "불 켜줘", "조명 꺼줘")
-4. CONTROL_TEMPERATURE: 온도 제어 (예: "온도 올려줘", "따뜻하게 해줘")
-5. CONTROL_AC: 에어컨 제어 (예: "에어컨 켜줘", "냉방 시작")
-6. CONTROL_DOOR: 문 제어 (예: "문 잠가줘", "문 열어줘")
-7. GENERAL_QUESTION: 일반 질문 (예: "오늘 날씨 어때?", "회사 규정 알려줘")
-8. GREETING: 인사 (예: "안녕", "반가워")
+2. ITEM_DELIVERY: P2P 물품 배달 (예: "김철수한테 서류 전달해줘")
+3. GUIDE_GUEST: 방문객 안내 (예: "손님을 회의실로 안내해줘")
+4. GENERAL_QUESTION: 일반 질문 (예: "오늘 날씨 어때?", "회사 규정 알려줘")
+5. GREETING: 인사 (예: "안녕", "반가워")
 
 추출할 필드 (없으면 null):
-- location: 위치/장소
-- item: 물품명
-- source_location: 출발지
-- dest_location: 목적지
-- quantity: 수량 (숫자)
-- device_type: IoT 장치 (LIGHT/THERMOSTAT/AIR_CONDITIONER/DOOR_LOCK)
-- command: IoT 명령 (TURN_ON/TURN_OFF/SET_VALUE/LOCK/UNLOCK)
-- target_value: 목표 값 (온도 등, 숫자)
-- room_id: 방 ID
+- location: 위치/장소 (일반적 의미)
+- requester_name: 요청자 이름 (User DB 매칭용)
+- receiver_name: 수신자 이름 (ITEM_DELIVERY 시)
+- visitor_name: 방문객 이름 (GUIDE_GUEST 시)
+- source_location: 출발지 (명시적 지정 시)
+- dest_location: 목적지 (명시적 지정 시)
+- items: 물품 목록 (배열, 각 항목은 {"item_name": "물품명", "quantity": 수량})
 - keywords: 키워드 목록 (배열)
-- message: 일반 메시지
+- message: 부가 메시지
 
 반드시 다음 JSON 형식으로만 답변하세요:
 {
@@ -62,9 +59,10 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 
 중요:
 - 아래 허용된 필드만 사용하세요 (다른 키 사용 금지)
-    location, item, source_location, dest_location,
-    quantity, device_type, command, target_value, room_id,
+    location, requester_name, receiver_name, visitor_name,
+    source_location, dest_location, items,
     keywords, message
+- items는 [{"item_name": "커피", "quantity": 2}] 형식의 배열로
 - 해당하지 않는 필드는 포함하지 마세요
 - JSON 외의 다른 텍스트는 절대 포함하지 마세요
 - 배열 필드는 ["item1", "item2"] 형식으로"""
@@ -234,18 +232,20 @@ class LLMService:
             "dest": "dest_location",
             "from_location": "source_location",
             "pickup_location": "source_location",
+            "requester": "requester_name",
+            "receiver": "receiver_name",
+            "visitor": "visitor_name",
+            "guest_name": "visitor_name",
         }
 
         allowed_fields = {
             "location",
-            "item",
+            "requester_name",
+            "receiver_name",
+            "visitor_name",
             "source_location",
             "dest_location",
-            "quantity",
-            "device_type",
-            "command",
-            "target_value",
-            "room_id",
+            "items",
             "keywords",
             "message",
         }
@@ -266,7 +266,7 @@ class LLMService:
             text: 분석할 사용자 입력 텍스트
 
         Returns:
-            추출된 엔티티 정보 {"location": str, "item": str, "confidence": float}
+            추출된 엔티티 정보 {"location": str, "items": list, "confidence": float}
         """
         logger.info(f"엔티티 추출 요청: {text}")
 
@@ -286,30 +286,36 @@ class LLMService:
 
             # null을 None으로 변환
             location = self._normalize_null_value(parsed.get("location"))
-            item = self._normalize_null_value(parsed.get("item"))
+            items = parsed.get("items")
+            if items and not isinstance(items, list):
+                items = None
+            requester_name = self._normalize_null_value(parsed.get("requester_name"))
+            receiver_name = self._normalize_null_value(parsed.get("receiver_name"))
 
             result = {
                 "location": location,
-                "item": item,
+                "items": items,
+                "requester_name": requester_name,
+                "receiver_name": receiver_name,
                 "confidence": 0.9,  # 기본 신뢰도
                 "raw_text": self._sanitize_json_text(result_text),
             }
 
-            logger.info(f"엔티티 추출 완료: location={location}, item={item}")
+            logger.info(f"엔티티 추출 완료: location={location}, items={items}")
             return result
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON 파싱 실패: {e}, 응답: {result_text}")
             return {
                 "location": None,
-                "item": None,
+                "items": None,
                 "confidence": 0.0,
                 "error": "JSON 파싱 실패",
                 "raw_text": result_text,
             }
         except Exception as e:
             logger.error(f"엔티티 추출 실패: {e}")
-            return {"location": None, "item": None, "confidence": 0.0, "error": str(e)}
+            return {"location": None, "items": None, "confidence": 0.0, "error": str(e)}
 
     def parse_natural_language(self, text: str) -> Dict[str, Any]:
         """
