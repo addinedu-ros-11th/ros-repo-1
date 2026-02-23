@@ -88,6 +88,26 @@
     </div>
 
     <script>
+        async function refreshMap() {
+            const mapInner = document.getElementById('map-inner');
+            try {
+                // 캐시 방지를 위해 시간값을 파라미터로 붙임
+                const response = await fetch('/api/v1/admin/map/image?t=' + new Date().getTime());
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const objectURL = URL.createObjectURL(blob);
+                    
+                    // 기존 내용을 지우고 이미지 태그 삽입
+                    mapInner.innerHTML = `<img src="${objectURL}" id="real-map-img" style="max-width:100%; max-height:100%;">`;
+                } else {
+                    mapInner.innerHTML = "<p style='color:red;'>이미지를 불러올 수 없습니다 (404/500)</p>";
+                }
+            } catch (error) {
+                mapInner.innerHTML = "<p style='color:red;'>연결 오류</p>";
+            }
+        }
+
         /* 탭 전환 및 데이터 로드 트리거 */
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
@@ -196,6 +216,10 @@
             } else {
                 showTab('robot-mgmt');
             }
+            
+            // window.onload에 추가
+            console.log("페이지 로드 완료 - 지도 불러오기 시작"); // 확인용 로그
+            refreshMap();
         };
     </script>
 </body>

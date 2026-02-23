@@ -7,6 +7,7 @@ import yaml
 import io
 from fastapi import Response
 import os
+import numpy as np
 
 from main_server.container import container
 # 기존 리포지토리 및 신규 리포지토리 임포트
@@ -21,44 +22,51 @@ router = APIRouter(
     tags=["Admin/Control"],
 )
 
-# # ---------------------------------------------------------
-# # 0. 지도
-# # ---------------------------------------------------------
-# MAP_DIR = "./main_server/domains/map/"
-
-# cached_map_png = None  # 전역 변수로 캐시 저장
-
-# @router.get("/map-image")
-# async def get_map_image():
-#     global cached_map_png
+# ---------------------------------------------------------
+# 0. 지도
+# ---------------------------------------------------------
+MAP_DIR = "./main_server/domains/map/"
+@router.get("/map/image")
+async def get_map_image():
+    # 1. 파일 경로 설정 (mymap.pgm)
+    file_path = os.path.join(MAP_DIR, "mymap.pgm")
     
-#     # 이미 캐시된 데이터가 있으면 바로 반환 (렉 방지 핵심)
-#     if cached_map_png:
-#         return Response(content=cached_map_png, media_type="image/png")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Map file not found")
 
-#     path = os.path.join(MAP_DIR, "mymap.pgm")
-#     try:
-#         with Image.open(path) as img:
-#             # 리사이즈 로직 포함
-#             img = img.convert("RGBA")
-#             img_byte_arr = io.BytesIO()
-#             img.save(img_byte_arr, format='PNG')
-#             cached_map_png = img_byte_arr.getvalue() # 캐시에 저장
+    # 2. PGM 파일 열기
+    with Image.open(file_path) as img:
+        # numpy 배열로 변환하여 분석
+        data = np.array(img)
+        
+        # 3. 유효한 영역(알 수 없는 영역 205, 254 제외) 찾기
+        # 0(벽) 또는 255(길)인 부분의 인덱스를 찾습니다.
+        mask = (data == 0) | (data == 255)
+        coords = np.argwhere(mask)
+
+        if coords.size > 0:
+            # 데이터가 있는 최소/최대 좌표 계산 (Crop 범위)
+            y_min, x_min = coords.min(axis=0)
+            y_max, x_max = coords.max(axis=0)
             
-#             return Response(content=cached_map_png, media_type="image/png")
-#     except Exception as e:
-#         return Response(status_code=500)
+            # 약간의 여백(padding) 추가
+            padding = 5
+            y_min = max(0, y_min - padding)
+            x_min = max(0, x_min - padding)
+            y_max = min(data.shape[0], y_max + padding)
+            x_max = min(data.shape[1], x_max + padding)
+            
+            # 이미지 자르기
+            img = img.crop((x_min, y_min, x_max, y_max))
 
-# @router.get("/map-info")
-# async def get_map_info():
-#     """mymap.yaml의 메타데이터를 파싱하여 전송"""
-#     with open(os.path.join(MAP_DIR, "mymap.yaml"), 'r') as f:
-#         config = yaml.safe_load(f)
-#     return {
-#         "resolution": config['resolution'], # 0.05
-#         "origin": config['origin'],         # [-10.0, -10.0, 0.0]
-#         "image_path": "/api/v1/admin/map-image"
-#     }
+        # 4. PNG로 변환하여 메모리에 저장
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+    # 5. 브라우저가 인식할 수 있도록 반환
+    return Response(content=img_byte_arr, media_type="image/png")
+
 # ---------------------------------------------------------
 # 1. 사무실 관리 (UI가 바로 렌더링할 수 있게 가공)
 # ---------------------------------------------------------
