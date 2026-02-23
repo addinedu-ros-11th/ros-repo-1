@@ -73,36 +73,4 @@ class MySQLLocationRepository(BaseRepository):
         """
         모든 등록된 장소 정보를 가져옵니다.
         """
-<<<<<<< HEAD
-        async with Database.get_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                sql = "SELECT * FROM Locations"
-                await cur.execute(sql)
-                return await cur.fetchall()
-
-    # ... 기존 코드 (get_all_locations 등) 하단에 추가 ...
-
-    async def get_forbidden_zones(self) -> List[Dict[str, Any]]:
-        """
-        DB에 저장된 모든 금지구역 정보를 가져옵니다.
-        """
-        async with Database.get_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                # 테이블명이 ForbiddenZones 인지 확인 필요
-                sql = "SELECT id, name, x1, y1, x2, y2 FROM ForbiddenZones"
-                await cur.execute(sql)
-                return await cur.fetchall()
-
-    async def delete_forbidden_zone(self, zone_id: int) -> bool:
-        """
-        특정 금지구역을 삭제합니다.
-        """
-        async with Database.get_connection() as conn:
-            async with conn.cursor() as cur:
-                sql = "DELETE FROM ForbiddenZones WHERE id = %s"
-                await cur.execute(sql, (zone_id,))
-                await conn.commit()
-                return cur.rowcount > 0
-=======
         return await super().get_all()
->>>>>>> a5ed5ab544765f363aa93a151bf368ae349391a0
