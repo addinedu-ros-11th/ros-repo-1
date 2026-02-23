@@ -81,12 +81,9 @@ def test_entity_extraction_grpc(server_address: str = "localhost:50051"):
             for key in (
                 "location",
                 "item",
-                "person_name",
                 "source_location",
                 "dest_location",
                 "room_id",
-                "meeting_room_id",
-                "area",
             ):
                 if struct_msg.HasField(key):
                     fields.append(f"{key}={getattr(struct_msg, key)}")

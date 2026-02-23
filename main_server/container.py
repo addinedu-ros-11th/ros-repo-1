@@ -15,6 +15,7 @@ from main_server.infrastructure.database.repositories.mysql_location_repository 
 from main_server.infrastructure.database.repositories.mysql_admin_repository import MySQLAdminRepository
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
 from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
+from main_server.infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
 
 # --- Communication Instances ---
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
@@ -39,6 +40,11 @@ class Container:
         self.robot_repo = None
         self.task_repo = None
         self.location_repo = None
+        self.user_repo = None
+        self.product_repository = None
+        self.admin_repository = None
+        self.log_repository = None
+        
         self.robot_communicator = None
         self.ai_processing_service = None
         self.llm_service = None
@@ -47,9 +53,6 @@ class Container:
         self.fleet_manager = None
         self.task_manager = None
         self.connection_manager = None
-        self.admin_repository = None
-        self.product_repository = None
-        self.log_repository = None
 
     def services(self):
         """
@@ -61,19 +64,19 @@ class Container:
 
         print("서비스 인스턴스 생성 및 의존성 주입...")
         
-        # 1. Infrastructure Layer
+        # 1. Infrastructure Layer (Repositories)
         self.robot_repo: IRobotRepository = MySQLRobotRepository()
         self.task_repo: ITaskRepository = MySQLTaskRepository()
         self.location_repo = MySQLLocationRepository()
-
-        self.admin_repository = MySQLAdminRepository()
+        self.user_repo = MySQLUserRepository()
         self.product_repository = MySQLProductRepository()
+        self.admin_repository = MySQLAdminRepository()
         self.log_repository = MySQLLogRepository()
         
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
         self.connection_manager = connection_manager # WebSocket 관리자
 
-        # 2. Core Layer
+        # 2. Core Layer (Services)
         self.llm_service = LLMServiceClient()
         self.vision_service = VisionServiceClient()
         
@@ -90,9 +93,13 @@ class Container:
             robot_communicator=self.robot_communicator,
             connection_manager=self.connection_manager
         )
+        
+        # TaskManager 생성 시 필요한 모든 리포지토리와 서비스 주입
         self.task_manager = TaskManager(
             task_repo=self.task_repo,
             location_repo=self.location_repo,
+            user_repo=self.user_repo,
+            product_repo=self.product_repository,
             fleet_manager=self.fleet_manager,
             ai_processing_service=self.ai_processing_service,
             connection_manager=self.connection_manager

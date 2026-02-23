@@ -9,6 +9,8 @@ pydantic
 python-dotenv
 roslibpy
 pathfinding
+pyyaml
+websockets
 
 # AI Server dependencies
 # LLM (Qwen3-4B with Ollama)

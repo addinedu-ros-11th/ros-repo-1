@@ -1,82 +1,98 @@
 import logging
-from typing import Any, Dict, Optional, List
-from main_server.domains.tasks.schemas import Task, TaskType, TaskStatus
-from main_server.domains.robots.schemas import RobotStatus
-from main_server.services.fleet_management.fleet_manager import FleetManager
-from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
-from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
-from main_server.services.task_management.task_processors import SnackProcessor, GuideProcessor, ItemProcessor
-from main_server.services.ai_management.ai_processing import AIProcessingService
-from main_server.web.connection_manager import ConnectionManager
-from main_server.domains.map.location import LocationName, Pose
+from typing import Any, Dict, Optional
 
+from main_server.domains.robots.schemas import RobotStatus
+from main_server.domains.tasks.schemas import Task, TaskType
+from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
+from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
+from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
+from main_server.infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
+from main_server.services.ai_management.ai_processing import AIProcessingService
+from main_server.services.fleet_management.fleet_manager import FleetManager
+from main_server.services.task_management.scenario_data_handler import ScenarioDataHandler
+from main_server.services.task_management.task_processors import GuideProcessor, ItemProcessor, SnackProcessor
+from main_server.web.connection_manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
+
 
 class TaskManager:
     """
     작업의 통합 관리자. 작업 유형에 따라 적절한 Processor를 선택하여 실행합니다.
     """
-    def __init__(self, 
-                 task_repo: MySQLTaskRepository, 
+    def __init__(self,
+                 task_repo: MySQLTaskRepository,
                  location_repo: MySQLLocationRepository,
+                 user_repo: MySQLUserRepository,
+                 product_repo: MySQLProductRepository,
                  fleet_manager: FleetManager,
                  ai_processing_service: AIProcessingService,
                  connection_manager: ConnectionManager):
+        """
+        참고: 이 변경으로 인해 main_server/container.py에서 TaskManager 생성 시
+              user_repo와 product_repo를 추가로 주입해야 합니다.
+        """
         self.task_repo = task_repo
         self.location_repo = location_repo
         self.fleet_manager = fleet_manager
-        
+
+        # AI 결과를 시나리오에 맞게 처리하는 핸들러
+        self.scenario_handler = ScenarioDataHandler(location_repo, user_repo, product_repo)
+
         # Processor 등록 (시나리오 확장 시 여기에 추가)
         self.processors = {
             TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
         }
-        
+
     async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
         """AI 해석 결과로 태스크를 생성하고 로봇을 배차합니다."""
-        task_type_str = ai_result.get("task_type")
-        fields = ai_result.get("fields", {})
 
-        # 1. 목적지 이름 추출 (기본값: 충전소)
-        dest_name = fields.get("location") or fields.get("dest_location") or LocationName.CHARGER_1.value
+        # 1. 시나리오 핸들러를 통해 AI 결과 처리 및 DB 저장용 데이터 준비
+        prepared_data = await self.scenario_handler.prepare_task_data(ai_result)
 
-        # 2. 리포지토리에서 좌표 정보 조회 (DB 또는 하드코딩된 WAYPOINTS)
-        location_data = await self.location_repo.find_by_name(dest_name)
+        if not prepared_data:
+            logger.error("Failed to prepare task data from AI result.")
+            return None
 
-        if location_data:
-            target_pose = (location_data["coordinate_x"], location_data["coordinate_y"])
-            location_id = location_data.get("location_id")
-        else:
-            # 조회 실패 시 기본 위치(충전소) 좌표 사용
-            logger.warning(f"목적지 '{dest_name}'를 찾을 수 없어 기본 위치로 설정합니다.")
-            target_pose = (0.0, 0.0) # 실제로는 CHARGER_1의 좌표를 명시하는 것이 좋음
-            location_id = None
+        task_data = prepared_data["task_data"]
+        task_items = prepared_data.get("task_items")
+        initial_destination_name = prepared_data["initial_destination_name"]
 
-        task_data = {
-            "task_type": task_type_str,
-            "status": TaskStatus.PENDING,
-            "details": fields,
-            "target_location_name": dest_name,
-            "destination_id": location_id
-        }
+        # 2. 초기 목적지 좌표 조회 (로봇 배차용)
+        initial_location_data = await self.location_repo.find_by_name(initial_destination_name)
 
-        task = await self.task_repo.create(task_data)
+        if not initial_location_data:
+            logger.error(f"초기 목적지 '{initial_destination_name}'를 찾을 수 없습니다.")
+            return None
 
-        optimal_robot = await self.fleet_manager.find_optimal_robot(target_pose)
-        if optimal_robot:
-            await self.assign_and_dispatch(optimal_robot, task)
-            return task
+        initial_target_pose = (initial_location_data["coordinate_x"], initial_location_data["coordinate_y"])
 
-        logger.warning(f"태스크 {task.id}를 처리할 적절한 로봇이 없습니다.")
-        return None
+        # 3. 최적 로봇 탐색
+        optimal_robot = await self.fleet_manager.find_optimal_robot(initial_target_pose)
+        if not optimal_robot:
+            # 로봇이 없어도 태스크는 PENDING 상태로 생성할 수 있으나,
+            # 현재 요구사항은 '가용한 로봇이 없을 때' 즉시 retry를 유도하므로 None을 반환합니다.
+            logger.warning(f"태스크 {task_data.get('task_type')}를 처리할 적절한 로봇이 없습니다.")
+            return None
+
+        # 4. 태스크 생성 (DB)
+        # 참고: task_repo.create 메서드는 task_items도 함께 처리하도록 수정이 필요합니다.
+        # (예: `create(self, task_data, items_data)`)
+        task = await self.task_repo.create(task_data, task_items)
+        if not task:
+            logger.error("Failed to create task in database.")
+            return None
+
+        # 5. 로봇 할당 및 초기 명령 전송
+        await self.assign_and_dispatch(optimal_robot, task)
+        return task
 
     async def assign_and_dispatch(self, robot, task):
         """로봇에게 작업을 할당하고 해당 시나리오의 초기 명령을 전송합니다."""
         await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
-        
-        # 해당 작업 타입의 Processor 가져오기
+
         processor = self.processors.get(task.task_type)
         if processor:
             actions = await processor.get_initial_actions(task)
@@ -97,11 +113,11 @@ class TaskManager:
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""
         from common.robot_task_events import RobotEvent
-        
+
         task = await self.task_repo.get_by_id(task_id)
         if not task:
             return False, "Task not found"
-            
+
         robot_id = task.assigned_robot_id
         if not robot_id:
             return False, "Robot not assigned"
@@ -110,7 +126,6 @@ class TaskManager:
         if not processor:
             return False, "Processor not found"
 
-        # Action Type에 따른 이벤트 매핑
         event = None
         if action_type == "CONFIRM_SNACK_RECEIPT":
             event = RobotEvent.DELIVERY_CONFIRMED
@@ -118,9 +133,9 @@ class TaskManager:
             event = RobotEvent.LOADING_COMPLETE
         elif action_type == "CONFIRM_ITEM_RECEIPT":
             event = RobotEvent.DELIVERY_CONFIRMED
-            
+
         if event:
             await processor.handle_event(task, robot_id, event)
             return True, "Confirmed"
-        
+
         return False, "Invalid action type"

@@ -31,10 +31,6 @@ def print_result(req_id: str, text: str, response):
         print(f"  📍 location: {struct_msg.location}")
     if struct_msg.HasField("item"):
         print(f"  📦 item: {struct_msg.item}")
-    if struct_msg.HasField("person_name"):
-        print(f"  👤 person_name: {struct_msg.person_name}")
-    if struct_msg.HasField("person_id"):
-        print(f"  🆔 person_id: {struct_msg.person_id}")
 
     # 배달 관련
     if struct_msg.HasField("source_location"):
@@ -56,25 +52,7 @@ def print_result(req_id: str, text: str, response):
     if struct_msg.HasField("room_id"):
         print(f"  🏠 room_id: {struct_msg.room_id}")
 
-    # 회의실 관련
-    if struct_msg.HasField("meeting_room_id"):
-        print(f"  🏢 meeting_room_id: {struct_msg.meeting_room_id}")
-    if struct_msg.HasField("start_time"):
-        print(f"  ⏰ start_time: {struct_msg.start_time}")
-    if struct_msg.HasField("end_time"):
-        print(f"  ⏱️  end_time: {struct_msg.end_time}")
-    if struct_msg.HasField("attendee_count"):
-        print(f"  👥 attendee_count: {struct_msg.attendee_count}")
-
-    # 순찰 관련
-    if struct_msg.HasField("area"):
-        print(f"  🗺️  area: {struct_msg.area}")
-    if len(struct_msg.waypoints) > 0:
-        print(f"  🚶 waypoints: {', '.join(struct_msg.waypoints)}")
-
     # 기타
-    if struct_msg.HasField("query_type"):
-        print(f"  ❓ query_type: {struct_msg.query_type}")
     if struct_msg.HasField("message"):
         print(f"  💬 message: {struct_msg.message}")
     if len(struct_msg.keywords) > 0:
@@ -99,24 +77,13 @@ def test_grpc_structured_response():
     test_cases = [
         ("req_001", "회의실로 커피 갖다줘"),
         ("req_002", "301호에 서류 전달해줘"),
-        ("req_003", "방문객을 3층 회의실로 안내해줘"),
-        ("req_004", "로비로 이동해"),
-        ("req_005", "여기로 와줘"),
-        ("req_006", "충전하러 가"),
-        ("req_007", "작업 취소해"),
-        ("req_008", "회의실 불 켜줘"),
-        ("req_009", "온도 25도로 맞춰줘"),
-        ("req_010", "에어컨 켜줘"),
-        ("req_011", "로봇 상태 어때?"),
-        ("req_012", "회의실이 어디야?"),
-        ("req_013", "박영희씨 어디있어?"),
-        ("req_014", "오후 2시에 회의실 예약해줘"),
-        ("req_015", "2층 사무실 순찰해줘"),
-        ("req_016", "안녕하세요"),
-        ("req_017", "간식 창고에서 과자 3개 가져와줘"),
-        ("req_018", "나를 따라와"),
-        ("req_019", "문 잠가줘"),
-        ("req_020", "환경 상태 체크해줘"),
+        ("req_003", "회의실 불 켜줘"),
+        ("req_004", "온도 25도로 맞춰줘"),
+        ("req_005", "에어컨 켜줘"),
+        ("req_006", "안녕하세요"),
+        ("req_007", "간식 창고에서 과자 3개 가져와줘"),
+        ("req_008", "문 잠가줘"),
+        ("req_009", "오늘 날씨 어때?"),
     ]
 
     print("\n테스트 시작...\n")

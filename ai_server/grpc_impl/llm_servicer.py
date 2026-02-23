@@ -78,6 +78,14 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
             logger.info(
                 f"자연어 해석 완료 [req_id={request.req_id}]: task_type={task_type_str}, confidence={result.get('confidence', 0.0)}"
             )
+            # 메인서버 전송용 상세 로그 (GUI에서 파싱)
+            fields_summary = {k: v for k, v in fields.items() if v}
+            logger.info(
+                f"LLM 응답 전송 [req_id={request.req_id}]: "
+                f"task_type={task_type_str}, "
+                f"confidence={result.get('confidence', 0.0):.2f}, "
+                f"fields={fields_summary}"
+            )
             return response
 
         except Exception as e:
@@ -121,16 +129,9 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
         direct_fields = [
             "location",
             "item",
-            "person_name",
-            "person_id",
             "source_location",
             "dest_location",
             "room_id",
-            "meeting_room_id",
-            "start_time",
-            "end_time",
-            "area",
-            "query_type",
             "message",
         ]
 
@@ -140,8 +141,6 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
 
         if "quantity" in fields:
             coerce_int("quantity", fields["quantity"])
-        if "attendee_count" in fields:
-            coerce_int("attendee_count", fields["attendee_count"])
         if "target_value" in fields:
             coerce_float("target_value", fields["target_value"])
 
@@ -159,8 +158,6 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
                 ai_llm_pb2.IoTCommandType.IOT_CMD_UNKNOWN,
             )
 
-        if isinstance(fields.get("waypoints"), list):
-            struct_msg_kwargs["waypoints"] = fields["waypoints"]
         if isinstance(fields.get("keywords"), list):
             struct_msg_kwargs["keywords"] = fields["keywords"]
 

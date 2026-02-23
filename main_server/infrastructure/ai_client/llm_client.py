@@ -50,10 +50,6 @@ class LLMServiceClient:
             fields["location"] = struct_msg.location
         if struct_msg.HasField("item"):
             fields["item"] = struct_msg.item
-        if struct_msg.HasField("person_name"):
-            fields["person_name"] = struct_msg.person_name
-        if struct_msg.HasField("person_id"):
-            fields["person_id"] = struct_msg.person_id
 
         if struct_msg.HasField("source_location"):
             fields["source_location"] = struct_msg.source_location
@@ -73,22 +69,6 @@ class LLMServiceClient:
         if struct_msg.HasField("room_id"):
             fields["room_id"] = struct_msg.room_id
 
-        if struct_msg.HasField("meeting_room_id"):
-            fields["meeting_room_id"] = struct_msg.meeting_room_id
-        if struct_msg.HasField("start_time"):
-            fields["start_time"] = struct_msg.start_time
-        if struct_msg.HasField("end_time"):
-            fields["end_time"] = struct_msg.end_time
-        if struct_msg.HasField("attendee_count"):
-            fields["attendee_count"] = struct_msg.attendee_count
-
-        if struct_msg.HasField("area"):
-            fields["area"] = struct_msg.area
-        if len(struct_msg.waypoints) > 0:
-            fields["waypoints"] = list(struct_msg.waypoints)
-
-        if struct_msg.HasField("query_type"):
-            fields["query_type"] = struct_msg.query_type
         if struct_msg.HasField("message"):
             fields["message"] = struct_msg.message
         if len(struct_msg.keywords) > 0:

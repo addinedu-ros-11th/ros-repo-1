@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Server configuration
-SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_HOST = os.getenv("SERVER_HOST", "localhost")
 SERVER_PORT = int(os.getenv("SERVER_PORT", 8000))
 
 # Database configuration
@@ -23,10 +23,6 @@ DATABASE_URL = (
 # ROS Bridge configuration
 ROS_BRIDGE_HOST = os.getenv("ROS_BRIDGE_HOST", "localhost")
 ROS_BRIDGE_PORT = int(os.getenv("ROS_BRIDGE_PORT", 9090))
-
-# AI Inference service configuration
-AI_INFERENCE_GRPC_HOST = os.getenv("AI_INFERENCE_GRPC_HOST", "localhost")
-AI_INFERENCE_GRPC_PORT = int(os.getenv("AI_INFERENCE_GRPC_PORT", 50051))
 
 # LLM Service configuration
 LLM_GRPC_HOST = os.getenv("LLM_GRPC_HOST", "localhost")

@@ -1,5 +1,7 @@
 CREATE TABLE `Users` (
   `user_id` int PRIMARY KEY AUTO_INCREMENT,
+  `account` varchar(255) UNIQUE NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
   `name` varchar(255),
   `department` varchar(255),
   `role` ENUM ('STAFF', 'ADMIN') DEFAULT 'STAFF',
@@ -22,6 +24,7 @@ CREATE TABLE `Locations` (
   `type` ENUM ('OFFICE', 'MEETING_ROOM', 'WAREHOUSE', 'CHARGER', 'WAITING_AREA') COMMENT '시설물 종류 (SR-015)',
   `coordinate_x` float,
   `coordinate_y` float,
+  `theta` float,
   `is_restricted` boolean DEFAULT false COMMENT '금지 구역 여부 (SR-014)'
 );
 
@@ -43,10 +46,11 @@ CREATE TABLE `IoT_Devices` (
 CREATE TABLE `Robots` (
   `robot_id` int PRIMARY KEY AUTO_INCREMENT,
   `name` varchar(255),
-  `status` ENUM ('IDLE', 'ASSIGNED', 'MOVING', 'GUIDING', 'CHARGING', 'ERROR') DEFAULT 'IDLE' COMMENT '로봇 상태 (SR-008, SR-010)',
-  `battery_level` int COMMENT '배터리 잔량 % (SR-010, SR-017)',
+  `status` ENUM ('IDLE', 'WAITING', 'ASSIGNED', 'MOVING', 'GUIDING', 'CHARGING', 'ERROR', 'OFFLINE') DEFAULT 'IDLE' COMMENT '로봇 상태 (SR-008, SR-010)',
+  `battery_level` float COMMENT '배터리 잔량 % (SR-010, SR-017)',
   `current_x` float,
   `current_y` float,
+  `current_task_id` int,
   `last_heartbeat` timestamp
 );
 
@@ -63,11 +67,13 @@ CREATE TABLE `Tasks` (
   `requester_id` int COMMENT '요청자',
   `receiver_id` int COMMENT '수신자 (물품 배송 시)',
   `assigned_robot_id` int COMMENT '스마트 배차 (SR-011)',
-  `task_type` ENUM ('GUIDE', 'SNACK_DELIVERY', 'ITEM_DELIVERY', 'RETURN'),
+  `task_type` ENUM ('GUIDE_GUEST', 'SNACK_DELIVERY', 'ITEM_DELIVERY', 'RETURN', 'PATROL'),
   `priority` int DEFAULT 3 COMMENT '1:가이드, 2:물품, 3:간식 (SR-012)',
   `status` ENUM ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ARRIVED', 'COMPLETED', 'FAILED', 'CANCELLED') DEFAULT 'PENDING',
   `destination_id` int,
+  `target_location_name` varchar(255),
   `visitor_id` int COMMENT '가이드 대상일 경우',
+  `details` JSON COMMENT '세부 정보 (JSON)',
   `created_at` timestamp DEFAULT (now()),
   `completed_at` timestamp
 );
@@ -92,10 +98,10 @@ CREATE TABLE `Robot_Telemetry_Logs` (
   `telemetry_id` int PRIMARY KEY AUTO_INCREMENT,
   `robot_id` int,
   `timestamp` timestamp,
-  `battery_level` int,
+  `battery_level` float,
   `location_x` float,
   `location_y` float,
-  `status` ENUM ('IDLE', 'ASSIGNED', 'MOVING', 'GUIDING', 'CHARGING', 'ERROR')
+  `status` ENUM ('IDLE', 'WAITING', 'ASSIGNED', 'MOVING', 'GUIDING', 'CHARGING', 'ERROR', 'OFFLINE')
 );
 
 CREATE TABLE `Notification_Logs` (

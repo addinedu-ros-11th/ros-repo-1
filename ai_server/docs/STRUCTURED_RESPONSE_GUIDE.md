@@ -11,43 +11,14 @@ Main 서버로부터 자연어 프롬프트를 받아 구조화된 작업 메시
 #### 1. 물품/간식 배달 관련
 - `SNACK_DELIVERY`: 간식 배달
 - `ITEM_DELIVERY`: 물품 배달
-- `PICKUP_ITEM`: 물품 수거
 
-#### 2. 안내/이동 관련
-- `GUIDE_GUEST`: 방문객 안내
-- `NAVIGATE_TO_LOCATION`: 특정 위치로 이동
-- `FOLLOW_PERSON`: 사람 따라가기
-
-#### 3. 로봇 제어 관련
-- `CALL_ROBOT`: 로봇 호출
-- `RETURN_TO_BASE`: 로봇 복귀 (충전소/로비)
-- `CANCEL_TASK`: 작업 취소
-- `PAUSE_TASK`: 작업 일시정지
-- `RESUME_TASK`: 작업 재개
-
-#### 4. 환경 제어 관련 (IoT)
+#### 2. 환경 제어 관련 (IoT)
 - `CONTROL_LIGHT`: 조명 제어
 - `CONTROL_TEMPERATURE`: 온도 제어
 - `CONTROL_AC`: 에어컨 제어
 - `CONTROL_DOOR`: 문 제어
 
-#### 5. 정보 조회 관련
-- `QUERY_ROBOT_STATUS`: 로봇 상태 조회
-- `QUERY_LOCATION`: 위치 정보 조회
-- `QUERY_AVAILABILITY`: 회의실/좌석 가능 여부 조회
-- `FIND_PERSON`: 사람 찾기
-- `FIND_ITEM`: 물건 찾기
-
-#### 6. 회의실 관련
-- `RESERVE_MEETING_ROOM`: 회의실 예약
-- `CANCEL_RESERVATION`: 예약 취소
-- `CHECK_ROOM_STATUS`: 회의실 상태 확인
-
-#### 7. 순찰/모니터링
-- `PATROL_AREA`: 구역 순찰
-- `MONITOR_ENVIRONMENT`: 환경 모니터링
-
-#### 8. 기타
+#### 3. 기타
 - `GENERAL_QUESTION`: 일반 질문
 - `GREETING`: 인사
 - `UNKNOWN`: 알 수 없음
@@ -59,8 +30,6 @@ Main 서버로부터 자연어 프롬프트를 받아 구조화된 작업 메시
 #### 공통 필드
 - `location`: 목적지/장소
 - `item`: 물품/간식 이름
-- `person_name`: 사람 이름
-- `person_id`: 사람 ID
 
 #### 배달 관련
 - `source_location`: 출발지
@@ -73,18 +42,7 @@ Main 서버로부터 자연어 프롬프트를 받아 구조화된 작업 메시
 - `target_value`: 목표 값
 - `room_id`: 방 ID
 
-#### 회의실 관련
-- `meeting_room_id`: 회의실 ID
-- `start_time`: 시작 시간
-- `end_time`: 종료 시간
-- `attendee_count`: 참석자 수
-
-#### 순찰 관련
-- `area`: 구역
-- `waypoints`: 경유지 목록
-
 #### 기타
-- `query_type`: 조회 유형
 - `message`: 일반 메시지
 - `keywords`: 키워드 목록
 
@@ -205,17 +163,7 @@ async def parse_natural_language(self, req_id: str, message: str) -> Dict[str, A
   - item: 커피
 ```
 
-### 예시 2: 방문객 안내
-```
-입력: "방문객을 3층 회의실로 안내해줘"
-
-🎯 작업 유형: GUIDE_GUEST
-✓ 신뢰도: 0.92
-📋 추출된 필드:
-  - dest_location: 3층 회의실
-```
-
-### 예시 3: IoT 제어
+### 예시 2: IoT 제어
 ```
 입력: "온도 25도로 맞춰줘"
 
@@ -227,14 +175,15 @@ async def parse_natural_language(self, req_id: str, message: str) -> Dict[str, A
   - target_value: 25.0
 ```
 
-### 예시 4: 회의실 예약
+### 예시 3: 문 제어
 ```
-입력: "오후 2시에 회의실 예약해줘"
+입력: "문 잠가줘"
 
-🎯 작업 유형: RESERVE_MEETING_ROOM
-✓ 신뢰도: 0.85
+🎯 작업 유형: CONTROL_DOOR
+✓ 신뢰도: 0.90
 📋 추출된 필드:
-  - start_time: 14:00
+  - device_type: DOOR_LOCK
+  - command: LOCK
 ```
 
 ## Proto 메시지 정의
