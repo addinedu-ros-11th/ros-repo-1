@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from enum import Enum
 from typing import Optional
+from datetime import datetime
 
 # ==========================================
 # 1. 로봇 관련 Enum (상태)
@@ -28,8 +29,8 @@ class RobotBase(BaseModel):
     name: str = Field(..., description="로봇의 고유 이름 (예: robot_01)")
     status: RobotStatus = Field(default=RobotStatus.IDLE)
     battery_level: float = Field(..., description="배터리 잔량 (%)", ge=0, le=100)
-    pose_x: float = Field(default=0.0, description="현재 X 좌표")
-    pose_y: float = Field(default=0.0, description="현재 Y 좌표")
+    pose_x: float = Field(default=0.0, alias="current_x", description="현재 X 좌표")
+    pose_y: float = Field(default=0.0, alias="current_y", description="현재 Y 좌표")
 
 class RobotCreate(RobotBase):
     """로봇 등록 시 필요한 데이터"""
@@ -37,13 +38,14 @@ class RobotCreate(RobotBase):
 
 class Robot(RobotBase):
     """로봇 상세 정보 모델"""
-    id: int = Field(..., description="데이터베이스 PK")
+    id: int = Field(..., alias="robot_id", description="데이터베이스 PK")
     current_task_id: Optional[int] = Field(None, description="현재 할당된 작업 ID")
-    last_heartbeat: Optional[str] = Field(None, description="마지막 통신 시간")
+    last_heartbeat: Optional[datetime] = Field(None, description="마지막 통신 시간")
 
     class Config:
         from_attributes = True  # Pydantic v2 스타일 (ORM 연동)
         use_enum_values = True
+        populate_by_name = True
 
 # ==========================================
 # 3. 로봇 통신 데이터 구조 (WebSocket/API 전송용)

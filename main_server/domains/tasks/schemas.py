@@ -54,7 +54,7 @@ class TaskCreate(TaskBase):
     destination_id: Optional[int] = None
 
 class Task(TaskBase):
-    id: int
+    id: int = Field(alias="task_id")
     requester_id: int
     assigned_robot_id: Optional[int] = None
     status: TaskStatus
@@ -63,6 +63,7 @@ class Task(TaskBase):
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 class ActionCommand(BaseModel):
     """로봇에게 전달되는 개별 액션 구조"""

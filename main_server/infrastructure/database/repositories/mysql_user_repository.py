@@ -20,7 +20,7 @@ class UserModel(BaseModel):
 # [2] 리포지토리 클래스
 class MySQLUserRepository(BaseRepository):
     def __init__(self):
-        super().__init__(table_name="Users", model=UserModel)
+        super().__init__(table_name="Users", model=UserModel, pk_name="user_id")
 
     async def get_user_by_username(self, account: str) -> Optional[UserModel]:
         query = f"SELECT * FROM {self.table_name} WHERE account = %s"

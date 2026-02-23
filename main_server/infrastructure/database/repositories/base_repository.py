@@ -9,17 +9,19 @@ ModelType = TypeVar("ModelType", bound=BaseModel)
 class BaseRepository:
     """
     모든 리포지토리를 위한 기본 클래스입니다.
-    비동기 CRUD 작업을 위한 공통 메서드를 제공합니다.
+    비동기 CRUD 작업을 위한 공통 메서 제공합니다.
     """
-    def __init__(self, table_name: str, model: Type[ModelType]):
+    def __init__(self, table_name: str, model: Type[ModelType], pk_name: str = "id"):
         """
         리포지토리를 초기화합니다.
 
         :param table_name: 데이터베이스 테이블 이름
         :param model: Pydantic/SQLModel과 같은 데이터 모델 클래스
+        :param pk_name: 기본 키 컬럼 이름 (default: 'id')
         """
         self.table_name = table_name
         self.model = model
+        self.pk_name = pk_name
 
     async def _execute(self, query: str, params: Optional[Tuple] = None, fetch: str = "all") -> Any:
         """
@@ -40,7 +42,7 @@ class BaseRepository:
 
     async def get_by_id(self, item_id: int) -> Optional[ModelType]:
         """ID로 단일 항목을 조회합니다."""
-        query = f"SELECT * FROM {self.table_name} WHERE id = %s"
+        query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"
         result = await self._execute(query, (item_id,), fetch="one")
         if result:
             return self.model(**result)
@@ -67,7 +69,7 @@ class BaseRepository:
     async def update(self, item_id: int, data: Dict[str, Any]) -> None:
         """ID로 기존 항목을 업데이트합니다."""
         set_clause = ", ".join([f"{key} = %s" for key in data.keys()])
-        query = f"UPDATE {self.table_name} SET {set_clause} WHERE id = %s"
+        query = f"UPDATE {self.table_name} SET {set_clause} WHERE {self.pk_name} = %s"
         params = list(data.values()) + [item_id]
         
         async with Database.get_connection() as conn:
@@ -76,7 +78,7 @@ class BaseRepository:
 
     async def delete(self, item_id: int) -> None:
         """ID로 항목을 삭제합니다."""
-        query = f"DELETE FROM {self.table_name} WHERE id = %s"
+        query = f"DELETE FROM {self.table_name} WHERE {self.pk_name} = %s"
         async with Database.get_connection() as conn:
             await self._execute(query, (item_id,), fetch="none")
             await conn.commit()

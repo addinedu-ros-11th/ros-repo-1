@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Form
-from ...infrastructure.database.repositories.mysql_user_repository import UserRepository
+from ...infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
 
 router = APIRouter(
     prefix="/api/v1",
     tags=["Auth"]
 )
 
-user_repo = UserRepository()
+user_repo = MySQLUserRepository()
 
 @router.post("/login")
 async def login_api(username: str = Form(...), password: str = Form(...)):
@@ -23,6 +23,7 @@ async def login_api(username: str = Form(...), password: str = Form(...)):
     # 3. 성공 시 권한 정보 등을 담아 JSON으로 반환
     return {
         "status": "success",
-        "role": user.role,  # "ADMIN" 또는 "STAFF"
+        "user_id": user.account,  # 앱에서 저장하여 이후 명령 시 사용
+        "role": user.role,        # "ADMIN" 또는 "STAFF"
         "name": user.name
     }

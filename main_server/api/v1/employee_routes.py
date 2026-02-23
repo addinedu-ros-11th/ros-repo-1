@@ -6,14 +6,29 @@ import uuid
 
 router = APIRouter(prefix="/api/v1/employee", tags=["Employee"])
 
+import logging
+logger = logging.getLogger(__name__)
+
 @router.post("/command")
-async def process_command(request: Dict[str, str]):
+async def process_command(request: Dict[str, Any]):
     """
-    직원의 자연어 명령(예: "커피 배달해줘")을 처리합니다.
+    직원의 자연어 명령을 처리합니다.
+    Body 예시: {"message": "나한테 커피 가져다줘", "user_id": "worker123"}
     """
+    logger.info(f"Received command request: {request}")
     message = request.get("message")
+    caller_id = request.get("user_id")
+
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
+    
+    if not caller_id:
+        # 앱에서 user_id를 보내지 않았을 경우
+        return {
+            "status": "error", 
+            "message": "사용자 식별 정보(user_id)가 없습니다. 로그인 후 다시 시도해주세요.",
+            "received_body": request
+        }
 
     req_id = str(uuid.uuid4())
     
@@ -24,7 +39,8 @@ async def process_command(request: Dict[str, str]):
         return {"status": "error", "message": "명령을 이해하지 못했습니다.", "ai_result": ai_result}
 
     # 2. 해석된 데이터를 바탕으로 작업 생성 및 로봇 할당
-    task = await container.task_manager.create_task_from_ai(ai_result)
+    # caller_id를 전달하여 AI 결과에 requester_name이 없을 경우의 기본값으로 사용
+    task = await container.task_manager.create_task_from_ai(ai_result, caller_name=caller_id)
     
     if not task:
         return {"status": "retry", "message": "가용한 로봇이 없습니다.", "ai_result": ai_result}

@@ -237,9 +237,9 @@ CREATE TABLE `Products` (
 LOCK TABLES `Products` WRITE;
 /*!40000 ALTER TABLE `Products` DISABLE KEYS */;
 INSERT INTO `Products` (`name`, `type`, `stock_quantity`, `image_url`) VALUES
-('Choco Pie', 'SNACK', 50, 'img/chocopie.png'),
-('Coffee', 'SNACK', 100, 'img/coffee.png'),
-('Orange Juice', 'SNACK', 20, 'img/juice.png'),
+('Choco Pie (초코파이)', 'SNACK', 50, 'img/chocopie.png'),
+('Coffee (커피)', 'SNACK', 100, 'img/coffee.png'),
+('Orange Juice (오렌지 주스)', 'SNACK', 20, 'img/juice.png'),
 ('A4 Paper', 'ITEM', 500, NULL),
 ('Stapler', 'ITEM', 5, NULL);
 /*!40000 ALTER TABLE `Products` ENABLE KEYS */;

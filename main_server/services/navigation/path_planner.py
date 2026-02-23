@@ -32,6 +32,10 @@ class PathPlannerService:
             map_image = Image.open(pgm_filename)
             # 0(검정, 장애물) ~ 255(흰색, 자유공간)
             raw_data = np.array(map_image)
+            self.height, self.width = raw_data.shape
+
+            # ROS 맵 보정용 설정 (나중에 바꾸기 쉽게 필드로 유지)
+            self.map_invert_y = True 
 
             # 1. 이진화 (ROS 표준: 255는 통로, 0은 벽, 205는 미탐색)
             # pathfinding용: 1(이동가능), 0(장애물)
@@ -45,7 +49,7 @@ class PathPlannerService:
             self.grid = Grid(matrix=self.matrix.tolist())
             self.forbidden_zones: List[Dict] = []
             
-            logger.info(f"Map Loaded: {self.matrix.shape} grid size with resolution {self.resolution}")
+            logger.info(f"Map Loaded: {self.width}x{self.height} (Res: {self.resolution}, Origin: {self.origin})")
 
     def update_forbidden_zones(self, zones: List[Dict]):
         """관리자가 설정한 금지 구역을 지도 데이터에 반영합니다."""
@@ -94,17 +98,25 @@ class PathPlannerService:
         return inflated
     
     def world_to_grid(self, x_m: float, y_m: float):
-        """실제 거리(m)를 그리드 인덱스로 변환"""
-        grid_x = int((x_m - self.origin[0]) / self.resolution)
-        grid_y = int((y_m - self.origin[1]) / self.resolution)
-        # PGM 이미지는 좌상단이 (0,0)이고 ROS 좌표는 좌하단 기준일 수 있으므로 
-        # 맵 파일 특성에 따라 y축 반전이 필요할 수 있습니다.
-        return grid_x, grid_y
+        """실제 거리(m)를 그리드 인덱스로 변환 (Y축 반전만 적용, 범위 체크는 호출부 위임)"""
+        gx = int((x_m - self.origin[0]) / self.resolution)
+        gy = int((y_m - self.origin[1]) / self.resolution)
+        
+        # Matrix 좌표계(상단0)와 World 좌표계(하단0) 보정
+        if hasattr(self, 'map_invert_y') and self.map_invert_y:
+            gy = (self.height - 1) - gy
+
+        # Clamping 제거: 범위를 벗어난 값 그대로 반환하여 호출부에서 에러 처리하도록 함
+        return gx, gy
 
     def grid_to_world(self, gx: int, gy: int):
-        """그리드 인덱스를 실제 거리(m)로 변환"""
+        """그리드 인덱스를 실제 거리(m)로 변환 (반전 포함)"""
+        raw_gy = gy
+        if hasattr(self, 'map_invert_y') and self.map_invert_y:
+            raw_gy = (self.height - 1) - gy
+            
         x_m = (gx * self.resolution) + self.origin[0]
-        y_m = (gy * self.resolution) + self.origin[1]
+        y_m = (raw_gy * self.resolution) + self.origin[1]
         return x_m, y_m
 
 
@@ -118,35 +130,45 @@ class PathPlannerService:
         pathfinding 라이브러리의 A* 알고리즘을 사용하여 경로를 계산합니다.
         """
         # 시작점과 목적지 설정
-        start_goal_x, start_goal_y = self.world_to_grid(robot.pose_x, robot.pose_y)
-        end_goal_x, end_goal_y = self.world_to_grid(goal_x, goal_y)
+        start_gx, start_gy = self.world_to_grid(robot.pose_x, robot.pose_y)
+        end_gx, end_gy = self.world_to_grid(goal_x, goal_y)
 
-        # 그리드 범위 체크
-        if not (0 <= start_goal_x < self.grid.width and 0 <= start_goal_y < self.grid.height):
-            logger.error("시작점이 맵 밖에 있습니다.")
+        logger.info(f"[PathPlanner] A* 계산 요청: Grid({start_gx}, {start_gy}) -> Grid({end_gx}, {end_gy})")
+
+        # 그리드 범위 체크 (Strict Validation)
+        if not (0 <= start_gx < self.width and 0 <= start_gy < self.height):
+            logger.error(f"시작점이 맵 범위를 벗어났습니다: ({start_gx}, {start_gy}), Map Size: {self.width}x{self.height}")
             return None
         
-        start_node = self.grid.node(start_goal_x, start_goal_y)
-        end_node = self.grid.node(end_goal_x, end_goal_y)
-        
-        logger.info(f"[PathPlanner] A* 계산 시작: ({start_node.x}, {start_node.y}) -> ({end_node.x}, {end_node.y})")
-
-        # 경로 계산
-        path, runs = self.finder.find_path(start_node, end_node, self.grid)
-        
-        # 그리드 상태 초기화 (다음 계산을 위해 필요)
-        self.grid.cleanup()
-
-        if not path or len(path) == 0:
-            logger.warning("경로를 찾을 수 없습니다.")
+        if not (0 <= end_gx < self.width and 0 <= end_gy < self.height):
+            logger.error(f"목적지가 맵 범위를 벗어났습니다: ({end_gx}, {end_gy}), Map Size: {self.width}x{self.height}")
             return None
 
-        logger.info(f"경로 계산 완료 (단계: {runs}, 길이: {len(path)})")
+        # 워커블 체크 (선택 사항: 시작점이 벽이면 근처 탐색 or 에러)
+        if not self.grid.walkable(start_gx, start_gy):
+            logger.warning(f"시작 위치({start_gx}, {start_gy})가 장애물(벽)입니다.")
+            # return None # 필요시 주석 해제하여 엄격하게 차단
 
-        result_path = []
-        for node in path:
-            world_x, world_y = self.grid_to_world(node.x, node.y)
-            result_path.append({"x": world_x, "y": world_y})
+        try:
+            start_node = self.grid.node(start_gx, start_gy)
+            end_node = self.grid.node(end_gx, end_gy)
+            
+            # 경로 계산
+            path, runs = self.finder.find_path(start_node, end_node, self.grid)
+            
+            # 그리드 상태 초기화 (다음 계산을 위해 필요)
+            self.grid.cleanup()
 
-        # 결과 반환 (딕셔너리 리스트 형태)
-        return result_path
+            if not path or len(path) == 0:
+                logger.warning(f"경로를 찾을 수 없습니다: ({start_gx},{start_gy}) -> ({end_gx},{end_gy})")
+                return None
+
+            logger.info(f"경로 계산 완료 (단계: {runs}, 길이: {len(path)})")
+
+            return [
+                {"x": x, "y": y} 
+                for x, y in [self.grid_to_world(n.x, n.y) for n in path]
+            ]
+        except Exception as e:
+            logger.error(f"경로 계획 중 예외 발생: {e}")
+            return None

@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import ai_vision_pb2 as ai__vision__pb2
+from . import ai_vision_pb2 as ai__vision__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__

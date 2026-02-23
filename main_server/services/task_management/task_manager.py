@@ -46,10 +46,21 @@ class TaskManager:
             TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
         }
 
-    async def create_task_from_ai(self, ai_result: Dict[str, Any]) -> Optional[Task]:
+    async def create_task_from_ai(self, ai_result: Dict[str, Any], caller_name: Optional[str] = None) -> Optional[Task]:
         """AI 해석 결과로 태스크를 생성하고 로봇을 배차합니다."""
 
-        # 1. 시나리오 핸들러를 통해 AI 결과 처리 및 DB 저장용 데이터 준비
+        # 1. AI 결과 보정
+        if "fields" not in ai_result or ai_result["fields"] is None:
+            ai_result["fields"] = {}
+        
+        fields = ai_result["fields"]
+        if not fields.get("requester_name") and caller_name:
+            fields["requester_name"] = caller_name
+            logger.info(f"Requester name missing in AI result. Injected caller_name: {caller_name}")
+        elif not fields.get("requester_name") and not caller_name:
+            logger.warning("Both requester_name and caller_name are missing.")
+
+        # 2. 시나리오 핸들러를 통해 AI 결과 처리 및 DB 저장용 데이터 준비
         prepared_data = await self.scenario_handler.prepare_task_data(ai_result)
 
         if not prepared_data:

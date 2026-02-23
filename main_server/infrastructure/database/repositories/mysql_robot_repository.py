@@ -9,7 +9,7 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
     MySQL 데이터베이스에서 로봇 데이터를 관리하는 구체적인 리포지토리 클래스입니다.
     """
     def __init__(self):
-        super().__init__(table_name="Robots", model=Robot)
+        super().__init__(table_name="Robots", model=Robot, pk_name="robot_id")
 
     async def get_by_id(self, robot_id: int) -> Optional[Robot]:
         return await super().get_by_id(robot_id)
@@ -56,7 +56,7 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
 
     async def update_location(self, robot_id: int, x: float, y: float):
         """실시간 좌표 업데이트 (관제 지도 표시용)"""
-        query = "UPDATE robots SET current_x = %s, current_y = %s WHERE id = %s"
+        query = "UPDATE Robots SET current_x = %s, current_y = %s WHERE robot_id = %s"
         await self._execute(query, (x, y, robot_id), fetch="none")
 
     async def log_telemetry(self, robot_id: int, data: dict):

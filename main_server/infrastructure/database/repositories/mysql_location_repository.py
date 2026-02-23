@@ -22,7 +22,7 @@ class MySQLLocationRepository(BaseRepository):
     MySQL 데이터베이스를 사용하여 POI(Point of Interest) 위치 정보를 관리하는 리포지토리.
     """
     def __init__(self):
-        super().__init__(table_name="Locations", model=LocationModel)
+        super().__init__(table_name="Locations", model=LocationModel, pk_name="location_id")
 
     async def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """

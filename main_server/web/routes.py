@@ -25,10 +25,16 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     # 검증 (단순 비교 버전)
     if user and user.password_hash == password:
+        response = None
         if user.role == "ADMIN":
-            return RedirectResponse(url="/admin", status_code=303)
+            response = RedirectResponse(url="/admin", status_code=303)
         elif user.role == "STAFF":
-            return RedirectResponse(url="/employee", status_code=303)
+            response = RedirectResponse(url="/employee", status_code=303)
+        
+        if response:
+            # 쿠키에 user_id 저장 (httponly=False여야 JS에서 읽을 수 있음)
+            response.set_cookie(key="user_id", value=user.account, httponly=False)
+            return response
 
     # 실패 시 에러 메시지와 함께 다시 로그인창으로
     return templates.TemplateResponse("login.html", {

@@ -45,12 +45,12 @@ class ScenarioDataHandler:
         """간식 배달 시나리오 데이터를 준비합니다."""
         requester_name = fields.get("requester_name")
         if not requester_name:
-            logger.error("Requester name not found in AI result for SNACK_DELIVERY")
+            logger.error(f"Requester name not found in AI result for SNACK_DELIVERY. Available fields: {list(fields.keys())}")
             return None
 
         requester = await self.user_repo.find_by_name(requester_name)
         if not requester:
-            logger.error(f"Requester '{requester_name}' not found in DB.")
+            logger.error(f"Requester '{requester_name}' not found in DB (searched by name and account).")
             return None
 
         # Use location_id from user record to find destination

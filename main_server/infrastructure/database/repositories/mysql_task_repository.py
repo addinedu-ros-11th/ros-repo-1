@@ -11,7 +11,7 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
     MySQL 데이터베이스에서 Task 데이터를 관리하는 구체적인 리포지토리 클래스입니다.
     """
     def __init__(self):
-        super().__init__(table_name="Tasks", model=Task)
+        super().__init__(table_name="Tasks", model=Task, pk_name="task_id")
 
     async def get_by_id(self, task_id: int) -> Optional[Task]:
         task_data = await super().get_by_id(task_id)
