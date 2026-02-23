@@ -2,6 +2,11 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
+from PIL import Image
+import yaml
+import io
+from fastapi import Response
+import os
 
 from main_server.container import container
 # 기존 리포지토리 및 신규 리포지토리 임포트
@@ -16,6 +21,44 @@ router = APIRouter(
     tags=["Admin/Control"],
 )
 
+# # ---------------------------------------------------------
+# # 0. 지도
+# # ---------------------------------------------------------
+# MAP_DIR = "./main_server/domains/map/"
+
+# cached_map_png = None  # 전역 변수로 캐시 저장
+
+# @router.get("/map-image")
+# async def get_map_image():
+#     global cached_map_png
+    
+#     # 이미 캐시된 데이터가 있으면 바로 반환 (렉 방지 핵심)
+#     if cached_map_png:
+#         return Response(content=cached_map_png, media_type="image/png")
+
+#     path = os.path.join(MAP_DIR, "mymap.pgm")
+#     try:
+#         with Image.open(path) as img:
+#             # 리사이즈 로직 포함
+#             img = img.convert("RGBA")
+#             img_byte_arr = io.BytesIO()
+#             img.save(img_byte_arr, format='PNG')
+#             cached_map_png = img_byte_arr.getvalue() # 캐시에 저장
+            
+#             return Response(content=cached_map_png, media_type="image/png")
+#     except Exception as e:
+#         return Response(status_code=500)
+
+# @router.get("/map-info")
+# async def get_map_info():
+#     """mymap.yaml의 메타데이터를 파싱하여 전송"""
+#     with open(os.path.join(MAP_DIR, "mymap.yaml"), 'r') as f:
+#         config = yaml.safe_load(f)
+#     return {
+#         "resolution": config['resolution'], # 0.05
+#         "origin": config['origin'],         # [-10.0, -10.0, 0.0]
+#         "image_path": "/api/v1/admin/map-image"
+#     }
 # ---------------------------------------------------------
 # 1. 사무실 관리 (UI가 바로 렌더링할 수 있게 가공)
 # ---------------------------------------------------------
@@ -64,12 +107,45 @@ async def get_system_logs():
     logs = await container.log_repository.get_recent_system_logs(limit=50)
     return logs
 
+# --- admin_routes.py ---
+
 # ---------------------------------------------------------
-# 4. 로봇 실시간 관제 (후순위 유지)
+# 4. 로봇 실시간 관제 (1초마다 호출용)
 # ---------------------------------------------------------
-@router.get("/robots/status")
-async def get_all_robots_status(
-    robot_repo: MySQLRobotRepository = Depends(lambda: container.robot_repository)
-):
-    """로봇의 위치, 배터리, 상태 정보를 실시간으로 반환합니다. (SR-017, SR-018)"""
-    return await robot_repo.get_all()
+# @router.get("/robots/status")
+# async def get_all_robots_status():
+#     """백엔드에서 캔버스 좌표 및 상태 배지까지 계산해서 반환"""
+#     robots = await container.robot_repo.get_all()
+    
+#     processed_robots = []
+#     for r in robots:
+#         processed_robots.append({
+#             "id": r.id,
+#             "name": r.name,
+#             "status": r.status,
+#             # UI에서 조건문 없이 바로 쓸 수 있도록 배지 색상 결정
+#             "status_color": "red" if r.status == "WORKING" else "green",
+#             "battery": f"{r.battery}%",
+#             # 지도 픽셀 좌표 변환 로직이 있다면 여기서 계산 후 전송 가능
+#             "pos_x": r.x, 
+#             "pos_y": r.y
+#         })
+#     return processed_robots
+
+# # ---------------------------------------------------------
+# # 5. 금지구역 관리 (1초마다 호출용)
+# # ---------------------------------------------------------
+# @router.get("/zones")
+# async def get_forbidden_zones():
+#     """프론트엔드 테이블과 지도 렌더링을 위한 구역 데이터"""
+#     zones = await container.location_repo.get_forbidden_zones()
+    
+#     processed_zones = []
+#     for z in zones:
+#         processed_zones.append({
+#             "id": z.id,
+#             "name": z.name,
+#             # 테이블용 텍스트 가공을 백엔드에서 수행
+#             "display_coords": f"({z.x1}, {z.y1}) → ({z.x2}, {z.y2})"
+#         })
+#     return processed_zones

@@ -60,7 +60,7 @@ body {
 #map-container { 
     position: relative;
     /*width를 바꿔 지도 크기 변경*/
-    width: 1000px;
+    width: 100%;
     height: 600px;
     background-color: white;
     /* #eee 대신 #ddd(조금 더 진함) 또는 rgba(0,0,0,0.1) 사용 */
