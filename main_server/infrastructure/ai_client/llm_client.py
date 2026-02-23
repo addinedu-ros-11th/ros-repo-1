@@ -48,26 +48,24 @@ class LLMServiceClient:
 
         if struct_msg.HasField("location"):
             fields["location"] = struct_msg.location
-        if struct_msg.HasField("item"):
-            fields["item"] = struct_msg.item
+
+        if struct_msg.HasField("requester_name"):
+            fields["requester_name"] = struct_msg.requester_name
+        if struct_msg.HasField("receiver_name"):
+            fields["receiver_name"] = struct_msg.receiver_name
+        if struct_msg.HasField("visitor_name"):
+            fields["visitor_name"] = struct_msg.visitor_name
 
         if struct_msg.HasField("source_location"):
             fields["source_location"] = struct_msg.source_location
         if struct_msg.HasField("dest_location"):
             fields["dest_location"] = struct_msg.dest_location
-        if struct_msg.HasField("quantity"):
-            fields["quantity"] = struct_msg.quantity
 
-        if struct_msg.HasField("device_type"):
-            fields["device_type"] = ai_llm_pb2.IoTDeviceType.Name(
-                struct_msg.device_type
-            )
-        if struct_msg.HasField("command"):
-            fields["command"] = ai_llm_pb2.IoTCommandType.Name(struct_msg.command)
-        if struct_msg.HasField("target_value"):
-            fields["target_value"] = struct_msg.target_value
-        if struct_msg.HasField("room_id"):
-            fields["room_id"] = struct_msg.room_id
+        if len(struct_msg.items) > 0:
+            fields["items"] = [
+                {"item_name": item.item_name, "quantity": item.quantity}
+                for item in struct_msg.items
+            ]
 
         if struct_msg.HasField("message"):
             fields["message"] = struct_msg.message

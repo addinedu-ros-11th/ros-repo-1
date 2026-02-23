@@ -29,28 +29,23 @@ def print_result(req_id: str, text: str, response):
     # 공통 필드
     if struct_msg.HasField("location"):
         print(f"  📍 location: {struct_msg.location}")
-    if struct_msg.HasField("item"):
-        print(f"  📦 item: {struct_msg.item}")
+
+    # 사용자 정보
+    if struct_msg.HasField("requester_name"):
+        print(f"  👤 requester_name: {struct_msg.requester_name}")
+    if struct_msg.HasField("receiver_name"):
+        print(f"  👥 receiver_name: {struct_msg.receiver_name}")
+    if struct_msg.HasField("visitor_name"):
+        print(f"  👋 visitor_name: {struct_msg.visitor_name}")
 
     # 배달 관련
     if struct_msg.HasField("source_location"):
         print(f"  🚀 source_location: {struct_msg.source_location}")
     if struct_msg.HasField("dest_location"):
         print(f"  🎯 dest_location: {struct_msg.dest_location}")
-    if struct_msg.HasField("quantity"):
-        print(f"  🔢 quantity: {struct_msg.quantity}")
-
-    # IoT 제어
-    if struct_msg.HasField("device_type"):
-        print(
-            f"  🔌 device_type: {ai_llm_pb2.IoTDeviceType.Name(struct_msg.device_type)}"
-        )
-    if struct_msg.HasField("command"):
-        print(f"  ⚙️  command: {ai_llm_pb2.IoTCommandType.Name(struct_msg.command)}")
-    if struct_msg.HasField("target_value"):
-        print(f"  🎚️  target_value: {struct_msg.target_value}")
-    if struct_msg.HasField("room_id"):
-        print(f"  🏠 room_id: {struct_msg.room_id}")
+    if len(struct_msg.items) > 0:
+        for item in struct_msg.items:
+            print(f"  📦 item: {item.item_name} x{item.quantity}")
 
     # 기타
     if struct_msg.HasField("message"):
@@ -77,13 +72,11 @@ def test_grpc_structured_response():
     test_cases = [
         ("req_001", "회의실로 커피 갖다줘"),
         ("req_002", "301호에 서류 전달해줘"),
-        ("req_003", "회의실 불 켜줘"),
-        ("req_004", "온도 25도로 맞춰줘"),
-        ("req_005", "에어컨 켜줘"),
-        ("req_006", "안녕하세요"),
-        ("req_007", "간식 창고에서 과자 3개 가져와줘"),
-        ("req_008", "문 잠가줘"),
-        ("req_009", "오늘 날씨 어때?"),
+        ("req_003", "김철수한테 노트북 전달해줘"),
+        ("req_004", "방문객 이영희님을 회의실로 안내해줘"),
+        ("req_005", "안녕하세요"),
+        ("req_006", "간식 창고에서 과자 3개 가져와줘"),
+        ("req_007", "오늘 날씨 어때?"),
     ]
 
     print("\n테스트 시작...\n")
