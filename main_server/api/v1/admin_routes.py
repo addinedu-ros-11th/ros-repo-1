@@ -123,7 +123,13 @@ async def get_system_logs():
 @router.post("/zones")
 async def add_zone(zone_data: Dict[str, Any]):
     try:
+        # 1. DB 저장
         await container.location_repo.create_forbidden_zone(zone_data)
+        
+        # 2. FleetManager 동기화 (전체 리스트를 다시 가져와서 업데이트)
+        all_zones = await container.location_repo.get_all_forbidden_zones()
+        container.fleet_manager.update_forbidden_zones(all_zones)
+        
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -137,9 +143,16 @@ async def get_zones():
 @router.delete("/zones/{zone_id}")
 async def delete_zone(zone_id: int):
     try:
+        # 1. DB 삭제
         success = await container.location_repo.delete_forbidden_zone(zone_id)
-        if not success:
+        
+        if success:
+            # 2. FleetManager 동기화 (삭제 후 남은 리스트를 다시 전달)
+            all_zones = await container.location_repo.get_all_forbidden_zones()
+            container.fleet_manager.update_forbidden_zones(all_zones)
+            return {"status": "success"}
+        else:
             raise HTTPException(status_code=404, detail="구역을 찾을 수 없습니다.")
-        return {"status": "success", "message": f"Zone {zone_id} deleted"}
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
