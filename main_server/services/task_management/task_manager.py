@@ -54,7 +54,9 @@ class TaskManager:
             ai_result["fields"] = {}
         
         fields = ai_result["fields"]
-        if not fields.get("requester_name") and caller_name:
+        if caller_name:
+            fields["requester_name"] = caller_name
+        elif not fields.get("requester_name") and caller_name:
             fields["requester_name"] = caller_name
             logger.info(f"Requester name missing in AI result. Injected caller_name: {caller_name}")
         elif not fields.get("requester_name") and not caller_name:
@@ -89,8 +91,6 @@ class TaskManager:
             return None
 
         # 4. 태스크 생성 (DB)
-        # 참고: task_repo.create 메서드는 task_items도 함께 처리하도록 수정이 필요합니다.
-        # (예: `create(self, task_data, items_data)`)
         task = await self.task_repo.create(task_data, task_items)
         if not task:
             logger.error("Failed to create task in database.")

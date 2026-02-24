@@ -40,8 +40,25 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
         if not update_values:
             return await self.get_by_id(robot_id) # 업데이트할 내용이 없으면 현재 상태 반환
 
+        # DB 컬럼명으로 매핑 (pose_x -> current_x, pose_y -> current_y)
+        if "pose_x" in update_values:
+            update_values["current_x"] = update_values.pop("pose_x")
+        if "pose_y" in update_values:
+            update_values["current_y"] = update_values.pop("pose_y")
+
         await super().update(robot_id, update_values)
-        return await self.get_by_id(robot_id)
+        
+        # 업데이트 후 현재 상태를 가져와 텔레메트리 로그 기록
+        updated_robot = await self.get_by_id(robot_id)
+        if updated_robot:
+            await self.log_telemetry(robot_id, {
+                "status": updated_robot.status,
+                "current_x": updated_robot.pose_x,
+                "current_y": updated_robot.pose_y,
+                "battery_level": updated_robot.battery_level
+            })
+        
+        return updated_robot
 
     async def delete(self, robot_id: int) -> bool:
         """ID로 로봇을 삭제하고 성공 여부를 반환합니다."""
@@ -51,18 +68,33 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
         
         await super().delete(robot_id)
         return True
-    
-    # 미리업뎃하였음
 
     async def update_location(self, robot_id: int, x: float, y: float):
         """실시간 좌표 업데이트 (관제 지도 표시용)"""
-        query = "UPDATE Robots SET current_x = %s, current_y = %s WHERE robot_id = %s"
-        await self._execute(query, (x, y, robot_id), fetch="none")
+        await self.update(robot_id, {"pose_x": x, "pose_y": y})
 
     async def log_telemetry(self, robot_id: int, data: dict):
         """로봇의 모든 센서 데이터를 로그 테이블에 기록 (분석용)"""
-        # Robot_Telemetry_Logs 테이블에 데이터 쌓기
-        pass
+        query = """
+            INSERT INTO Robot_Telemetry_Logs 
+            (robot_id, status, location_x, location_y, battery_level, timestamp)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """
+        params = (
+            robot_id,
+            data.get("status"),
+            data.get("current_x"),
+            data.get("current_y"),
+            data.get("battery_level")
+        )
+        await self._execute_and_commit(query, params)
+
+    async def _execute_and_commit(self, query: str, params: tuple):
+        from main_server.infrastructure.database.connection import Database
+        async with Database.get_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, params)
+                await conn.commit()
 
 # 이 리포지토리를 사용하기 위한 의존성 주입용 팩토리 함수
 def get_robot_repository() -> IRobotRepository:
