@@ -88,20 +88,160 @@
     </div>
 
     <script>
+        let isZoneSetupMode = false;
+        let isDragging = false;
+        let startX, startY;
+        let currentZoneRect = null;
+
+        // 1. 버튼 활성화 토글
+        function toggleZoneSetup() {
+            isZoneSetupMode = !isZoneSetupMode;
+            const btn = document.getElementById('setup-btn');
+            
+            if (isZoneSetupMode) {
+                btn.innerText = "🚫 금지구역 설정: ON";
+                btn.style.backgroundColor = "#e74c3c"; // 활성화 시 붉은색
+                document.getElementById('map-container').style.cursor = "crosshair";
+            } else {
+                btn.innerText = "🚫 금지구역 설정: OFF";
+                btn.style.backgroundColor = "#3498db";
+                document.getElementById('map-container').style.cursor = "default";
+            }
+        }
+
+        // 2. 마우스 클릭 시작 (handleMapMouseDown 함수 내 수정)
+        function handleMapMouseDown(event) {
+            if (!isZoneSetupMode) return;
+            
+            isDragging = true;
+            const rect = event.currentTarget.getBoundingClientRect();
+            startX = event.clientX - rect.left;
+            startY = event.clientY - rect.top;
+
+            // CSS에 정의된 .temp-rect 클래스 사용
+            currentZoneRect = document.createElement('div');
+            currentZoneRect.className = 'temp-rect'; 
+            currentZoneRect.style.left = `${startX}px`;
+            currentZoneRect.style.top = `${startY}px`;
+            document.getElementById('map-container').appendChild(currentZoneRect);
+        }
+
+        // 3. 마우스 드래그 중 (사각형 크기 조절)
+        function handleMapMouseMove(event) {
+            if (!isDragging || !currentZoneRect) return;
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const currentX = event.clientX - rect.left;
+            const currentY = event.clientY - rect.top;
+
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+            
+            currentZoneRect.style.width = `${width}px`;
+            currentZoneRect.style.height = `${height}px`;
+            currentZoneRect.style.left = `${Math.min(currentX, startX)}px`;
+            currentZoneRect.style.top = `${Math.min(currentY, startY)}px`;
+        }
+
+        // 4. 마우스 뗌 (저장 팝업 및 API 호출)
+        async function handleMapMouseUp(event) {
+            if (!isDragging) return;
+            isDragging = false;
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const endX = event.clientX - rect.left;
+            const endY = event.clientY - rect.top;
+
+            const zoneName = prompt("새로운 금지구역의 이름을 입력하세요:");
+            if (zoneName) {
+                // 백엔드 POST 호출
+                const payload = {
+                    name: zoneName,
+                    x1: startX, y1: startY,
+                    x2: endX, y2: endY,
+                    type: "forbidden"
+                };
+                
+                const res = await fetch('/api/v1/admin/zones', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    alert("금지구역이 저장되었습니다.");
+                    loadZones(); // 리스트 갱신
+                }
+            }
+            
+            // 임시 사각형 제거
+            if (currentZoneRect) {
+                currentZoneRect.remove();
+                currentZoneRect = null;
+            }
+        }
+        
+        async function loadZones() {
+            const res = await fetch('/api/v1/admin/zones');
+            const zones = await res.json();
+            
+            // 1. 기존에 그려진 구역 삭제 (리스트 갱신 전 청소)
+            document.querySelectorAll('.no-go-zone').forEach(el => el.remove());
+
+            // 2. API로 받은 데이터를 바탕으로 지도 위에 그리기
+            zones.forEach(zone => {
+                const zoneDiv = document.createElement('div');
+                zoneDiv.className = 'no-go-zone'; // CSS에 정의된 스타일 연계
+                
+                // 좌표 및 크기 계산 (x2, y2가 끝점인 경우)
+                const width = Math.abs(zone.x2 - zone.x1);
+                const height = Math.abs(zone.y2 - zone.y1);
+                
+                zoneDiv.style.left = `${Math.min(zone.x1, zone.x2)}px`;
+                zoneDiv.style.top = `${Math.min(zone.y1, zone.y2)}px`;
+                zoneDiv.style.width = `${width}px`;
+                zoneDiv.style.height = `${height}px`;
+                zoneDiv.innerText = zone.name;
+
+                document.getElementById('map-container').appendChild(zoneDiv);
+            });
+
+            // 3. 하단 테이블 리스트 업데이트
+            document.getElementById('zone-tbody').innerHTML = zones.map(z => `
+                <tr>
+                    <td>${z.id}</td>
+                    <td>${z.name}</td>
+                    <td>(${z.x1}, ${z.y1}) ~ (${z.x2}, ${z.y2})</td>
+                    <td><button onclick="deleteZone(${z.id})" style="color:red;">삭제</button></td>
+                </tr>
+            `).join('');
+        }
+
+        // admin_dashboard.html 내의 refreshMap 함수 수정
         async function refreshMap() {
             const mapInner = document.getElementById('map-inner');
             try {
-                // 캐시 방지를 위해 시간값을 파라미터로 붙임
                 const response = await fetch('/api/v1/admin/map/image?t=' + new Date().getTime());
                 
                 if (response.ok) {
                     const blob = await response.blob();
                     const objectURL = URL.createObjectURL(blob);
                     
-                    // 기존 내용을 지우고 이미지 태그 삽입
-                    mapInner.innerHTML = `<img src="${objectURL}" id="real-map-img" style="max-width:100%; max-height:100%;">`;
+                    // 이미지 생성 및 속성 부여
+                    const img = document.createElement('img');
+                    img.src = objectURL;
+                    img.id = "real-map-img";
+                    // CSS에서 pointer-events: none을 주었지만, 확실히 하기 위해 한 번 더 설정
+                    img.style.pointerEvents = "none"; 
+                    img.style.userSelect = "none";
+                    
+                    mapInner.innerHTML = ""; // 기존 내용 비우기
+                    mapInner.appendChild(img);
+                    
+                    // 구역 다시 불러오기 (이미지 위에 그리기 위함)
+                    loadZones();
                 } else {
-                    mapInner.innerHTML = "<p style='color:red;'>이미지를 불러올 수 없습니다 (404/500)</p>";
+                    mapInner.innerHTML = "<p style='color:red;'>이미지를 불러올 수 없습니다</p>";
                 }
             } catch (error) {
                 mapInner.innerHTML = "<p style='color:red;'>연결 오류</p>";

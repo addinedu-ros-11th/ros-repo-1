@@ -69,6 +69,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: default;
+    /* 컨테이너 자체가 마우스 이벤트를 받도록 보장 */
+    pointer-events: auto;
 }
 
 #map-inner {
@@ -80,12 +83,15 @@ body {
 }
 
 #real-map-img {
-    /* 이미지가 컨테이너 안에 꽉 차되 비율을 유지하도록 설정 */
     max-width: 100%;
     max-height: 100%;
     object-fit: contain; 
-    /* 미니어처 세트장이므로 픽셀이 뭉개지지 않게 렌더링 */
     image-rendering: pixelated; 
+    
+    /* [핵심 수정] 이미지가 마우스 이벤트를 가로채지 않도록 설정 */
+    pointer-events: none; 
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 /* 지도와 버튼을 감싸는 컨테이너 */
