@@ -186,12 +186,28 @@ class LLMService:
 
     def _normalize_null_value(self, value: Any) -> Any:
         """
-        null/빈 문자열을 None으로 표준화
+        null/빈 문자열/자연어 "없음" 표현을 None으로 표준화
         """
         if value is None:
             return None
-        if isinstance(value, str) and value.strip().lower() in {"null", ""}:
-            return None
+        if isinstance(value, str):
+            lower_val = value.strip().lower()
+            # null 패턴 감지
+            if lower_val in {"null", ""}:
+                return None
+            # 자연어 "없음" 패턴 감지 (LLM이 JSON 형식을 따르지 않을 때 대비)
+            if any(
+                keyword in lower_val
+                for keyword in [
+                    "없음",
+                    "없이",
+                    "미명시",
+                    "명시되지",
+                    "확인불가",
+                    "알 수 없",
+                ]
+            ):
+                return None
         return value
 
     def _chat(self, messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
