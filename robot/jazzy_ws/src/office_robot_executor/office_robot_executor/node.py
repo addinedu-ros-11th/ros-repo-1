@@ -127,14 +127,14 @@ class OfficeRobotExecutor(Node):
 
         self._action_queue = actions
         self._current_task_id = self._extract_task_id(payload)
-        self._publish_status("ASSIGNED", {"task_id": self._current_task_id})
+        self._publish_status("ASSIGNED", self._task_id_payload())
         self._run_next_action()
 
     def _run_next_action(self) -> None:
         self._current_action = None
         if not self._action_queue:
             self.current_status = "IDLE"
-            self._publish_status("IDLE", {"task_id": self._current_task_id})
+            self._publish_status("IDLE", self._task_id_payload())
             self._current_task_id = None
             return
 
@@ -157,7 +157,7 @@ class OfficeRobotExecutor(Node):
         self._publish_status(
             self.current_status,
             {
-                "task_id": self._current_task_id,
+                **self._task_id_payload(),
                 "action": action,
                 "params": params,
             },
@@ -182,8 +182,8 @@ class OfficeRobotExecutor(Node):
             self._action_timer = None
         self._current_action = None
         if on_success:
-            self._publish_event(on_success, {"task_id": self._current_task_id})
-            self._publish_status(self.current_status, {"task_id": self._current_task_id}, event=on_success)
+            self._publish_event(on_success, self._task_id_payload())
+            self._publish_status(self.current_status, self._task_id_payload(), event=on_success)
         self._run_next_action()
 
     def _extract_task_id(self, payload: Dict[str, Any]) -> Optional[Any]:
@@ -195,6 +195,15 @@ class OfficeRobotExecutor(Node):
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     return value
         return None
+
+    def _task_id_payload(self, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if self._current_task_id is not None:
+            payload["task_id"] = self._current_task_id
+            payload["sequence_id"] = self._current_task_id
+        if extra is not None:
+            payload.update(extra)
+        return payload
 
     @staticmethod
     def _norm_command_id(value: Any) -> Optional[str]:
@@ -278,7 +287,6 @@ class OfficeRobotExecutor(Node):
                 "goal_send_exception",
                 {
                     "failure_detail": "goal_send_exception",
-                    "task_id": self._current_task_id,
                     "error": str(exc),
                 },
             )
@@ -290,10 +298,7 @@ class OfficeRobotExecutor(Node):
             )
             self._fail_current_action(
                 "goal_rejected",
-                {
-                    "failure_detail": "goal_rejected",
-                    "task_id": self._current_task_id,
-                },
+                {"failure_detail": "goal_rejected"},
             )
             return
 
@@ -313,7 +318,6 @@ class OfficeRobotExecutor(Node):
                 "goal_result_exception",
                 {
                     "failure_detail": "goal_result_exception",
-                    "task_id": self._current_task_id,
                     "error": str(exc),
                 },
             )
@@ -366,12 +370,13 @@ class OfficeRobotExecutor(Node):
             self._current_goal_handle = None
 
         self._publish_zero_cmd_vel_burst()
-        self._publish_event("SEQUENCE_CANCELED", {"task_id": self._current_task_id, "reason": reason})
+        self._publish_event("SEQUENCE_CANCELED", self._task_id_payload({"reason": reason}))
         self.current_status = "IDLE"
         self._action_queue = []
         self._current_action = None
+        cancel_status = self._task_id_payload({"reason": reason})
         self._current_task_id = None
-        self._publish_status("IDLE", {"reason": reason})
+        self._publish_status("IDLE", cancel_status)
 
     def _publish_zero_cmd_vel_burst(self) -> None:
         if self.stop_publish_count <= 0:
@@ -409,11 +414,12 @@ class OfficeRobotExecutor(Node):
         }.get(status_code, "STATUS_UNKNOWN")
 
     def _build_nav2_result_detail(self, status_code: int, result: Any) -> Dict[str, Any]:
-        detail: Dict[str, Any] = {
-            "task_id": self._current_task_id,
-            "status_code": status_code,
-            "status_text": self._goal_status_text(status_code),
-        }
+        detail: Dict[str, Any] = self._task_id_payload(
+            {
+                "status_code": status_code,
+                "status_text": self._goal_status_text(status_code),
+            }
+        )
 
         result_data = getattr(result, "result", None)
         if result_data is None:
@@ -433,14 +439,15 @@ class OfficeRobotExecutor(Node):
         self._action_queue = []
         self._current_action = None
         self.current_status = "ERROR"
-        payload = {"task_id": self._current_task_id, "reason": reason}
+        payload = self._task_id_payload({"reason": reason})
         if extra is not None:
             payload.update(extra)
         self._publish_event("ACTION_FAILED", payload)
-        self._publish_status("ERROR", {"task_id": self._current_task_id, "reason": reason})
+        self._publish_status("ERROR", self._task_id_payload({"reason": reason}))
         self.current_status = "IDLE"
+        idle_status = self._task_id_payload({"reason": "recover_after_error"})
         self._current_task_id = None
-        self._publish_status("IDLE", {"reason": "recover_after_error"})
+        self._publish_status("IDLE", idle_status)
 
     def _publish_status(self, status: str, extra: Dict[str, Any], event: Optional[str] = None) -> None:
         data = {
