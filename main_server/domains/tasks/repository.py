@@ -24,7 +24,7 @@ class ITaskRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def create(self, data: Dict[str, Any]) -> Task:
+    async def create(self, data: Dict[str, Any], items: Optional[List[Dict[str, Any]]] = None) -> Task:
         """새로운 작업을 생성합니다."""
         raise NotImplementedError
 

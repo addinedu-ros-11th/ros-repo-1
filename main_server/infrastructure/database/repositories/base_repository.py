@@ -9,7 +9,7 @@ ModelType = TypeVar("ModelType", bound=BaseModel)
 class BaseRepository:
     """
     모든 리포지토리를 위한 기본 클래스입니다.
-    비동기 CRUD 작업을 위한 공통 메서 제공합니다.
+    비동기 CRUD 작업을 위한 공통 메서드를 제공합니다.
     """
     def __init__(self, table_name: str, model: Type[ModelType], pk_name: str = "id"):
         """

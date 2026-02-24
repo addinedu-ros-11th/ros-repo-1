@@ -38,6 +38,8 @@ class RobotActionType(str, Enum):
     DISPLAY_TEXT = "DISPLAY_TEXT"       # LCD 텍스트 표시
     PLAY_SOUND = "PLAY_SOUND"           # 부저/음성 출력
     STOP = "STOP"                       # 긴급 정지
+    PAUSE = "PAUSE"                     # 일시 정지 (교차로 대기 등)
+    RESUME = "RESUME"                   # 주행 재개
 
 # ==========================================
 # 3. 데이터 스키마 (Pydantic Models)
