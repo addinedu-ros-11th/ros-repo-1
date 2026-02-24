@@ -38,6 +38,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("nav2_success_status_code", 4)
+        self.declare_parameter("nav2_feedback_log_period_sec", 1.5)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -68,6 +69,9 @@ class OfficeRobotExecutor(Node):
         self.nav2_success_status_code = (
             self.get_parameter("nav2_success_status_code").get_parameter_value().integer_value
         )
+        self.nav2_feedback_log_period_sec = (
+            self.get_parameter("nav2_feedback_log_period_sec").get_parameter_value().double_value
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -78,6 +82,9 @@ class OfficeRobotExecutor(Node):
         self._current_goal_handle = None
         self._goal_started_at: Optional[float] = None
         self._timeout_timer = None
+        self._goal_target: Optional[Dict[str, Any]] = None
+        self._last_nav_feedback: Optional[Dict[str, Any]] = None
+        self._last_feedback_log_at: float = 0.0
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
@@ -135,6 +142,7 @@ class OfficeRobotExecutor(Node):
         if not self._action_queue:
             self.current_status = "IDLE"
             self._publish_status("IDLE", self._task_id_payload())
+            self._clear_nav_goal_context()
             self._current_task_id = None
             return
 
@@ -203,6 +211,7 @@ class OfficeRobotExecutor(Node):
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
+        self._clear_nav_goal_context()
         self._current_action = None
         if on_success:
             self._publish_event(on_success, self._task_id_payload())
@@ -271,7 +280,9 @@ class OfficeRobotExecutor(Node):
             self.get_logger().error("Nav2 client unavailable.")
             return False
         if not self.nav_client.wait_for_server(timeout_sec=2.0):
-            self.get_logger().error("Nav2 action server not ready.")
+            self.get_logger().error(
+                f"Nav2 action server not ready (action={self.nav2_action_name}, task_id={self._current_task_id})."
+            )
             return False
 
         try:
@@ -293,11 +304,64 @@ class OfficeRobotExecutor(Node):
         goal.pose.pose.orientation.z = qz
         goal.pose.pose.orientation.w = qw
 
+        send_ts = time.time()
+        self._goal_target = {
+            "x": x,
+            "y": y,
+            "yaw": yaw,
+            "frame_id": self.frame_id,
+            "action_name": self.nav2_action_name,
+            "send_ts": send_ts,
+        }
+        self._last_nav_feedback = None
+        self._last_feedback_log_at = 0.0
         self._goal_started_at = time.time()
+        self.get_logger().info(
+            f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
+            f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), send_ts={send_ts:.3f})"
+        )
         self._start_timeout_watchdog()
-        send_future = self.nav_client.send_goal_async(goal)
+        send_future = self.nav_client.send_goal_async(
+            goal, feedback_callback=self._on_nav_goal_feedback
+        )
         send_future.add_done_callback(self._on_nav_goal_response)
         return True
+
+    def _on_nav_goal_feedback(self, feedback_msg: Any) -> None:
+        feedback = getattr(feedback_msg, "feedback", None)
+        if feedback is None:
+            return
+
+        snapshot: Dict[str, Any] = {}
+        if hasattr(feedback, "distance_remaining"):
+            snapshot["distance_remaining"] = float(feedback.distance_remaining)
+        if hasattr(feedback, "navigation_time"):
+            snapshot["navigation_time_sec"] = self._duration_to_sec(feedback.navigation_time)
+        if hasattr(feedback, "estimated_time_remaining"):
+            snapshot["estimated_time_remaining_sec"] = self._duration_to_sec(
+                feedback.estimated_time_remaining
+            )
+        if hasattr(feedback, "number_of_recoveries"):
+            snapshot["number_of_recoveries"] = int(feedback.number_of_recoveries)
+        if hasattr(feedback, "current_pose") and hasattr(feedback.current_pose, "pose"):
+            pose = feedback.current_pose.pose
+            snapshot["current_x"] = float(pose.position.x)
+            snapshot["current_y"] = float(pose.position.y)
+
+        self._last_nav_feedback = snapshot
+        now = time.time()
+        if (now - self._last_feedback_log_at) < self.nav2_feedback_log_period_sec:
+            return
+        self._last_feedback_log_at = now
+
+        self.get_logger().info(
+            "Nav2 feedback "
+            f"(task_id={self._current_task_id}, distance_remaining={snapshot.get('distance_remaining')}, "
+            f"navigation_time_sec={snapshot.get('navigation_time_sec')}, "
+            f"estimated_time_remaining_sec={snapshot.get('estimated_time_remaining_sec')}, "
+            f"recoveries={snapshot.get('number_of_recoveries')}, "
+            f"current_pose=({snapshot.get('current_x')}, {snapshot.get('current_y')}))"
+        )
 
     def _on_nav_goal_response(self, future) -> None:
         try:
@@ -317,7 +381,7 @@ class OfficeRobotExecutor(Node):
 
         if not goal_handle.accepted:
             self.get_logger().warn(
-                f"Nav2 goal rejected (task_id={self._current_task_id})"
+                f"Nav2 goal rejected (task_id={self._current_task_id}, action={self.nav2_action_name})."
             )
             self._fail_current_action(
                 "goal_rejected",
@@ -326,10 +390,15 @@ class OfficeRobotExecutor(Node):
             return
 
         self._current_goal_handle = goal_handle
+        self.get_logger().info(
+            f"Nav2 goal accepted (task_id={self._current_task_id}, action={self.nav2_action_name})."
+        )
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._on_nav_goal_result)
 
     def _on_nav_goal_result(self, future) -> None:
+        elapsed_sec = self._goal_elapsed_sec()
+        feedback_snapshot = self._last_nav_feedback
         self._stop_timeout_watchdog()
         self._current_goal_handle = None
         try:
@@ -351,15 +420,23 @@ class OfficeRobotExecutor(Node):
             if self._current_action is not None:
                 on_success = str(self._current_action.get("on_success", "")).strip() or None
             self.get_logger().info(
-                f"Nav2 goal succeeded (task_id={self._current_task_id}, status={status_code})"
+                f"Nav2 goal succeeded (task_id={self._current_task_id}, status={status_code}, "
+                f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})"
             )
+            if feedback_snapshot:
+                self.get_logger().info(f"Last Nav2 feedback before success: {feedback_snapshot}")
             self._finish_action_once(on_success)
         else:
             detail = self._build_nav2_result_detail(status_code, result)
             self.get_logger().error(
                 f"Nav2 goal failed (task_id={self._current_task_id}, status={detail.get('status_text', status_code)}, "
-                f"error_code={detail.get('error_code')}, error_msg={detail.get('error_msg')})"
+                f"error_code={detail.get('error_code')}, error_msg={detail.get('error_msg')}, "
+                f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})"
             )
+            if feedback_snapshot:
+                self.get_logger().error(
+                    f"Last Nav2 feedback before failure: {feedback_snapshot}"
+                )
             self._fail_current_action(f"goal_failed_status_{status_code}", detail)
 
     def _start_timeout_watchdog(self) -> None:
@@ -376,14 +453,25 @@ class OfficeRobotExecutor(Node):
         if self._goal_started_at is None:
             return
         if (time.time() - self._goal_started_at) > self.goal_timeout_sec:
+            elapsed_sec = self._goal_elapsed_sec()
             if self._current_goal_handle is not None:
                 try:
-                    self._current_goal_handle.cancel_goal_async()
+                    self.get_logger().warn(
+                        f"Nav2 timeout cancel requested (task_id={self._current_task_id}, "
+                        f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                    )
+                    cancel_future = self._current_goal_handle.cancel_goal_async()
+                    cancel_future.add_done_callback(
+                        lambda f: self._on_nav_cancel_response(f, "timeout")
+                    )
                 except Exception as exc:
                     self.get_logger().warn(f"Goal cancel request failed during timeout: {exc}")
             self._publish_zero_cmd_vel_burst()
             self._current_goal_handle = None
-            self.get_logger().error("Nav2 goal timeout.")
+            self.get_logger().error(
+                f"Nav2 goal timeout (task_id={self._current_task_id}, elapsed_sec={elapsed_sec:.3f}, "
+                f"target={self._goal_target})."
+            )
             self._fail_current_action(
                 "goal_timeout",
                 {
@@ -393,6 +481,7 @@ class OfficeRobotExecutor(Node):
             )
 
     def _cancel_active_sequence(self, reason: str) -> None:
+        elapsed_sec = self._goal_elapsed_sec()
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -400,7 +489,14 @@ class OfficeRobotExecutor(Node):
 
         if self._current_goal_handle is not None:
             try:
-                self._current_goal_handle.cancel_goal_async()
+                self.get_logger().warn(
+                    f"Cancel requested (reason={reason}, task_id={self._current_task_id}, "
+                    f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                )
+                cancel_future = self._current_goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(
+                    lambda f: self._on_nav_cancel_response(f, f"cancel:{reason}")
+                )
             except Exception as exc:
                 self.get_logger().warn(f"Goal cancel failed: {exc}")
             self._current_goal_handle = None
@@ -412,6 +508,7 @@ class OfficeRobotExecutor(Node):
         self.current_status = "IDLE"
         self._action_queue = []
         self._current_action = None
+        self._clear_nav_goal_context()
         cancel_status = self._task_id_payload({"reason": reason})
         self._current_task_id = None
         self._publish_status("IDLE", cancel_status)
@@ -434,6 +531,39 @@ class OfficeRobotExecutor(Node):
             count["n"] += 1
 
         timer = self.create_timer(interval, _tick)
+
+    @staticmethod
+    def _duration_to_sec(duration_msg: Any) -> Optional[float]:
+        if duration_msg is None:
+            return None
+        sec = getattr(duration_msg, "sec", None)
+        nanosec = getattr(duration_msg, "nanosec", None)
+        if sec is None or nanosec is None:
+            return None
+        return float(sec) + (float(nanosec) * 1e-9)
+
+    def _goal_elapsed_sec(self) -> float:
+        if self._goal_started_at is None:
+            return 0.0
+        return max(0.0, time.time() - self._goal_started_at)
+
+    def _clear_nav_goal_context(self) -> None:
+        self._goal_target = None
+        self._last_nav_feedback = None
+        self._last_feedback_log_at = 0.0
+
+    def _on_nav_cancel_response(self, future: Any, source: str) -> None:
+        try:
+            response = future.result()
+            goals_canceling = len(getattr(response, "goals_canceling", []))
+            self.get_logger().info(
+                f"Cancel response received (source={source}, task_id={self._current_task_id}, "
+                f"goals_canceling={goals_canceling})"
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Cancel response failed (source={source}, task_id={self._current_task_id}, error={exc})"
+            )
 
     @staticmethod
     def _goal_status_text(status_code: int) -> str:
@@ -477,6 +607,7 @@ class OfficeRobotExecutor(Node):
         self._action_queue = []
         self._current_action = None
         self._current_goal_handle = None
+        self._clear_nav_goal_context()
         self.current_status = "ERROR"
         payload = self._task_id_payload({"reason": reason})
         if extra is not None:

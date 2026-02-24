@@ -24,6 +24,6 @@ numpy
 ultralytics
 pillow
 
-# Face Recognition
-face_recognition
-dlib
+# Face Recognition (InsightFace ArcFace)
+insightface
+onnxruntime

@@ -5,7 +5,7 @@ YOLO 객체 인식 (상품/장애물) 및 얼굴 인식 기능을 처리하는 �
 모델 타입:
   - SNACK    : product.pt (배달 시나리오 - 간식/상품 감지)
   - OBSTACLE : obstacle.pt (주행 모드 - 사람/의자/화분 등 장애물 감지)
-  - EMPLOYEE : face_recognition 라이브러리 (유휴 모드 - 직원/외부인 판별)
+  - EMPLOYEE : InsightFace ArcFace (유휴 모드 - 직원/외부인 판별)
 """
 
 import json
@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import cv2
-import face_recognition
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -22,15 +21,18 @@ logger = logging.getLogger(__name__)
 
 class VisionService:
     """
-    YOLO + face_recognition 기반 비전 서비스.
+    YOLO + InsightFace(ArcFace) 기반 비전 서비스.
     상품 감지, 장애물 감지, 얼굴 인식 세 기능을 제공.
     """
+
+    # 캐시 버전 - 인코더 변경 시 캐시 무효화용
+    _CACHE_VERSION = "insightface_buffalo_l_v1"
 
     def __init__(
         self,
         product_model_path: str = None,
         obstacle_model_path: str = None,
-        face_match_threshold: float = 0.3,
+        face_match_threshold: float = 0.4,
         yolo_confidence: float = 0.5,
     ):
         """
@@ -39,7 +41,7 @@ class VisionService:
         Args:
             product_model_path: 상품 감지 YOLO 모델 경로 (product.pt)
             obstacle_model_path: 장애물 감지 YOLO 모델 경로 (obstacle.pt)
-            face_match_threshold: 얼굴 매칭 임계값 (낮을수록 엄격)
+            face_match_threshold: 얼굴 매칭 코사인 유사도 임계값 (높을수록 엄격, 기본 0.4)
             yolo_confidence: YOLO 신뢰도 임계값
         """
         self.product_model_path = product_model_path
@@ -49,6 +51,9 @@ class VisionService:
         # YOLO 모델 인스턴스
         self._product_model = None
         self._obstacle_model = None
+
+        # InsightFace 모델 인스턴스
+        self._face_app = None
 
         # 얼굴 인식 설정
         self.employee_images_dir = (
@@ -70,6 +75,7 @@ class VisionService:
         모든 모델을 로드하고 초기화.
         """
         self._load_yolo_models()
+        self._load_face_model()
         self._load_employee_faces()
         logger.info("VisionService 초기화 완료")
 
@@ -110,12 +116,39 @@ class VisionService:
         else:
             logger.warning(f"장애물 감지 모델 파일 없음: {self.obstacle_model_path}")
 
+    def _load_face_model(self) -> None:
+        """
+        InsightFace(ArcFace) 모델 로드.
+        buffalo_l 모델: RetinaFace 탐지 + ArcFace 512차원 임베딩
+        최초 실행 시 ~/.insightface/models/ 에 자동 다운로드
+        """
+        try:
+            from insightface.app import FaceAnalysis
+
+            self._face_app = FaceAnalysis(
+                name="buffalo_l",
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            )
+            self._face_app.prepare(ctx_id=0, det_size=(640, 640))
+            logger.info("InsightFace(ArcFace) 모델 로딩 완료")
+        except ImportError:
+            logger.error(
+                "insightface 패키지가 설치되지 않았습니다. "
+                "pip install insightface onnxruntime"
+            )
+        except Exception as e:
+            logger.error(f"InsightFace 모델 로딩 실패: {e}")
+
     def _load_employee_faces(self) -> None:
         """
-        직원 얼굴 이미지 로딩 및 face_recognition 임베딩 생성
+        직원 얼굴 이미지 로딩 및 InsightFace ArcFace 임베딩 생성
         캐시가 있고 유효하면 캐시에서 로드, 그렇지 않으면 재계산
         """
         self._employee_face_db = []
+        if self._face_app is None:
+            logger.warning("InsightFace 모델이 로드되지 않아 직원 얼굴 로딩 생략")
+            return
+
         if not self.employee_images_dir.exists():
             logger.warning("직원 이미지 폴더가 없습니다: %s", self.employee_images_dir)
             return
@@ -132,15 +165,18 @@ class VisionService:
         # 현재 파일 목록과 타임스탬프
         current_files = {str(f.name): f.stat().st_mtime for f in image_files}
 
-        # 캐시 유효성 검사
+        # 캐시 유효성 검사 (인코더 버전 + 파일 목록/타임스탬프)
         use_cache = False
         if self.encodings_cache_path.exists() and self.metadata_cache_path.exists():
             try:
                 with open(self.metadata_cache_path, "r", encoding="utf-8") as f:
                     cached_metadata = json.load(f)
 
-                # 파일 목록과 타임스탬프 비교
-                if cached_metadata.get("files") == current_files:
+                # 인코더 버전 + 파일 목록과 타임스탬프 비교
+                if (
+                    cached_metadata.get("cache_version") == self._CACHE_VERSION
+                    and cached_metadata.get("files") == current_files
+                ):
                     use_cache = True
                     logger.info("인코딩 캐시 유효 - 캐시에서 로드")
             except Exception as e:
@@ -168,28 +204,37 @@ class VisionService:
                 self._employee_face_db = []
 
         # 캐시 없거나 무효 - 이미지에서 계산
-        logger.info("이미지에서 얼굴 인코딩 계산 중...")
+        logger.info("이미지에서 얼굴 인코딩 계산 중 (InsightFace ArcFace)...")
         encodings_list = []
         employee_ids = []
 
         for image_path in sorted(image_files):
-            image = face_recognition.load_image_file(str(image_path))
-            face_encodings = face_recognition.face_encodings(image)
+            image = cv2.imread(str(image_path))
+            if image is None:
+                logger.warning("이미지 로드 실패: %s", image_path.name)
+                continue
 
-            if len(face_encodings) == 0:
+            faces = self._face_app.get(image)
+            if not faces:
                 logger.warning(
                     "직원 이미지에서 얼굴을 찾을 수 없음: %s", image_path.name
                 )
                 continue
 
-            # 가장 큰 얼굴의 인코딩 사용
-            encoding = face_encodings[0]
+            # 탐지 점수가 가장 높은 얼굴 사용
+            face = max(faces, key=lambda f: f.det_score)
+            embedding = face.embedding
+            # L2 정규화 (코사인 유사도를 dot product로 계산하기 위함)
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+
             employee_id = image_path.stem
 
             self._employee_face_db.append(
-                {"employee_id": employee_id, "encoding": encoding}
+                {"employee_id": employee_id, "encoding": embedding}
             )
-            encodings_list.append(encoding)
+            encodings_list.append(embedding)
             employee_ids.append(employee_id)
             logger.info("직원 얼굴 로딩: %s", employee_id)
 
@@ -200,8 +245,9 @@ class VisionService:
                 encodings_array = np.array(encodings_list)
                 np.save(str(self.encodings_cache_path), encodings_array)
 
-                # 메타데이터 저장
+                # 메타데이터 저장 (캐시 버전 포함)
                 metadata = {
+                    "cache_version": self._CACHE_VERSION,
                     "employee_ids": employee_ids,
                     "files": current_files,
                     "count": len(employee_ids),
@@ -334,7 +380,7 @@ class VisionService:
 
     def recognize_face_from_frame(self, frame: np.ndarray) -> Dict[str, Any]:
         """
-        프레임에서 직접 얼굴 인식 (face_recognition 라이브러리 사용)
+        프레임에서 직접 얼굴 인식 (InsightFace ArcFace 사용)
 
         Args:
             frame: OpenCV BGR 프레임
@@ -342,48 +388,42 @@ class VisionService:
         Returns:
             얼굴 인식 결과 {"person_type", "employee_id"?, "confidence"}
         """
-        if not self._employee_face_db:
+        if not self._employee_face_db or self._face_app is None:
             return {"person_type": "Unknown", "confidence": 0.0}
 
         try:
-            # BGR → RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            # 성능을 위해 프레임 축소 (1/2)
-            small_frame = cv2.resize(rgb_frame, (0, 0), fx=0.5, fy=0.5)
-
-            # 얼굴 위치 + 인코딩 추출
-            face_locations = face_recognition.face_locations(small_frame, model="hog")
-            if not face_locations:
+            # InsightFace는 BGR 이미지를 직접 처리
+            faces = self._face_app.get(frame)
+            if not faces:
                 return {"person_type": "Unknown", "confidence": 0.0}
 
-            face_encodings = face_recognition.face_encodings(
-                small_frame, face_locations
+            # 탐지 점수가 가장 높은 얼굴 사용
+            face = max(faces, key=lambda f: f.det_score)
+            unknown_embedding = face.embedding
+            # L2 정규화
+            norm = np.linalg.norm(unknown_embedding)
+            if norm > 0:
+                unknown_embedding = unknown_embedding / norm
+
+            # 코사인 유사도 계산 (정규화된 벡터의 dot product)
+            known_embeddings = np.array(
+                [emp["encoding"] for emp in self._employee_face_db]
             )
-            if not face_encodings:
-                return {"person_type": "Unknown", "confidence": 0.0}
+            similarities = np.dot(known_embeddings, unknown_embedding)
 
-            # 첫 번째 얼굴에 대해 매칭
-            unknown_encoding = face_encodings[0]
-            known_encodings = [emp["encoding"] for emp in self._employee_face_db]
-            employee_ids = [emp["employee_id"] for emp in self._employee_face_db]
+            best_match_index = int(np.argmax(similarities))
+            best_similarity = float(similarities[best_match_index])
 
-            face_distances = face_recognition.face_distance(
-                known_encodings, unknown_encoding
-            )
-
-            best_match_index = int(np.argmin(face_distances))
-            best_distance = float(face_distances[best_match_index])
-            confidence = round(1.0 - best_distance, 4)
-
-            if best_distance <= self.face_match_threshold:
+            if best_similarity >= self.face_match_threshold:
                 return {
                     "person_type": "Employee",
-                    "employee_id": employee_ids[best_match_index],
-                    "confidence": confidence,
+                    "employee_id": self._employee_face_db[best_match_index][
+                        "employee_id"
+                    ],
+                    "confidence": round(best_similarity, 4),
                 }
 
-            return {"person_type": "Guest", "confidence": confidence}
+            return {"person_type": "Guest", "confidence": round(best_similarity, 4)}
 
         except Exception as e:
             logger.error(f"프레임 얼굴 인식 실패: {e}")
