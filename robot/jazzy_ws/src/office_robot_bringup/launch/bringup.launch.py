@@ -26,7 +26,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("robot_id", default_value="1"),
             DeclareLaunchArgument("enable_rosbridge", default_value="true"),
             DeclareLaunchArgument("rosbridge_port", default_value="9090"),
-            DeclareLaunchArgument("mock_mode", default_value="true"),
+            DeclareLaunchArgument("mock_mode", default_value="false"),
             DeclareLaunchArgument("use_nav2", default_value="true"),
             DeclareLaunchArgument("execution_delay_sec", default_value="1.5"),
             DeclareLaunchArgument("nav2_action_name", default_value="navigate_to_pose"),

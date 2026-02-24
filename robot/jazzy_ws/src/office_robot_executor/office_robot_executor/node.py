@@ -167,13 +167,36 @@ class OfficeRobotExecutor(Node):
             self._cancel_active_sequence(reason=action)
             return
 
-        if action in {"GOTO", "LEAD_GUEST"} and not self.mock_mode and self.use_nav2:
+        if action in {"GOTO", "LEAD_GUEST"} and not self.mock_mode:
+            if not self.use_nav2:
+                self._fail_current_action(
+                    "nav2_disabled",
+                    {"status_code": 501, "status_text": "nav2 disabled"},
+                )
+                return
             if not self._execute_nav2_goal(params):
-                self._fail_current_action("nav2_goal_start_failed")
+                self._fail_current_action(
+                    "nav2_goal_start_failed",
+                    {"status_code": 500, "status_text": "nav2 goal start failed"},
+                )
+                return
             return
 
-        self._action_timer = self.create_timer(
-            self.execution_delay_sec, lambda: self._finish_action_once(on_success)
+        if action == "DISPLAY_TEXT":
+            self._action_timer = self.create_timer(
+                self.execution_delay_sec, lambda: self._finish_action_once(on_success)
+            )
+            return
+
+        if self.mock_mode:
+            self._action_timer = self.create_timer(
+                self.execution_delay_sec, lambda: self._finish_action_once(on_success)
+            )
+            return
+
+        self._fail_current_action(
+            "unsupported_action",
+            {"status_code": 400, "status_text": "unsupported action", "action": action},
         )
 
     def _finish_action_once(self, on_success: Optional[str]) -> None:
@@ -353,8 +376,21 @@ class OfficeRobotExecutor(Node):
         if self._goal_started_at is None:
             return
         if (time.time() - self._goal_started_at) > self.goal_timeout_sec:
+            if self._current_goal_handle is not None:
+                try:
+                    self._current_goal_handle.cancel_goal_async()
+                except Exception as exc:
+                    self.get_logger().warn(f"Goal cancel request failed during timeout: {exc}")
+            self._publish_zero_cmd_vel_burst()
+            self._current_goal_handle = None
             self.get_logger().error("Nav2 goal timeout.")
-            self._cancel_active_sequence(reason="TIMEOUT")
+            self._fail_current_action(
+                "goal_timeout",
+                {
+                    "status_code": 408,
+                    "status_text": "goal timeout",
+                },
+            )
 
     def _cancel_active_sequence(self, reason: str) -> None:
         if self._action_timer is not None:
@@ -370,7 +406,9 @@ class OfficeRobotExecutor(Node):
             self._current_goal_handle = None
 
         self._publish_zero_cmd_vel_burst()
-        self._publish_event("SEQUENCE_CANCELED", self._task_id_payload({"reason": reason}))
+        self._publish_event(
+            "SEQUENCE_CANCELED", self._task_id_payload({"reason": reason})
+        )
         self.current_status = "IDLE"
         self._action_queue = []
         self._current_action = None
@@ -438,12 +476,13 @@ class OfficeRobotExecutor(Node):
         self._stop_timeout_watchdog()
         self._action_queue = []
         self._current_action = None
+        self._current_goal_handle = None
         self.current_status = "ERROR"
         payload = self._task_id_payload({"reason": reason})
         if extra is not None:
             payload.update(extra)
         self._publish_event("ACTION_FAILED", payload)
-        self._publish_status("ERROR", self._task_id_payload({"reason": reason}))
+        self._publish_status("ERROR", payload)
         self.current_status = "IDLE"
         idle_status = self._task_id_payload({"reason": "recover_after_error"})
         self._current_task_id = None
