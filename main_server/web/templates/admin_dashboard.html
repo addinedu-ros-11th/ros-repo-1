@@ -23,8 +23,11 @@
             <h1>🤖 로봇 실시간 관제</h1>
             <div class="map-control-wrapper">
                 <button id="setup-btn" class="btn-zone-setup" onclick="toggleZoneSetup()">🚫 금지구역 설정: OFF</button>
-                <div id="map-container" onmousedown="handleMapMouseDown(event)" onmousemove="handleMapMouseMove(event)" onmouseup="handleMapMouseUp(event)">
-                    <div id="map-inner"></div>
+                <div id="map-container" 
+                    onmousedown="handleMapMouseDown(event)" 
+                    onmousemove="handleMapMouseMove(event)" 
+                    onmouseup="handleMapMouseUp(event)"
+                    onmouseleave="resetDragState()"> <div id="map-inner"></div>
                 </div>
             </div>
             <div class="zone-management">
@@ -93,19 +96,41 @@
         let startX, startY;
         let currentZoneRect = null;
 
+        // 우클릭 방지 함수
+        function preventRightClick(e) {
+            e.preventDefault();
+        }
+
         // 1. 버튼 활성화 토글
         function toggleZoneSetup() {
             isZoneSetupMode = !isZoneSetupMode;
             const btn = document.getElementById('setup-btn');
+            const mapContainer = document.getElementById('map-container');
             
             if (isZoneSetupMode) {
+                // 활성화 상태
                 btn.innerText = "🚫 금지구역 설정: ON";
-                btn.style.backgroundColor = "#e74c3c"; // 활성화 시 붉은색
-                document.getElementById('map-container').style.cursor = "crosshair";
+                btn.classList.add('on');
+                mapContainer.style.cursor = "crosshair";
+
+                // [추가] 활성화 시 우클릭 방지 이벤트 등록
+                window.addEventListener('contextmenu', preventRightClick);
             } else {
+                // 비활성화 상태
                 btn.innerText = "🚫 금지구역 설정: OFF";
-                btn.style.backgroundColor = "#3498db";
-                document.getElementById('map-container').style.cursor = "default";
+                btn.classList.remove('on');
+                mapContainer.style.cursor = "default";
+
+                // [추가] 비활성화 시 우클릭 방지 해제
+                window.removeEventListener('contextmenu', preventRightClick);
+            }
+        }
+
+        function resetDragState() {
+            isDragging = false;
+            if (currentZoneRect) {
+                currentZoneRect.remove();
+                currentZoneRect = null;
             }
         }
 
@@ -113,12 +138,14 @@
         function handleMapMouseDown(event) {
             if (!isZoneSetupMode) return;
             
+            // 혹시 남아있을지 모를 잔상 제거
+            resetDragState();
+
             isDragging = true;
             const rect = event.currentTarget.getBoundingClientRect();
             startX = event.clientX - rect.left;
             startY = event.clientY - rect.top;
 
-            // CSS에 정의된 .temp-rect 클래스 사용
             currentZoneRect = document.createElement('div');
             currentZoneRect.className = 'temp-rect'; 
             currentZoneRect.style.left = `${startX}px`;
@@ -131,8 +158,10 @@
             if (!isDragging || !currentZoneRect) return;
 
             const rect = event.currentTarget.getBoundingClientRect();
-            const currentX = event.clientX - rect.left;
-            const currentY = event.clientY - rect.top;
+            
+            // 지도 영역 내부로 좌표 강제 제한 (Clamping)
+            let currentX = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+            let currentY = Math.max(0, Math.min(event.clientY - rect.top, rect.height));
 
             const width = Math.abs(currentX - startX);
             const height = Math.abs(currentY - startY);
@@ -146,22 +175,26 @@
         // 4. 마우스 뗌 (저장 팝업 및 API 호출)
         async function handleMapMouseUp(event) {
             if (!isDragging) return;
-            isDragging = false;
 
             const rect = event.currentTarget.getBoundingClientRect();
-            const endX = event.clientX - rect.left;
-            const endY = event.clientY - rect.top;
+            const endX = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+            const endY = Math.max(0, Math.min(event.clientY - rect.top, rect.height));
+
+            // [핵심] prompt가 뜨기 전에 무조건 드래그 상태를 종료하고 임시 박스를 먼저 지웁니다.
+            resetDragState();
 
             const zoneName = prompt("새로운 금지구역의 이름을 입력하세요:");
-            if (zoneName) {
-                // 백엔드 POST 호출
-                const payload = {
-                    name: zoneName,
-                    x1: startX, y1: startY,
-                    x2: endX, y2: endY,
-                    type: "forbidden"
-                };
-                
+            
+            if (!zoneName) return; // 취소 시 이미 박스는 위에서 지워졌으므로 남지 않음
+
+            const payload = {
+                name: zoneName,
+                x1: startX, y1: startY,
+                x2: endX, y2: endY,
+                type: "forbidden"
+            };
+            
+            try {
                 const res = await fetch('/api/v1/admin/zones', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -170,51 +203,85 @@
 
                 if (res.ok) {
                     alert("금지구역이 저장되었습니다.");
-                    loadZones(); // 리스트 갱신
+                    loadZones(); 
                 }
-            }
-            
-            // 임시 사각형 제거
-            if (currentZoneRect) {
-                currentZoneRect.remove();
-                currentZoneRect = null;
+            } catch (error) {
+                console.error("저장 중 오류 발생:", error);
             }
         }
         
         async function loadZones() {
-            const res = await fetch('/api/v1/admin/zones');
-            const zones = await res.json();
-            
-            // 1. 기존에 그려진 구역 삭제 (리스트 갱신 전 청소)
-            document.querySelectorAll('.no-go-zone').forEach(el => el.remove());
-
-            // 2. API로 받은 데이터를 바탕으로 지도 위에 그리기
-            zones.forEach(zone => {
-                const zoneDiv = document.createElement('div');
-                zoneDiv.className = 'no-go-zone'; // CSS에 정의된 스타일 연계
+            try {
+                const res = await fetch('/api/v1/admin/zones');
+                const zones = await res.json();
                 
-                // 좌표 및 크기 계산 (x2, y2가 끝점인 경우)
-                const width = Math.abs(zone.x2 - zone.x1);
-                const height = Math.abs(zone.y2 - zone.y1);
+                // 1. 지도 위 기존 구역 제거
+                document.querySelectorAll('.no-go-zone').forEach(el => el.remove());
                 
-                zoneDiv.style.left = `${Math.min(zone.x1, zone.x2)}px`;
-                zoneDiv.style.top = `${Math.min(zone.y1, zone.y2)}px`;
-                zoneDiv.style.width = `${width}px`;
-                zoneDiv.style.height = `${height}px`;
-                zoneDiv.innerText = zone.name;
+                // 2. 테이블 초기화
+                const tbody = document.getElementById('zone-tbody');
+                tbody.innerHTML = '';
 
-                document.getElementById('map-container').appendChild(zoneDiv);
-            });
+                if (zones.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="empty-msg">등록된 금지구역이 없습니다.</td></tr>';
+                    return;
+                }
 
-            // 3. 하단 테이블 리스트 업데이트
-            document.getElementById('zone-tbody').innerHTML = zones.map(z => `
-                <tr>
-                    <td>${z.id}</td>
-                    <td>${z.name}</td>
-                    <td>(${z.x1}, ${z.y1}) ~ (${z.x2}, ${z.y2})</td>
-                    <td><button onclick="deleteZone(${z.id})" style="color:red;">삭제</button></td>
-                </tr>
-            `).join('');
+                zones.forEach(zone => {
+                    // --- 지도에 박스 그리기 ---
+                    const zoneDiv = document.createElement('div');
+                    zoneDiv.className = 'no-go-zone';
+                    
+                    const width = Math.abs(zone.x2 - zone.x1);
+                    const height = Math.abs(zone.y2 - zone.y1);
+                    
+                    zoneDiv.style.left = `${Math.min(zone.x1, zone.x2)}px`;
+                    zoneDiv.style.top = `${Math.min(zone.y1, zone.y2)}px`;
+                    zoneDiv.style.width = `${width}px`;
+                    zoneDiv.style.height = `${height}px`;
+                    zoneDiv.innerHTML = `<span>${zone.name}</span>`; // 이름 표시
+
+                    document.getElementById('map-container').appendChild(zoneDiv);
+
+                    // --- 테이블에 리스트 추가 ---
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${zone.zone_id}</td>
+                        <td><strong>${zone.name}</strong></td>
+                        <td>(${Math.round(zone.x1)}, ${Math.round(zone.y1)}) ~ (${Math.round(zone.x2)}, ${Math.round(zone.y2)})</td>
+                        <td><button class="btn-delete" onclick="deleteZone(${zone.zone_id})">삭제</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error("구역 로드 실패:", error);
+            }
+        }
+
+        async function deleteZone(zoneId) {
+            // 1. 사용자 확인 팝업
+            if (!confirm(`정말로 ${zoneId}번 금지구역을 삭제하시겠습니까?`)) {
+                return;
+            }
+
+            try {
+                // 2. 백엔드 DELETE 요청 전송
+                const res = await fetch(`/api/v1/admin/zones/${zoneId}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    alert("삭제되었습니다.");
+                    // 3. 리스트 및 지도 새로고침
+                    loadZones(); 
+                } else {
+                    const errorData = await res.json();
+                    alert("삭제 실패: " + errorData.detail);
+                }
+            } catch (error) {
+                console.error("삭제 중 오류 발생:", error);
+                alert("서버와 통신하는 중 오류가 발생했습니다.");
+            }
         }
 
         // admin_dashboard.html 내의 refreshMap 함수 수정

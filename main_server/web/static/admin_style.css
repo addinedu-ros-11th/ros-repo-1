@@ -59,13 +59,18 @@ body {
 /* [로봇 관제 지도] */
 /* [admin_style.css 하단에 추가 또는 수정] */
 
+/* admin_style.css */
+
 #map-container {
     position: relative;
-    overflow: hidden;
+    overflow: hidden; /* 영역 밖으로 나가는 임시 사각형 숨김 */
     cursor: default;
-    /* 컨테이너는 이벤트를 받아야 드래그가 가능함 */
     pointer-events: auto; 
+    
+    /* [추가] 드래그 중 의도치 않은 요소 선택 방지 */
     user-select: none;
+    -webkit-user-select: none;
+    touch-action: none; /* 모바일 환경 대비 */
 }
 
 #map-inner {
@@ -98,13 +103,14 @@ body {
 /* 금지구역 설정 버튼 스타일 통합 */
 .btn-zone-setup {
     position: absolute;
-    bottom: 100%;    /* 지도 바로 위에 붙도록 설정 */
+    bottom: 100%;
     right: 0;
     margin-bottom: 5px;
     padding: 6px 12px;
     font-size: 0.85rem;
     font-weight: bold;
-    background: #e74c3c; /* 기본 레드 (OFF) */
+    /* [수정] 비활성화 상태: 빨간색 */
+    background: #e74c3c; 
     color: white;
     border: none;
     border-radius: 4px;
@@ -113,9 +119,9 @@ body {
     transition: background 0.3s;
 }
 
-/* 자바스크립트에서 토글할 때 사용할 ON 상태 클래스 */
+/* [수정] 활성화(ON) 상태: 초록색 */
 .btn-zone-setup.on {
-    background: #2ecc71 !important; /* 그린 (ON) */
+    background: #2ecc71 !important; 
 }
 
 .robot-dot { 

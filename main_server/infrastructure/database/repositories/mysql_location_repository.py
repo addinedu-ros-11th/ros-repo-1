@@ -74,3 +74,34 @@ class MySQLLocationRepository(BaseRepository):
         모든 등록된 장소 정보를 가져옵니다.
         """
         return await super().get_all()
+
+    async def create_forbidden_zone(self, data: Dict[str, Any]):
+        """금지구역을 Map_Zones 테이블에 저장"""
+        async with Database.get_connection() as conn:
+            async with conn.cursor() as cur:
+                sql = """
+                    INSERT INTO Map_Zones (name, type, x1, y1, x2, y2, active)
+                    VALUES (%s, %s, %s, %s, %s, %s, 1)
+                """
+                await cur.execute(sql, (
+                    data['name'], data.get('type', 'forbidden'),
+                    data['x1'], data['y1'], data['x2'], data['y2']
+                ))
+                await conn.commit()
+
+    async def get_all_forbidden_zones(self) -> List[Dict[str, Any]]:
+        """모든 금지구역 리스트 조회"""
+        async with Database.get_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                sql = "SELECT * FROM Map_Zones WHERE active = 1"
+                await cur.execute(sql)
+                return await cur.fetchall()
+            
+    async def delete_forbidden_zone(self, zone_id: int) -> bool:
+        """금지구역 ID를 기반으로 DB에서 삭제"""
+        async with Database.get_connection() as conn:
+            async with conn.cursor() as cur:
+                sql = "DELETE FROM Map_Zones WHERE zone_id = %s"
+                await cur.execute(sql, (zone_id,))
+                await conn.commit()
+                return cur.rowcount > 0

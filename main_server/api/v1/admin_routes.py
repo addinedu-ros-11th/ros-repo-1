@@ -117,20 +117,29 @@ async def get_system_logs():
 #         })
 #     return processed_robots
 
-# # ---------------------------------------------------------
-# # 5. 금지구역 관리 (1초마다 호출용)
-# # ---------------------------------------------------------
-# @router.get("/zones")
-# async def get_forbidden_zones():
-#     """프론트엔드 테이블과 지도 렌더링을 위한 구역 데이터"""
-#     zones = await container.location_repo.get_forbidden_zones()
-    
-#     processed_zones = []
-#     for z in zones:
-#         processed_zones.append({
-#             "id": z.id,
-#             "name": z.name,
-#             # 테이블용 텍스트 가공을 백엔드에서 수행
-#             "display_coords": f"({z.x1}, {z.y1}) → ({z.x2}, {z.y2})"
-#         })
-#     return processed_zones
+# ---------------------------------------------------------
+# 5. 금지구역 관리
+# ---------------------------------------------------------
+@router.post("/zones")
+async def add_zone(zone_data: Dict[str, Any]):
+    try:
+        await container.location_repo.create_forbidden_zone(zone_data)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/zones")
+async def get_zones():
+    # 리포지토리에서 DB 데이터를 가져옴
+    zones = await container.location_repo.get_all_forbidden_zones()
+    return zones
+
+@router.delete("/zones/{zone_id}")
+async def delete_zone(zone_id: int):
+    try:
+        success = await container.location_repo.delete_forbidden_zone(zone_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="구역을 찾을 수 없습니다.")
+        return {"status": "success", "message": f"Zone {zone_id} deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
