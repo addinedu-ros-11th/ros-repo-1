@@ -60,18 +60,12 @@ body {
 /* [admin_style.css 하단에 추가 또는 수정] */
 
 #map-container {
-    width: 1000px;
-    height: 600px; /* 세트장 비율에 맞춰 조정 */
-    background-color: #eee; /* 로딩 전 배경색 */
-    border: 2px solid #34495e;
-    overflow: hidden;
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    overflow: hidden;
     cursor: default;
-    /* 컨테이너 자체가 마우스 이벤트를 받도록 보장 */
-    pointer-events: auto;
+    /* 컨테이너는 이벤트를 받아야 드래그가 가능함 */
+    pointer-events: auto; 
+    user-select: none;
 }
 
 #map-inner {
@@ -88,10 +82,11 @@ body {
     object-fit: contain; 
     image-rendering: pixelated; 
     
-    /* [핵심 수정] 이미지가 마우스 이벤트를 가로채지 않도록 설정 */
-    pointer-events: none; 
-    user-select: none;
-    -webkit-user-drag: none;
+    /* [핵심 수정] 이미지에 대한 모든 마우스 이벤트 차단 */
+    pointer-events: none;       /* 마우스 클릭, 드래그 무시 */
+    user-select: none;          /* 텍스트/이미지 선택 방지 */
+    -webkit-user-drag: none;    /* 브라우저 기본 이미지 드래그 기능 차단 */
+    display: block;
 }
 
 /* 지도와 버튼을 감싸는 컨테이너 */
