@@ -102,6 +102,15 @@ class OfficeRobotExecutor(Node):
 
     def _on_commands(self, msg: String) -> None:
         payload = self._parse_payload(msg.data)
+        if not self._is_for_this_robot(payload):
+            target_robot_id = payload.get("robot_id")
+            target_robot_name = payload.get("robot_name")
+            self.get_logger().debug(
+                f"Ignoring command not for this robot (robot_name={self.robot_name}, robot_id={self.robot_id}, "
+                f"target_name={target_robot_name}, target_id={target_robot_id})."
+            )
+            return
+
         command_type = str(payload.get("type", "")).upper()
         if command_type in {"STOP", "CANCEL"}:
             self._cancel_active_sequence(reason=command_type)
@@ -176,6 +185,44 @@ class OfficeRobotExecutor(Node):
             self._publish_event(on_success, {"task_id": self._current_task_id})
             self._publish_status(self.current_status, {"task_id": self._current_task_id}, event=on_success)
         self._run_next_action()
+
+    @staticmethod
+    def _norm_command_id(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            if isinstance(value, bool):
+                return None
+            return str(int(value))
+        if isinstance(value, str):
+            v = value.strip()
+            if not v:
+                return None
+            return v
+        return None
+
+    def _is_for_this_robot(self, payload: Dict[str, Any]) -> bool:
+        command_robot_id = self._norm_command_id(payload.get("robot_id"))
+        command_robot_name = str(payload.get("robot_name", "")).strip() if payload.get("robot_name") else ""
+
+        self_robot_id = str(self.robot_id)
+        self_robot_name = str(self.robot_name or "")
+
+        robot_id_only = command_robot_id is not None
+        robot_name_only = bool(command_robot_name)
+
+        if not robot_id_only and not robot_name_only:
+            return True
+
+        if robot_id_only and command_robot_id == self_robot_id:
+            return True
+
+        if robot_name_only and command_robot_name == self_robot_name:
+            return True
+
+        return False
 
     def _execute_nav2_goal(self, params: Dict[str, Any]) -> bool:
         if self.nav_client is None:

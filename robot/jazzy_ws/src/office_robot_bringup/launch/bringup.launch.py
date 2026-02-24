@@ -22,7 +22,7 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("robot_ns", default_value="robot"),
+            DeclareLaunchArgument("robot_ns", default_value="robot_1"),
             DeclareLaunchArgument("robot_id", default_value="1"),
             DeclareLaunchArgument("enable_rosbridge", default_value="true"),
             DeclareLaunchArgument("rosbridge_port", default_value="9090"),

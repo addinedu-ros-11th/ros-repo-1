@@ -7,7 +7,7 @@ from launch_ros.actions import Node
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
-            DeclareLaunchArgument("robot_name", default_value="robot"),
+            DeclareLaunchArgument("robot_name", default_value="robot_1"),
             DeclareLaunchArgument("robot_id", default_value="1"),
             DeclareLaunchArgument("mock_mode", default_value="true"),
             DeclareLaunchArgument("use_nav2", default_value="true"),
