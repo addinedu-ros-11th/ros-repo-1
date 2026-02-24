@@ -58,18 +58,13 @@ def main():
             frame_count += 1
             display_frame = frame.copy()
 
-            # 5프레임마다 얼굴 인식 실행
+            # 5프레임마다 얼굴 인식 실행 (BGR 프레임 직접 전달)
             if frame_count % 5 == 0:
-                ok, buf = cv2.imencode(".jpg", frame)
-                if ok:
-                    try:
-                        last_result = service.recognize_face(
-                            image_id=f"webcam_frame_{frame_count}",
-                            image_data=buf.tobytes(),
-                        )
-                    except Exception as e:
-                        print(f"얼굴 인식 오류: {e}")
-                        last_result = None
+                try:
+                    last_result = service.recognize_face_from_frame(frame)
+                except Exception as e:
+                    print(f"얼굴 인식 오류: {e}")
+                    last_result = None
 
             # 결과를 화면에 오버레이
             if last_result:
