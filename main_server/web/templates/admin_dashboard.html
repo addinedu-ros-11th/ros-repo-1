@@ -410,6 +410,65 @@
             }
         }
 
+        async function updateRobotMarkers() {
+            try {
+                const res = await fetch('/api/v1/admin/robots/telemetry');
+                const robots = await res.json();
+                
+                const mapInner = document.getElementById('map-inner');
+                const mapImg = document.getElementById('real-map-img'); 
+                
+                if (!mapImg || mapImg.naturalWidth === 0) return;
+
+                // 화면상 지도 너비(1000px) / 원본 너비(167px) 비율 계산
+                const scale = mapImg.clientWidth / mapImg.naturalWidth;
+
+                // 기존 로봇 마커 삭제
+                document.querySelectorAll('.robot-marker').forEach(el => el.remove());
+
+                robots.forEach(robot => {
+                    const marker = document.createElement('div');
+                    marker.className = `robot-marker ${robot.status.toLowerCase()}`;
+                    
+                    // 최종 화면 좌표 = 원본 픽셀 * 배율
+                    const finalX = robot.px * scale;
+                    const finalY = robot.py * scale;
+
+                    marker.style.left = `${finalX}px`;
+                    marker.style.top = `${finalY}px`;
+                    
+                    marker.innerHTML = `<div class="robot-label">${robot.name}</div>`;
+                    mapInner.appendChild(marker);
+                });
+            } catch (e) {
+                console.error("관제 데이터 로드 실패:", e);
+            }
+        }
+
+        // 1초마다 실행
+        setInterval(updateRobotMarkers, 1000);
+
+        // 금지구역 저장 시 좌표 변환 함수 예시
+        function screenToRealWorld(screenX, screenY) {
+            const mapImg = document.getElementById('real-map-img');
+            const scale = mapImg.clientWidth / mapImg.naturalWidth; // 확대 배율
+            
+            const RESOLUTION = 0.020;
+            const ORIGIN_X = -2.283;
+            const ORIGIN_Y = -2.550;
+            const IMG_H = 255;
+
+            // 1. 화면 픽셀 -> 원본 이미지 픽셀
+            const rawPx = screenX / scale;
+            const rawPy = screenY / scale;
+
+            // 2. 원본 이미지 픽셀 -> 실제 미터 좌표 (역산)
+            const realX = (rawPx * RESOLUTION) + ORIGIN_X;
+            const realY = ((IMG_H - rawPy) * RESOLUTION) + ORIGIN_Y;
+
+            return { x: realX, y: realY };
+        }
+
         /* 페이지 로드 시 자동으로 로봇 관리 탭 실행 */
         window.onload = function() {
             // 1. 브라우저 창고에서 이전에 보던 탭이 있는지 확인

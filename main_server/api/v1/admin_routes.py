@@ -92,30 +92,38 @@ async def get_system_logs():
     logs = await container.log_repository.get_recent_system_logs(limit=50)
     return logs
 
-# --- admin_routes.py ---
-
 # ---------------------------------------------------------
 # 4. 로봇 실시간 관제 (1초마다 호출용)
 # ---------------------------------------------------------
-# @router.get("/robots/status")
-# async def get_all_robots_status():
-#     """백엔드에서 캔버스 좌표 및 상태 배지까지 계산해서 반환"""
-#     robots = await container.robot_repo.get_all()
+@router.get("/robots/telemetry")
+async def get_robots_telemetry():
+    """기존 리포지토리를 사용하여 로봇 위치 정보 반환"""
+    # 1. 모든 로봇 정보 가져오기 (이미 robot_repo가 주입되어 있음)
+    robots = await container.robot_repo.get_all()
     
-#     processed_robots = []
-#     for r in robots:
-#         processed_robots.append({
-#             "id": r.id,
-#             "name": r.name,
-#             "status": r.status,
-#             # UI에서 조건문 없이 바로 쓸 수 있도록 배지 색상 결정
-#             "status_color": "red" if r.status == "WORKING" else "green",
-#             "battery": f"{r.battery}%",
-#             # 지도 픽셀 좌표 변환 로직이 있다면 여기서 계산 후 전송 가능
-#             "pos_x": r.x, 
-#             "pos_y": r.y
-#         })
-#     return processed_robots
+    # 2. 새로운 mymap.yaml 기반 설정값 (정밀지도 버전)
+    RESOLUTION = 0.020
+    ORIGIN_X = -2.283
+    ORIGIN_Y = -2.550
+    IMG_H = 255  # 원본 pgm 세로 픽셀
+
+    processed_robots = []
+    for r in robots:
+        # r.pose_x, r.pose_y는 FleetManager가 갱신해주는 실제 미터 좌표입니다.
+        # 이를 지도 이미지의 픽셀 좌표로 변환합니다.
+        raw_px = (r.pose_x - ORIGIN_X) / RESOLUTION
+        raw_py = IMG_H - ((r.pose_y - ORIGIN_Y) / RESOLUTION)
+
+        processed_robots.append({
+            "id": r.id,
+            "name": r.name,
+            "status": r.status.value if hasattr(r.status, 'value') else r.status,
+            "battery": r.battery_level,
+            "px": raw_px,  # 원본 픽셀 좌표
+            "py": raw_py
+        })
+    
+    return processed_robots
 
 # ---------------------------------------------------------
 # 5. 금지구역 관리
