@@ -91,7 +91,8 @@ class Container:
         self.fleet_manager = FleetManager(
             robot_repo=self.robot_repo,
             robot_communicator=self.robot_communicator,
-            connection_manager=self.connection_manager
+            connection_manager=self.connection_manager,
+            ai_processing_service=self.ai_processing_service
         )
         
         # TaskManager 생성 시 필요한 모든 리포지토리와 서비스 주입

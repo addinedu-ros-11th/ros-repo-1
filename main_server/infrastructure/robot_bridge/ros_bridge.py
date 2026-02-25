@@ -45,6 +45,20 @@ class ROSBridgeCommunicator(IRobotCommunicator):
             )
         return self.command_topics[robot_name]
 
+    def _get_obstacle_topic(self, robot_name: str) -> roslibpy.Topic:
+        topic_name = f"/{robot_name}/obstacles"
+        # 딕셔너리 키를 topic_name으로 하거나 별도 obstacle_topics 딕셔너리를 관리할 수 있음.
+        # 여기서는 간단히 command_topics와 구분하기 위해 별도 관리는 하지 않되,
+        # 재사용성을 위해 객체 속성으로 저장하는 것이 좋음.
+        if not hasattr(self, 'obstacle_topics'):
+            self.obstacle_topics = {}
+            
+        if robot_name not in self.obstacle_topics:
+            self.obstacle_topics[robot_name] = roslibpy.Topic(
+                self.client, topic_name, "std_msgs/String"
+            )
+        return self.obstacle_topics[robot_name]
+
     def send_action_sequence(self, robot_name: str, actions: List[Dict[str, Any]]):
         if not self.client.is_connected:
             logger.warning("ROS Bridge 미연결 상태로 명령 발행 불가.")
@@ -58,6 +72,44 @@ class ROSBridgeCommunicator(IRobotCommunicator):
         }
         topic.publish(roslibpy.Message({"data": json.dumps(message)}))
         logger.info(f"[{robot_name}] 액션 시퀀스 발행 완료 (Topic: {topic.name})")
+
+    def publish_obstacle_info(self, robot_name: str, obstacle_data: Dict[str, Any]):
+        """AI에서 감지된 장애물 정보를 로봇에게 발행합니다."""
+        if not self.client.is_connected:
+            return
+
+        topic = self._get_obstacle_topic(robot_name)
+        # obstacle_data는 이미 딕셔너리 형태라고 가정
+        message = {
+            "robot_name": robot_name,
+            "type": "OBSTACLE_INFO",
+            "payload": obstacle_data
+        }
+        topic.publish(roslibpy.Message({"data": json.dumps(message)}))
+
+    def _get_employee_topic(self, robot_name: str) -> roslibpy.Topic:
+        topic_name = f"/{robot_name}/employee_verification"
+        if not hasattr(self, 'employee_topics'):
+            self.employee_topics = {}
+            
+        if robot_name not in self.employee_topics:
+            self.employee_topics[robot_name] = roslibpy.Topic(
+                self.client, topic_name, "std_msgs/String"
+            )
+        return self.employee_topics[robot_name]
+
+    def publish_employee_result(self, robot_name: str, result_data: Dict[str, Any]):
+        """AI에서 인식된 직원/얼굴 정보를 로봇에게 발행합니다."""
+        if not self.client.is_connected:
+            return
+
+        topic = self._get_employee_topic(robot_name)
+        message = {
+            "robot_name": robot_name,
+            "type": "EMPLOYEE_RESULT",
+            "payload": result_data
+        }
+        topic.publish(roslibpy.Message({"data": json.dumps(message)}))
 
     def listen_for_status(self, callback: Any):
         """
