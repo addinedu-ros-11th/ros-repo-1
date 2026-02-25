@@ -27,6 +27,23 @@
     </div>
 
     <script>
+        (function checkAlreadyLoggedIn() {
+            const cookies = document.cookie.split('; ').reduce((acc, cookie) => {
+                const [key, value] = cookie.split('=');
+                acc[key] = value;
+                return acc;
+            }, {});
+
+            const role = cookies['user_role'];
+
+            // 이미 쿠키가 있다면 역할에 맞춰 자동 이동
+            if (role === 'ADMIN') {
+                window.location.href = "/admin";
+            } else if (role === 'STAFF') {
+                window.location.href = "/employee";
+            }
+        })();
+
         // form의 submit 이벤트를 가로채서 처리하는 스크립트 예시
         const loginForm = document.querySelector('form'); // form 요소 선택 추가
 

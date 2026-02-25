@@ -17,10 +17,19 @@ from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError
 
+try:
+    from PIL import Image, ImageTk
+
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
 # ── 경로 설정 ──────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AI_SERVER_MODULE = "ai_server.server"
 PYTHON_EXE = sys.executable
+PREVIEW_FRAME_PATH = Path("/tmp/ai_server_latest_frame.jpg")
+VIDEO_UPDATE_INTERVAL_MS = 100  # 10fps
 
 
 # ── 환경변수 헬퍼 (.env 값에 따옴표가 섞여있을 수 있으므로 strip) ──
@@ -140,9 +149,15 @@ class AIServerGUI:
         self.log_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
+        # 비디오 미리보기 상태
+        self._video_visible = False
+        self._video_update_id = None
+        self._video_photo = None  # PhotoImage 참조 유지
+
         self._setup_window()
         self._build_header()
         self._build_connection_panel()
+        self._build_video_panel()  # 비디오 패널 (초기 숨김)
         self._build_log_area()
         self._build_status_bar()
 
@@ -251,14 +266,24 @@ class AIServerGUI:
         )
         self.btn_clear.pack(side=tk.LEFT, padx=4)
 
+        self.btn_video = tk.Button(
+            btn_frame,
+            text="📹  Video",
+            bg=COLORS["accent"],
+            fg=COLORS["bg"],
+            command=self._toggle_video,
+            **btn_style,
+        )
+        self.btn_video.pack(side=tk.LEFT, padx=4)
+
     # ── 연결 상태 패널 ────────────────────────────────────
     def _build_connection_panel(self):
-        panel = tk.Frame(self.root, bg=COLORS["surface"], pady=6, padx=12)
-        panel.pack(fill=tk.X)
+        self._conn_panel = tk.Frame(self.root, bg=COLORS["surface"], pady=6, padx=12)
+        self._conn_panel.pack(fill=tk.X)
 
         # 제목
         tk.Label(
-            panel,
+            self._conn_panel,
             text="연결 상태",
             font=("Helvetica", 10, "bold"),
             bg=COLORS["surface"],
@@ -268,7 +293,7 @@ class AIServerGUI:
         self._conn_indicators: dict[str, dict] = {}
 
         for name, cfg in CONNECTION_TARGETS.items():
-            frame = tk.Frame(panel, bg=COLORS["surface"])
+            frame = tk.Frame(self._conn_panel, bg=COLORS["surface"])
             frame.pack(side=tk.LEFT, padx=8)
 
             dot_var = tk.StringVar(value="●")
@@ -307,6 +332,143 @@ class AIServerGUI:
                 "status_label": status_label,
                 "cfg": cfg,
             }
+
+    # ── 비디오 미리보기 패널 ──────────────────────────────
+    def _build_video_panel(self):
+        """UDP 영상 실시간 미리보기 패널 (초기 숨김)"""
+        self.video_frame = tk.Frame(self.root, bg=COLORS["bg"])
+        # 초기에는 pack하지 않음 (숨김 상태)
+
+        # 비디오 헤더
+        video_header = tk.Frame(self.video_frame, bg=COLORS["surface"], pady=4, padx=8)
+        video_header.pack(fill=tk.X)
+
+        tk.Label(
+            video_header,
+            text="📹 로봇 카메라 (UDP 실시간)",
+            font=("Helvetica", 10, "bold"),
+            bg=COLORS["surface"],
+            fg=COLORS["accent"],
+        ).pack(side=tk.LEFT)
+
+        self._video_fps_var = tk.StringVar(value="대기 중...")
+        tk.Label(
+            video_header,
+            textvariable=self._video_fps_var,
+            font=("Helvetica", 9),
+            bg=COLORS["surface"],
+            fg=COLORS["yellow"],
+        ).pack(side=tk.RIGHT)
+
+        self._video_status_var = tk.StringVar(value="")
+        tk.Label(
+            video_header,
+            textvariable=self._video_status_var,
+            font=("Helvetica", 9),
+            bg=COLORS["surface"],
+            fg=COLORS["subtext"],
+        ).pack(side=tk.RIGHT, padx=8)
+
+        # 비디오 표시 영역
+        video_container = tk.Frame(self.video_frame, bg=COLORS["bg"], padx=4, pady=4)
+        video_container.pack(fill=tk.X)
+
+        self.video_label = tk.Label(
+            video_container,
+            bg="#000000",
+            text=(
+                "영상 수신 대기 중..."
+                if HAS_PIL
+                else "⚠ Pillow 패키지 필요 (pip install Pillow)"
+            ),
+            fg=COLORS["subtext"],
+            font=("Helvetica", 11),
+            width=80,
+            height=18,
+            anchor=tk.CENTER,
+        )
+        self.video_label.pack(fill=tk.X, pady=2)
+
+        self._video_frame_count = 0
+        self._video_last_fps_time = 0.0
+
+    def _toggle_video(self):
+        """비디오 미리보기 패널 표시/숨김 토글"""
+        if self._video_visible:
+            # 숨기기
+            self.video_frame.pack_forget()
+            self._video_visible = False
+            self._cancel_video_update()
+            self.btn_video.configure(bg=COLORS["accent"])
+            self._append_log("비디오 미리보기 OFF", "INFO")
+        else:
+            # 표시 — 연결 패널 아래, 로그 영역 위에 삽입
+            self.video_frame.pack(fill=tk.X, after=self._conn_panel, before=self.paned)
+            self._video_visible = True
+            self._video_frame_count = 0
+            self._video_last_fps_time = 0.0
+            self._schedule_video_update()
+            self.btn_video.configure(bg=COLORS["green"])
+            self._append_log("비디오 미리보기 ON", "INFO")
+
+    def _schedule_video_update(self):
+        """비디오 프레임 업데이트 스케줄"""
+        self._video_update_id = self.root.after(
+            VIDEO_UPDATE_INTERVAL_MS, self._update_video_frame
+        )
+
+    def _cancel_video_update(self):
+        """비디오 프레임 업데이트 취소"""
+        if self._video_update_id is not None:
+            self.root.after_cancel(self._video_update_id)
+            self._video_update_id = None
+
+    def _update_video_frame(self):
+        """주기적으로 최신 프레임을 읽어 비디오 라벨에 표시"""
+        if not self._video_visible:
+            return
+
+        try:
+            if HAS_PIL and PREVIEW_FRAME_PATH.exists():
+                # 프레임 파일 읽기
+                img = Image.open(str(PREVIEW_FRAME_PATH))
+
+                # 패널 너비에 맞춰 리사이즈 (비율 유지)
+                panel_w = self.video_label.winfo_width()
+                if panel_w < 100:
+                    panel_w = 800
+                target_h = int(panel_w * img.height / img.width)
+                if target_h > 480:
+                    target_h = 480
+                    panel_w = int(target_h * img.width / img.height)
+                img = img.resize((panel_w, target_h), Image.LANCZOS)
+
+                photo = ImageTk.PhotoImage(img)
+                self.video_label.configure(image=photo, text="")
+                self._video_photo = photo  # 참조 유지 (GC 방지)
+
+                # FPS 계산
+                self._video_frame_count += 1
+                now = datetime.now().timestamp()
+                if self._video_last_fps_time == 0:
+                    self._video_last_fps_time = now
+                elif (now - self._video_last_fps_time) >= 1.0:
+                    fps = self._video_frame_count / (now - self._video_last_fps_time)
+                    self._video_fps_var.set(f"{fps:.1f} FPS")
+                    self._video_status_var.set(f"{img.width}x{img.height}")
+                    self._video_frame_count = 0
+                    self._video_last_fps_time = now
+            else:
+                if not HAS_PIL:
+                    self._video_fps_var.set("Pillow 미설치")
+                else:
+                    self._video_fps_var.set("영상 대기 중...")
+
+        except Exception:
+            pass  # 파일 읽기/디코딩 일시 실패 무시
+
+        # 다음 업데이트 예약
+        self._schedule_video_update()
 
     # ── 연결 상태 체크 ────────────────────────────────────
     def _check_connections(self):
@@ -364,18 +526,18 @@ class AIServerGUI:
     # ── 로그 + 수신 요청 영역 (좌우 분할) ─────────────────
     def _build_log_area(self):
         # PanedWindow 로 좌우 분할
-        paned = tk.PanedWindow(
+        self.paned = tk.PanedWindow(
             self.root,
             orient=tk.HORIZONTAL,
             bg=COLORS["overlay"],
             sashwidth=4,
             sashrelief=tk.FLAT,
         )
-        paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        self.paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
         # ── 왼쪽: 서버 로그 ──
-        left_frame = tk.Frame(paned, bg=COLORS["bg"])
-        paned.add(left_frame, stretch="always")
+        left_frame = tk.Frame(self.paned, bg=COLORS["bg"])
+        self.paned.add(left_frame, stretch="always")
 
         log_header = tk.Frame(left_frame, bg=COLORS["surface"], pady=4, padx=8)
         log_header.pack(fill=tk.X)
@@ -410,8 +572,8 @@ class AIServerGUI:
         self.log_text.tag_configure("SEPARATOR", foreground=COLORS["overlay"])
 
         # ── 오른쪽: 수신 요청 패널 ──
-        right_frame = tk.Frame(paned, bg=COLORS["bg"])
-        paned.add(right_frame, stretch="always")
+        right_frame = tk.Frame(self.paned, bg=COLORS["bg"])
+        self.paned.add(right_frame, stretch="always")
 
         req_header = tk.Frame(right_frame, bg=COLORS["surface"], pady=4, padx=8)
         req_header.pack(fill=tk.X)
@@ -480,7 +642,7 @@ class AIServerGUI:
 
         # 초기 사시비율: 왼쪽 65%, 오른쪽 35%
         self.root.update_idletasks()
-        paned.sash_place(0, int(self.root.winfo_width() * 0.62), 0)
+        self.paned.sash_place(0, int(self.root.winfo_width() * 0.62), 0)
 
     # ── 하단 상태바 ───────────────────────────────────────
     def _build_status_bar(self):
@@ -795,6 +957,7 @@ class AIServerGUI:
 
     # ── 종료 처리 ─────────────────────────────────────────
     def _on_close(self):
+        self._cancel_video_update()
         if self.process and self.process.poll() is None:
             self._stop_server()
         self.root.destroy()

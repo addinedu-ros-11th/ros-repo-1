@@ -6,10 +6,12 @@ InferenceStateManager 상태에 따라 활성화된 모델로만 추론 수행
 
 import socket
 import logging
+import os
 import struct
 import time
 import numpy as np
 import cv2
+from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 from queue import Queue, Empty
 import threading
@@ -33,6 +35,11 @@ class UDPVideoReceiver:
         self.is_running = False
         self.frame_queue: Queue = Queue(maxsize=30)
         self.receive_thread = None
+
+        # 최신 프레임 미리보기용 (GUI 연동)
+        self._preview_frame_path = Path("/tmp/ai_server_latest_frame.jpg")
+        self._preview_interval = 0.1  # 100ms 간격으로 저장
+        self._last_preview_time = 0.0
 
         logger.info(f"UDP Video Receiver 초기화: {host}:{port}")
 
@@ -67,6 +74,11 @@ class UDPVideoReceiver:
             self.socket = None
         if self.receive_thread:
             self.receive_thread.join(timeout=2)
+        # 미리보기 파일 정리
+        try:
+            self._preview_frame_path.unlink(missing_ok=True)
+        except Exception:
+            pass
         logger.info("UDP Video Receiver 중지")
 
     def _receive_loop(self):
@@ -117,6 +129,12 @@ class UDPVideoReceiver:
                             }
                         )
 
+                        # GUI 미리보기용 프레임 저장 (throttled)
+                        now = time.time()
+                        if (now - self._last_preview_time) >= self._preview_interval:
+                            self._save_preview_frame(frame)
+                            self._last_preview_time = now
+
                     del frame_buffer[frame_id]
 
                 # 오래된 불완전 프레임 정리
@@ -143,13 +161,22 @@ class UDPVideoReceiver:
         except Empty:
             return None
 
+    def _save_preview_frame(self, frame: np.ndarray):
+        """최신 프레임을 GUI 미리보기용 JPEG로 저장 (atomic write)"""
+        try:
+            tmp_path = str(self._preview_frame_path) + ".tmp"
+            cv2.imwrite(tmp_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            os.replace(tmp_path, str(self._preview_frame_path))
+        except Exception:
+            pass
+
 
 class VideoStreamProcessor:
     """
     상태 기반 비디오 스트림 처리 엔진.
 
     InferenceStateManager의 상태에 따라 각 로봇의 프레임을
-    활성화된 모델(EMPLOYEE/SNACK/OBSTACLE)로만 추론하고,
+    활성화된 모델(EMPLOYEE/OBSTACLE)로만 추론하고,
     결과를 results_queue에 저장하여 gRPC StreamVisionResults로 전달.
     """
 
@@ -250,7 +277,7 @@ class VideoStreamProcessor:
 
         Args:
             robot_id: 로봇 식별자
-            model_type: EMPLOYEE / SNACK / OBSTACLE
+            model_type: EMPLOYEE / OBSTACLE
             frame: OpenCV BGR 프레임
             timestamp_ms: 타임스탬프 (ms)
         """
@@ -264,20 +291,6 @@ class VideoStreamProcessor:
                         "timestamp": timestamp_ms,
                         "type": "face_recognition",
                         "content": result,
-                    }
-                )
-
-        elif model_type == "SNACK":
-            detections = self.vision_service.detect_products_from_frame(frame)
-            if detections:
-                # 가장 높은 신뢰도의 감지 결과 전송
-                best = max(detections, key=lambda d: d["confidence"])
-                self._push_result(
-                    {
-                        "robot_id": robot_id,
-                        "timestamp": timestamp_ms,
-                        "type": "object_detection",
-                        "content": best,
                     }
                 )
 

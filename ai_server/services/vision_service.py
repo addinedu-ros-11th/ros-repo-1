@@ -1,11 +1,17 @@
 """
 Vision Service
-YOLO 객체 인식 (상품/장애물) 및 얼굴 인식 기능을 처리하는 서비스 레이어
+YOLO 장애물 인식 및 얼굴 인식 기능을 처리하는 서비스 레이어
 
 모델 타입:
-  - SNACK    : product.pt (배달 시나리오 - 간식/상품 감지)
-  - OBSTACLE : obstacle.pt (주행 모드 - 사람/의자/화분 등 장애물 감지)
+  - OBSTACLE : obstacle.pt (장애물 감지 - 사람/의자/화분/가방/로봇)
   - EMPLOYEE : InsightFace ArcFace (유휴 모드 - 직원/외부인 판별)
+
+장애물 클래스:
+  0: 사람
+  1: 의자
+  2: 화분
+  3: 가방
+  4: 로봇
 """
 
 import json
@@ -19,10 +25,20 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+# 장애물 클래스 매핑 (obstacle.pt 모델의 클래스 ID → 이름)
+OBSTACLE_CLASSES = {
+    0: "사람",
+    1: "의자",
+    2: "화분",
+    3: "가방",
+    4: "로봇",
+}
+
+
 class VisionService:
     """
     YOLO + InsightFace(ArcFace) 기반 비전 서비스.
-    상품 감지, 장애물 감지, 얼굴 인식 세 기능을 제공.
+    장애물 감지, 얼굴 인식 두 기능을 제공.
     """
 
     # 캐시 버전 - 인코더 변경 시 캐시 무효화용
@@ -30,7 +46,6 @@ class VisionService:
 
     def __init__(
         self,
-        product_model_path: str = None,
         obstacle_model_path: str = None,
         face_match_threshold: float = 0.4,
         yolo_confidence: float = 0.5,
@@ -39,17 +54,14 @@ class VisionService:
         Vision 서비스 초기화
 
         Args:
-            product_model_path: 상품 감지 YOLO 모델 경로 (product.pt)
             obstacle_model_path: 장애물 감지 YOLO 모델 경로 (obstacle.pt)
             face_match_threshold: 얼굴 매칭 코사인 유사도 임계값 (높을수록 엄격, 기본 0.4)
             yolo_confidence: YOLO 신뢰도 임계값
         """
-        self.product_model_path = product_model_path
         self.obstacle_model_path = obstacle_model_path
         self.yolo_confidence = yolo_confidence
 
-        # YOLO 모델 인스턴스
-        self._product_model = None
+        # YOLO 모델 인스턴스 (장애물 감지만)
         self._obstacle_model = None
 
         # InsightFace 모델 인스턴스
@@ -85,7 +97,7 @@ class VisionService:
 
     def _load_yolo_models(self):
         """
-        YOLO 모델 로딩 (product.pt, obstacle.pt)
+        YOLO 모델 로딩 (obstacle.pt)
         ultralytics 패키지 사용
         """
         try:
@@ -95,16 +107,6 @@ class VisionService:
                 "ultralytics 패키지가 설치되지 않았습니다. pip install ultralytics"
             )
             return
-
-        # 상품 감지 모델
-        if self.product_model_path and Path(self.product_model_path).exists():
-            try:
-                self._product_model = YOLO(self.product_model_path)
-                logger.info(f"상품 감지 모델 로딩 완료: {self.product_model_path}")
-            except Exception as e:
-                logger.error(f"상품 감지 모델 로딩 실패: {e}")
-        else:
-            logger.warning(f"상품 감지 모델 파일 없음: {self.product_model_path}")
 
         # 장애물 감지 모델
         if self.obstacle_model_path and Path(self.obstacle_model_path).exists():
@@ -290,12 +292,13 @@ class VisionService:
     def _parse_yolo_results(self, results) -> List[Dict[str, Any]]:
         """
         YOLO 추론 결과를 파싱하여 딕셔너리 리스트로 변환.
+        장애물 클래스 매핑(OBSTACLE_CLASSES)을 사용하여 클래스 이름 결정.
 
         Args:
             results: ultralytics YOLO 추론 결과
 
         Returns:
-            감지된 객체 리스트
+            감지된 장애물 리스트
         """
         detections = []
         if not results or len(results) == 0:
@@ -311,7 +314,8 @@ class VisionService:
                 continue
 
             cls_id = int(box.cls[0])
-            class_name = result.names.get(cls_id, f"class_{cls_id}")
+            # 장애물 클래스 매핑 사용 (0:사람, 1:의자, 2:화분, 3:가방, 4:로봇)
+            class_name = OBSTACLE_CLASSES.get(cls_id, f"unknown_{cls_id}")
 
             # xyxy → x, y, width, height
             x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -319,6 +323,7 @@ class VisionService:
                 {
                     "object_name": class_name,
                     "confidence": round(conf, 4),
+                    "class_id": cls_id,
                     "box": {
                         "x": int(x1),
                         "y": int(y1),
@@ -330,33 +335,9 @@ class VisionService:
 
         return detections
 
-    def detect_products_from_frame(self, frame: np.ndarray) -> List[Dict[str, Any]]:
-        """
-        프레임에서 상품/간식 감지 (product.pt)
-
-        Args:
-            frame: OpenCV BGR 프레임
-
-        Returns:
-            감지된 상품 리스트
-        """
-        if self._product_model is None:
-            logger.debug("상품 감지 모델이 로드되지 않음")
-            return []
-
-        try:
-            results = self._product_model(frame, verbose=False)
-            detections = self._parse_yolo_results(results)
-            if detections:
-                logger.debug(f"상품 감지: {len(detections)}개")
-            return detections
-        except Exception as e:
-            logger.error(f"상품 감지 추론 실패: {e}")
-            return []
-
     def detect_obstacles_from_frame(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
-        프레임에서 장애물 감지 (obstacle.pt — 사람/의자/화분 등)
+        프레임에서 장애물 감지 (obstacle.pt — 사람/의자/화분/가방/로봇)
 
         Args:
             frame: OpenCV BGR 프레임
@@ -437,7 +418,7 @@ class VisionService:
         self, image_id: str, image_data: Optional[bytes] = None
     ) -> Dict[str, Any]:
         """
-        이미지에서 객체 인식 (product 모델 사용, 단건 요청)
+        이미지에서 장애물 인식 (obstacle 모델 사용, 단건 요청)
         """
         image = self._load_input_image(image_id, image_data)
         if image is None:
@@ -448,7 +429,7 @@ class VisionService:
                 "box": {"x": 0, "y": 0, "width": 0, "height": 0},
             }
 
-        detections = self.detect_products_from_frame(image)
+        detections = self.detect_obstacles_from_frame(image)
         if detections:
             return detections[0]
         return {
