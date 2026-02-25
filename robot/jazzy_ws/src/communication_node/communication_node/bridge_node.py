@@ -52,8 +52,17 @@ class CommunicationBridgeNode(Node):
         self.declare_parameter("skip_stream_when_ai_dead", True)
         self.declare_parameter("ai_dead_log_period_sec", 30.0)
         self.declare_parameter("rpicam_cmd", "rpicam-vid")
+        self.declare_parameter("rpicam_still_cmd", "rpicam-still")
         self.declare_parameter("rpicam_restart_backoff_sec", 2.0)
         self.declare_parameter("rpicam_use_system_libs", True)
+        self.declare_parameter("rpicam_awb_mode", "auto")
+        self.declare_parameter("rpicam_awb_autoselect", False)
+        self.declare_parameter(
+            "rpicam_awb_candidates", "fluorescent,daylight,cloudy,tungsten,indoor"
+        )
+        self.declare_parameter("rpicam_awb_probe_width", 640)
+        self.declare_parameter("rpicam_awb_probe_height", 360)
+        self.declare_parameter("rpicam_awb_probe_timeout_ms", 1200)
 
         self.image_topic = self.get_parameter("image_topic").get_parameter_value().string_value
         self.camera_source = (
@@ -114,12 +123,37 @@ class CommunicationBridgeNode(Node):
             self.get_parameter("ai_dead_log_period_sec").get_parameter_value().double_value
         )
         self.rpicam_cmd = self.get_parameter("rpicam_cmd").get_parameter_value().string_value
+        self.rpicam_still_cmd = (
+            self.get_parameter("rpicam_still_cmd").get_parameter_value().string_value
+        )
         self.rpicam_restart_backoff_sec = (
             self.get_parameter("rpicam_restart_backoff_sec").get_parameter_value().double_value
         )
         self.rpicam_use_system_libs = (
             self.get_parameter("rpicam_use_system_libs").get_parameter_value().bool_value
         )
+        self.rpicam_awb_mode = self._normalize_awb_mode(
+            self.get_parameter("rpicam_awb_mode").get_parameter_value().string_value
+        )
+        self.rpicam_awb_autoselect = (
+            self.get_parameter("rpicam_awb_autoselect").get_parameter_value().bool_value
+        )
+        self.rpicam_awb_candidates = self._parse_awb_candidates(
+            self.get_parameter("rpicam_awb_candidates").get_parameter_value().string_value
+        )
+        self.rpicam_awb_probe_width = (
+            self.get_parameter("rpicam_awb_probe_width").get_parameter_value().integer_value
+        )
+        self.rpicam_awb_probe_height = (
+            self.get_parameter("rpicam_awb_probe_height").get_parameter_value().integer_value
+        )
+        self.rpicam_awb_probe_timeout_ms = (
+            self.get_parameter("rpicam_awb_probe_timeout_ms")
+            .get_parameter_value()
+            .integer_value
+        )
+        self._selected_rpicam_awb_mode = self.rpicam_awb_mode
+        self._awb_autoselect_done = False
 
         self._stop_event = threading.Event()
         self._rpicam_proc: Optional[subprocess.Popen] = None
@@ -186,6 +220,7 @@ class CommunicationBridgeNode(Node):
             f"encoding={self.encoding_mode}, "
             f"max_fps={self.max_fps}, resize={self.resize_width}x{self.resize_height}, "
             f"rotate_180={self.rotate_180}, "
+            f"rpicam_awb={self._selected_rpicam_awb_mode}, "
             f"healthcheck={self.ai_healthcheck_mode}:{self.ai_healthcheck_port}, "
             f"frame_id_seed={self._frame_id}, tx_log={self.tx_stats_log_period_sec}s)."
         )
@@ -250,6 +285,8 @@ class CommunicationBridgeNode(Node):
             "-o",
             "-",
         ]
+        if self._selected_rpicam_awb_mode:
+            cmd += ["--awb", self._selected_rpicam_awb_mode]
         if self.rotate_180:
             cmd += ["--hflip", "--vflip"]
         return cmd
@@ -260,6 +297,114 @@ class CommunicationBridgeNode(Node):
             # Prefer distro libcamera stack for stable pisp runtime on PinkyPro.
             env["LD_LIBRARY_PATH"] = "/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu"
         return env
+
+    def _normalize_awb_mode(self, mode: str) -> str:
+        valid = {
+            "auto",
+            "incandescent",
+            "tungsten",
+            "fluorescent",
+            "indoor",
+            "daylight",
+            "cloudy",
+        }
+        normalized = (mode or "auto").strip().lower()
+        if normalized in valid:
+            return normalized
+        if normalized:
+            self.get_logger().warn(f"Unknown rpicam_awb_mode={normalized}. Fallback to auto.")
+        return "auto"
+
+    def _parse_awb_candidates(self, raw: str) -> List[str]:
+        out: List[str] = []
+        for token in (raw or "").split(","):
+            mode = self._normalize_awb_mode(token)
+            if mode not in out:
+                out.append(mode)
+        return out
+
+    def _awb_balance_score(self, frame: np.ndarray) -> float:
+        h, w = frame.shape[:2]
+        y0, y1 = h // 6, h - (h // 6)
+        x0, x1 = w // 6, w - (w // 6)
+        roi = frame[y0:y1, x0:x1]
+        if roi.size == 0:
+            roi = frame
+        means = roi.reshape(-1, 3).mean(axis=0)
+        means = means / max(1e-6, float(np.mean(means)))
+        return float(np.std(means))
+
+    def _capture_awb_probe_frame(self, awb_mode: str, env: dict) -> Optional[np.ndarray]:
+        if not self.rpicam_still_cmd:
+            return None
+        width = max(160, int(self.rpicam_awb_probe_width))
+        height = max(120, int(self.rpicam_awb_probe_height))
+        timeout_ms = max(400, int(self.rpicam_awb_probe_timeout_ms))
+        cmd = [
+            self.rpicam_still_cmd,
+            "--nopreview",
+            "--immediate",
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+            "--awb",
+            awb_mode,
+            "--timeout",
+            str(timeout_ms),
+            "-o",
+            "-",
+        ]
+        if self.rotate_180:
+            cmd += ["--hflip", "--vflip"]
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                timeout=max(3.0, timeout_ms / 1000.0 + 2.0),
+                check=False,
+            )
+        except Exception as exc:
+            self.get_logger().warn(f"[awb] probe failed ({awb_mode}): {exc}")
+            return None
+        if result.returncode != 0:
+            err = result.stderr.decode("utf-8", errors="ignore").strip().splitlines()
+            tail = err[-1] if err else "unknown"
+            self.get_logger().warn(f"[awb] probe command failed ({awb_mode}): {tail}")
+            return None
+        if not result.stdout:
+            self.get_logger().warn(f"[awb] probe empty output ({awb_mode}).")
+            return None
+        frame = cv2.imdecode(np.frombuffer(result.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            self.get_logger().warn(f"[awb] probe decode failed ({awb_mode}).")
+            return None
+        return frame
+
+    def _auto_select_awb_mode(self) -> str:
+        env = self._build_rpicam_env()
+        scores: List[Tuple[float, str]] = []
+        for mode in self.rpicam_awb_candidates:
+            frame = self._capture_awb_probe_frame(mode, env)
+            if frame is None:
+                continue
+            score = self._awb_balance_score(frame)
+            scores.append((score, mode))
+            self.get_logger().info(f"[awb] probe mode={mode} score={score:.4f}")
+        if not scores:
+            self.get_logger().warn(
+                "[awb] auto-select failed; keeping configured mode "
+                f"{self._selected_rpicam_awb_mode}."
+            )
+            return self._selected_rpicam_awb_mode
+        scores.sort(key=lambda item: item[0])
+        selected = scores[0][1]
+        self.get_logger().info(
+            f"[awb] auto-selected mode={selected} from {len(scores)} candidates."
+        )
+        return selected
 
     def _extract_jpeg_frames(self, buffer: bytearray) -> List[bytes]:
         frames: List[bytes] = []
@@ -284,6 +429,10 @@ class CommunicationBridgeNode(Node):
             return
 
         while rclpy.ok() and not self._stop_event.is_set():
+            if self.rpicam_awb_autoselect and not self._awb_autoselect_done:
+                self._selected_rpicam_awb_mode = self._auto_select_awb_mode()
+                self._awb_autoselect_done = True
+
             if self.skip_stream_when_ai_dead and not self._ai_link_alive:
                 time.sleep(0.5)
                 continue

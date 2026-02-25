@@ -32,8 +32,18 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("skip_stream_when_ai_dead", default_value="true"),
             DeclareLaunchArgument("ai_dead_log_period_sec", default_value="30.0"),
             DeclareLaunchArgument("rpicam_cmd", default_value="rpicam-vid"),
+            DeclareLaunchArgument("rpicam_still_cmd", default_value="rpicam-still"),
             DeclareLaunchArgument("rpicam_restart_backoff_sec", default_value="2.0"),
             DeclareLaunchArgument("rpicam_use_system_libs", default_value="true"),
+            DeclareLaunchArgument("rpicam_awb_mode", default_value="auto"),
+            DeclareLaunchArgument("rpicam_awb_autoselect", default_value="false"),
+            DeclareLaunchArgument(
+                "rpicam_awb_candidates",
+                default_value="fluorescent,daylight,cloudy,tungsten,indoor",
+            ),
+            DeclareLaunchArgument("rpicam_awb_probe_width", default_value="640"),
+            DeclareLaunchArgument("rpicam_awb_probe_height", default_value="360"),
+            DeclareLaunchArgument("rpicam_awb_probe_timeout_ms", default_value="1200"),
             Node(
                 package="communication_node",
                 executable="bridge_node",
@@ -65,8 +75,17 @@ def generate_launch_description() -> LaunchDescription:
                         "skip_stream_when_ai_dead": LaunchConfiguration("skip_stream_when_ai_dead"),
                         "ai_dead_log_period_sec": LaunchConfiguration("ai_dead_log_period_sec"),
                         "rpicam_cmd": LaunchConfiguration("rpicam_cmd"),
+                        "rpicam_still_cmd": LaunchConfiguration("rpicam_still_cmd"),
                         "rpicam_restart_backoff_sec": LaunchConfiguration("rpicam_restart_backoff_sec"),
                         "rpicam_use_system_libs": LaunchConfiguration("rpicam_use_system_libs"),
+                        "rpicam_awb_mode": LaunchConfiguration("rpicam_awb_mode"),
+                        "rpicam_awb_autoselect": LaunchConfiguration("rpicam_awb_autoselect"),
+                        "rpicam_awb_candidates": LaunchConfiguration("rpicam_awb_candidates"),
+                        "rpicam_awb_probe_width": LaunchConfiguration("rpicam_awb_probe_width"),
+                        "rpicam_awb_probe_height": LaunchConfiguration("rpicam_awb_probe_height"),
+                        "rpicam_awb_probe_timeout_ms": LaunchConfiguration(
+                            "rpicam_awb_probe_timeout_ms"
+                        ),
                     }
                 ],
             ),
