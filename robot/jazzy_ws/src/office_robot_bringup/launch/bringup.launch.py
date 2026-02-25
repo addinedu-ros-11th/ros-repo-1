@@ -20,6 +20,8 @@ def generate_launch_description() -> LaunchDescription:
     stop_publish_count = LaunchConfiguration("stop_publish_count")
     stop_publish_hz = LaunchConfiguration("stop_publish_hz")
     safety_lock_topic = LaunchConfiguration("safety_lock_topic")
+    ai_link_topic = LaunchConfiguration("ai_link_topic")
+    include_ai_link_in_status = LaunchConfiguration("include_ai_link_in_status")
     safety_stop_publish_hz = LaunchConfiguration("safety_stop_publish_hz")
     safety_lock_keepalive_hz = LaunchConfiguration("safety_lock_keepalive_hz")
     safety_stop_publish_count = LaunchConfiguration("safety_stop_publish_count")
@@ -43,6 +45,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("stop_publish_count", default_value="10"),
             DeclareLaunchArgument("stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_topic", default_value="safety_lock"),
+            DeclareLaunchArgument("ai_link_topic", default_value="ai_link"),
+            DeclareLaunchArgument("include_ai_link_in_status", default_value="true"),
             DeclareLaunchArgument("safety_stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_keepalive_hz", default_value="2.0"),
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
@@ -90,6 +94,8 @@ def generate_launch_description() -> LaunchDescription:
                             "stop_publish_count": stop_publish_count,
                             "stop_publish_hz": stop_publish_hz,
                             "safety_lock_topic": safety_lock_topic,
+                            "ai_link_topic": ai_link_topic,
+                            "include_ai_link_in_status": include_ai_link_in_status,
                         }.items(),
                     ),
                     IncludeLaunchDescription(

@@ -117,14 +117,14 @@ class TaskManager:
         else:
             logger.error(f"작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
 
-    async def handle_robot_event(self, task_id: int, robot_id: int, event: str):
+    async def handle_robot_event(self, task_id: int, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         """로봇으로부터 수신된 이벤트(도착 등)를 처리기에 전달합니다."""
         task = await self.task_repo.get_by_id(task_id)
         if not task: return
 
         processor = self.processors.get(task.task_type)
         if processor:
-            await processor.handle_event(task, robot_id, event)
+            await processor.handle_event(task, robot_id, event, data)
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

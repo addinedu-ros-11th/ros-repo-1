@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import asyncio
 
 # Assuming container is available globally or can be imported
@@ -28,6 +28,7 @@ class CreateUserRequest(BaseModel):
 class SimulateEventRequest(BaseModel):
     task_id: int
     event_type: str 
+    data: Optional[Dict[str, Any]] = None
 
 @router.post("/users")
 async def create_test_user(request: CreateUserRequest):
@@ -171,7 +172,8 @@ async def trigger_robot_event(task_id: int, request: SimulateEventRequest):
     await container.task_manager.handle_robot_event(
         task_id=task_id,
         robot_id=task.assigned_robot_id,
-        event=request.event_type
+        event=request.event_type,
+        data=request.data
     )
     return {"status": "success", "message": f"Event {request.event_type} triggered for task {task_id}"}
 

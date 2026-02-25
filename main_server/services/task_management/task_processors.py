@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from main_server.domains.tasks.schemas import Task, TaskType, TaskStatus
 from main_server.domains.robots.schemas import RobotStatus
 from common.robot_task_events import RobotEvent
@@ -24,7 +24,7 @@ class BaseTaskProcessor(ABC):
         pass
 
     @abstractmethod
-    async def handle_event(self, task: Task, robot_id: int, event: str):
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         """로봇으로부터 수신된 이벤트에 따라 다음 단계를 처리합니다."""
         pass
 
@@ -49,7 +49,7 @@ class SnackProcessor(BaseTaskProcessor):
         logger.error("'snack_entrance' 위치를 찾을 수 없습니다.")
         return []
 
-    async def handle_event(self, task: Task, robot_id: int, event: str):
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
 
@@ -77,14 +77,38 @@ class SnackProcessor(BaseTaskProcessor):
                  await self.handle_event(task, robot_id, RobotEvent.ARRIVED_AT_SNACK_POINT)
         
         elif event == RobotEvent.ARRIVED_AT_SNACK_POINT:
+            # 간식 포인트 도착 시 QR 스캔 요청
+            logger.info(f"로봇 {robot.name} 간식 포인트 도착. QR 코드 스캔 요청.")
+            self.fleet_manager.send_action_commands(robot.name, [{
+                "action": "QR_SCAN", 
+                "params": {}, 
+                "on_success": RobotEvent.QR_SCANNED 
+            }])
+
+        elif event == RobotEvent.QR_SCANNED:
+            # QR 코드 검증 로직
             items = task.details.get("items", [])
-            item_name = items[0].get("item_name") if items else "snack"
+            target_item_name = items[0].get("item_name") if items else "snack"
             
-            # 카메라 스트림을 통한 아이템 검증
-            success = await self.ai_processing_service.verify_snack_with_stream(robot.name, item_name)
+            scanned_data = data.get("scanned_data") if data else None
             
-            if success: # 검증 성공 시
-                await asyncio.sleep(3) # 로딩 대기 (가상)
+            if not scanned_data:
+                logger.warning("QR 데이터가 없습니다. 재시도합니다.")
+                # 재시도 로직 (다시 스캔 요청)
+                self.fleet_manager.send_action_commands(robot.name, [{
+                    "action": "QR_SCAN", 
+                    "params": {}, 
+                    "on_success": RobotEvent.QR_SCANNED 
+                }])
+                return
+
+            logger.info(f"QR Scanned: {scanned_data} vs Target: {target_item_name}")
+            
+            # 실제 운영 시 DB의 Product QR 정보와 비교해야 함. 
+            # 여기서는 편의상 아이템 이름이 포함되어 있는지 확인.
+            if target_item_name in scanned_data:
+                logger.info("QR 검증 성공! 목적지로 이동합니다.")
+                await asyncio.sleep(1) 
                 
                 # 최종 목적지 (요청자 위치)로 이동
                 dest_name = task.target_location_name
@@ -97,6 +121,12 @@ class SnackProcessor(BaseTaskProcessor):
                     }])
                 else:
                     logger.error(f"목적지 '{dest_name}'를 찾을 수 없습니다.")
+            else:
+                logger.warning(f"QR 검증 실패. 기대값: {target_item_name}, 실제값: {scanned_data}")
+                self.fleet_manager.send_action_commands(robot.name, [{
+                    "action": "DISPLAY_TEXT", 
+                    "params": {"text": "Wrong Item!", "duration": 3}
+                }])
 
         elif event == RobotEvent.ARRIVED_AT_DESTINATION:
             # 도착 알림 및 수령 확인 요청 전송
@@ -128,7 +158,7 @@ class GuideProcessor(BaseTaskProcessor):
             }]
         return []
 
-    async def handle_event(self, task: Task, robot_id: int, event: str):
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
 
@@ -171,7 +201,7 @@ class ItemProcessor(BaseTaskProcessor):
         logger.error(f"출발지 '{sender_loc_name}'를 찾을 수 없습니다.")
         return []
 
-    async def handle_event(self, task: Task, robot_id: int, event: str):
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
         

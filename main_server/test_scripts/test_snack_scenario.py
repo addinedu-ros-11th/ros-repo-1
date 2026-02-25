@@ -64,7 +64,7 @@ def test_scenario():
     # 5. 간식 배달 주문
     log("Sending snack delivery command (Requesting coffee)...")
     command_payload = {
-        "message": "커피 배달해줘", 
+        "message": "초코파이 배달해줘", 
         "user_id": "test_user_alice" 
     }
     
@@ -87,16 +87,20 @@ def test_scenario():
     log(f"SUCCESS: Task created with ID: {task_id}")
 
     # 6. 로봇 이벤트 시뮬레이션
+    # 간식 배달 흐름: PANTRY 도착 -> SNACK POINT 도착 -> QR 스캔 -> DESTINATION 도착
     events = [
-        "ARRIVED_AT_PANTRY_ENTRANCE",
-        "ARRIVED_AT_SNACK_POINT",
-        "ARRIVED_AT_DESTINATION"
+        {"type": "ARRIVED_AT_PANTRY_ENTRANCE", "data": None},
+        {"type": "ARRIVED_AT_SNACK_POINT", "data": None},
+        {"type": "QR_SCANNED", "data": {"scanned_data": "Choco Pie (초코파이)"}}, 
+        {"type": "ARRIVED_AT_DESTINATION", "data": None}
     ]
 
-    for event in events:
+    for event_info in events:
+        event = event_info["type"]
+        payload = {"task_id": task_id, "event_type": event, "data": event_info["data"]}
         log(f"Simulating robot event: {event}...")
         time.sleep(1) 
-        resp = session.post(f"{BASE_URL}/api/test/tasks/{task_id}/events", json={"task_id": task_id, "event_type": event})
+        resp = session.post(f"{BASE_URL}/api/test/tasks/{task_id}/events", json=payload)
         if resp.status_code == 200:
             log(f"Event {event} processed.")
         else:

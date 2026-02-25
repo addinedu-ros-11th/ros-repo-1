@@ -24,6 +24,26 @@ class IRobotCommunicator(Protocol):
         """
         ...
 
+    def publish_obstacle_info(self, robot_name: str, obstacle_data: Dict[str, Any]):
+        """
+        AI에서 감지된 장애물 정보를 로봇에게 발행합니다.
+        
+        Args:
+            robot_name (str): 정보를 수신할 로봇의 이름.
+            obstacle_data (Dict[str, Any]): 장애물 정보 데이터.
+        """
+        ...
+
+    def publish_employee_result(self, robot_name: str, result_data: Dict[str, Any]):
+        """
+        AI에서 인식된 직원/얼굴 정보를 로봇에게 발행합니다.
+        
+        Args:
+            robot_name (str): 정보를 수신할 로봇의 이름.
+            result_data (Dict[str, Any]): 얼굴 인식 결과 데이터.
+        """
+        ...
+
     def listen_for_status(self, callback: Any):
         """
         [Deprecated] 로봇으로부터 통합 상태 업데이트를 비동기적으로 수신 대기합니다.
