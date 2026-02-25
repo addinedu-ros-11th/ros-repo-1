@@ -6,6 +6,7 @@ tkinter 기반 — 추가 패키지 불필요
 
 import os
 import sys
+import json
 import signal
 import socket
 import subprocess
@@ -30,6 +31,9 @@ AI_SERVER_MODULE = "ai_server.server"
 PYTHON_EXE = sys.executable
 PREVIEW_FRAME_PATH = Path("/tmp/ai_server_latest_frame.jpg")
 VIDEO_UPDATE_INTERVAL_MS = 100  # 10fps
+TEST_MODE_FLAG_PATH = Path("/tmp/ai_server_test_mode.flag")
+TEST_MODE_RESULT_PATH = Path("/tmp/ai_server_test_results.json")
+TEST_RESULT_CHECK_INTERVAL_MS = 500  # 0.5초마다 결과 확인
 
 
 # ── 환경변수 헬퍼 (.env 값에 따옴표가 섞여있을 수 있으므로 strip) ──
@@ -92,6 +96,7 @@ LOG_COLORS = {
     "WARNING": "#f9e2af",
     "ERROR": "#f38ba8",
     "CRITICAL": "#f38ba8",
+    "DETECTION": "#f5c2e7",  # 핑크 — 테스트 모드 감지 결과
 }
 
 # ── gRPC 수신 요청 감지 패턴 ───────────────────────────────
@@ -153,6 +158,11 @@ class AIServerGUI:
         self._video_visible = False
         self._video_update_id = None
         self._video_photo = None  # PhotoImage 참조 유지
+
+        # 테스트 모드 상태
+        self._test_mode_active = False
+        self._test_result_update_id = None
+        self._last_test_result_ts = 0.0
 
         self._setup_window()
         self._build_header()
@@ -276,6 +286,16 @@ class AIServerGUI:
         )
         self.btn_video.pack(side=tk.LEFT, padx=4)
 
+        self.btn_test_mode = tk.Button(
+            btn_frame,
+            text="🧪  Test",
+            bg=COLORS["overlay"],
+            fg=COLORS["fg"],
+            command=self._toggle_test_mode,
+            **btn_style,
+        )
+        self.btn_test_mode.pack(side=tk.LEFT, padx=4)
+
     # ── 연결 상태 패널 ────────────────────────────────────
     def _build_connection_panel(self):
         self._conn_panel = tk.Frame(self.root, bg=COLORS["surface"], pady=6, padx=12)
@@ -371,7 +391,7 @@ class AIServerGUI:
 
         # 비디오 표시 영역
         video_container = tk.Frame(self.video_frame, bg=COLORS["bg"], padx=4, pady=4)
-        video_container.pack(fill=tk.X)
+        video_container.pack(fill=tk.BOTH, expand=True)
 
         self.video_label = tk.Label(
             video_container,
@@ -383,11 +403,9 @@ class AIServerGUI:
             ),
             fg=COLORS["subtext"],
             font=("Helvetica", 11),
-            width=80,
-            height=18,
             anchor=tk.CENTER,
         )
-        self.video_label.pack(fill=tk.X, pady=2)
+        self.video_label.pack(fill=tk.BOTH, expand=True, pady=2)
 
         self._video_frame_count = 0
         self._video_last_fps_time = 0.0
@@ -403,7 +421,9 @@ class AIServerGUI:
             self._append_log("비디오 미리보기 OFF", "INFO")
         else:
             # 표시 — 연결 패널 아래, 로그 영역 위에 삽입
-            self.video_frame.pack(fill=tk.X, after=self._conn_panel, before=self.paned)
+            self.video_frame.pack(
+                fill=tk.BOTH, after=self._conn_panel, before=self.paned
+            )
             self._video_visible = True
             self._video_frame_count = 0
             self._video_last_fps_time = 0.0
@@ -469,6 +489,89 @@ class AIServerGUI:
 
         # 다음 업데이트 예약
         self._schedule_video_update()
+
+    # ── 테스트 모드 ──────────────────────────────────────
+    def _toggle_test_mode(self):
+        """테스트 모드 ON/OFF 토글 — 플래그 파일로 서버 프로세스와 통신"""
+        if self._test_mode_active:
+            # OFF
+            self._test_mode_active = False
+            try:
+                TEST_MODE_FLAG_PATH.unlink(missing_ok=True)
+                TEST_MODE_RESULT_PATH.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._cancel_test_result_update()
+            self.btn_test_mode.configure(bg=COLORS["overlay"], fg=COLORS["fg"])
+            self._append_log("🧪 테스트 모드 OFF", "INFO")
+        else:
+            # ON — 비디오 미리보기도 자동으로 켜기
+            self._test_mode_active = True
+            try:
+                TEST_MODE_FLAG_PATH.touch()
+            except Exception as e:
+                self._append_log(f"테스트 모드 활성화 실패: {e}", "ERROR")
+                self._test_mode_active = False
+                return
+
+            if not self._video_visible:
+                self._toggle_video()
+
+            self._last_test_result_ts = 0.0
+            self._schedule_test_result_update()
+            self.btn_test_mode.configure(bg=COLORS["yellow"], fg=COLORS["bg"])
+            self._append_log(
+                "🧪 테스트 모드 ON — OBSTACLE + EMPLOYEE 추론 활성화", "INFO"
+            )
+
+    def _schedule_test_result_update(self):
+        """테스트 결과 주기적 읽기 예약"""
+        self._test_result_update_id = self.root.after(
+            TEST_RESULT_CHECK_INTERVAL_MS, self._update_test_results
+        )
+
+    def _cancel_test_result_update(self):
+        """테스트 결과 업데이트 취소"""
+        if self._test_result_update_id is not None:
+            self.root.after_cancel(self._test_result_update_id)
+            self._test_result_update_id = None
+
+    def _update_test_results(self):
+        """테스트 모드 결과 JSON 파일을 읽어 로그에 표시"""
+        if not self._test_mode_active:
+            return
+
+        try:
+            if TEST_MODE_RESULT_PATH.exists():
+                with open(str(TEST_MODE_RESULT_PATH), "r") as f:
+                    data = json.load(f)
+
+                ts = data.get("timestamp", 0)
+                if ts > self._last_test_result_ts:
+                    self._last_test_result_ts = ts
+                    results = data.get("results", [])
+                    if results:
+                        parts = []
+                        for r in results:
+                            if r["type"] == "obstacle":
+                                parts.append(f"🔶 {r['name']} ({r['confidence']:.0%})")
+                            elif r["type"] == "face":
+                                if r["person_type"] == "Employee":
+                                    parts.append(
+                                        f"🟢 직원: {r['employee_id']} ({r['confidence']:.0%})"
+                                    )
+                                else:
+                                    parts.append(
+                                        f"🟠 {r['person_type']} ({r['confidence']:.0%})"
+                                    )
+                        if parts:
+                            self._append_log(
+                                f"🧪 감지: {' | '.join(parts)}", "DETECTION"
+                            )
+        except Exception:
+            pass
+
+        self._schedule_test_result_update()
 
     # ── 연결 상태 체크 ────────────────────────────────────
     def _check_connections(self):
@@ -901,6 +1004,17 @@ class AIServerGUI:
         self._append_log("서버가 종료되었습니다", "INFO")
         self.pid_var.set("PID: —")
 
+        # 테스트 모드 OFF
+        if self._test_mode_active:
+            self._test_mode_active = False
+            self._cancel_test_result_update()
+            try:
+                TEST_MODE_FLAG_PATH.unlink(missing_ok=True)
+                TEST_MODE_RESULT_PATH.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self.btn_test_mode.configure(bg=COLORS["overlay"], fg=COLORS["fg"])
+
     # ── 재시작 ────────────────────────────────────────────
     def _restart_server(self):
         self._append_log("서버 재시작 중...", "WARNING")
@@ -958,6 +1072,13 @@ class AIServerGUI:
     # ── 종료 처리 ─────────────────────────────────────────
     def _on_close(self):
         self._cancel_video_update()
+        self._cancel_test_result_update()
+        # 테스트 모드 플래그 정리
+        try:
+            TEST_MODE_FLAG_PATH.unlink(missing_ok=True)
+            TEST_MODE_RESULT_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
         if self.process and self.process.poll() is None:
             self._stop_server()
         self.root.destroy()
