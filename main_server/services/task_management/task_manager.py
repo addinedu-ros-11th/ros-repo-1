@@ -55,10 +55,11 @@ class TaskManager:
         
         fields = ai_result["fields"]
         
-        # Requester name이 AI 결과에 없을 경우, 쿠키에서 가져온 caller_name을 기본값으로 사용
-        if not fields.get("requester_name") and caller_name:
+        # Requester name이 AI 결과에 없거나 'user' 같은 placeholder일 경우, 쿠키에서 가져온 caller_name을 기본값으로 사용
+        req_name = fields.get("requester_name")
+        if (not req_name or req_name.lower() == "user") and caller_name:
             fields["requester_name"] = caller_name
-            logger.info(f"Requester name missing in AI result. Injected caller_name: {caller_name}")
+            logger.info(f"Requester name missing or placeholder in AI result. Injected caller_name: {caller_name}")
         
         if not fields.get("requester_name"):
             logger.warning("Both requester_name and caller_name are missing.")
@@ -90,6 +91,9 @@ class TaskManager:
             # 현재 요구사항은 '가용한 로봇이 없을 때' 즉시 retry를 유도하므로 None을 반환합니다.
             logger.warning(f"태스크 {task_data.get('task_type')}를 처리할 적절한 로봇이 없습니다.")
             return None
+
+        # 로봇 ID를 태스크 데이터에 반영
+        task_data["assigned_robot_id"] = optimal_robot.id
 
         # 4. 태스크 생성 (DB)
         task = await self.task_repo.create(task_data, task_items)

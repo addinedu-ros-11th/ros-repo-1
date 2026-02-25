@@ -29,8 +29,8 @@ class RobotBase(BaseModel):
     name: str = Field(..., description="로봇의 고유 이름 (예: robot_01)")
     status: RobotStatus = Field(default=RobotStatus.IDLE)
     battery_level: float = Field(..., description="배터리 잔량 (%)", ge=0, le=100)
-    pose_x: float = Field(default=0.0, alias="current_x", description="현재 X 좌표")
-    pose_y: float = Field(default=0.0, alias="current_y", description="현재 Y 좌표")
+    pose_x: Optional[float] = Field(default=0.0, alias="current_x", description="현재 X 좌표")
+    pose_y: Optional[float] = Field(default=0.0, alias="current_y", description="현재 Y 좌표")
 
 class RobotCreate(RobotBase):
     """로봇 등록 시 필요한 데이터"""

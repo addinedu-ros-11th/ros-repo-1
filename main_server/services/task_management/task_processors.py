@@ -50,7 +50,7 @@ class SnackProcessor(BaseTaskProcessor):
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str):
-        robot = await self.fleet_manager.robot_repo.find_by_id(robot_id)
+        robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
 
         if event == RobotEvent.ARRIVED_AT_PANTRY_ENTRANCE:
@@ -129,7 +129,7 @@ class GuideProcessor(BaseTaskProcessor):
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str):
-        robot = await self.fleet_manager.robot_repo.find_by_id(robot_id)
+        robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
 
         if event == RobotEvent.ARRIVED_AT_DESTINATION:
@@ -172,7 +172,7 @@ class ItemProcessor(BaseTaskProcessor):
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str):
-        robot = await self.fleet_manager.robot_repo.find_by_id(robot_id)
+        robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
         if not robot: return
         
         if event == RobotEvent.ARRIVED_AT_SENDER:

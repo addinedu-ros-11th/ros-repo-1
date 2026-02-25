@@ -39,7 +39,11 @@ class FleetManager:
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
         """목적지에 가장 적합한 로봇을 검색합니다."""
         idle_robots = await self.robot_repo.find_by_status(RobotStatus.IDLE)
-        available_robots = [r for r in idle_robots if r.battery_level > 20]
+        # 배터리 충분하고 위치 정보가 유효한 로봇만 필터링
+        available_robots = [
+            r for r in idle_robots 
+            if r.battery_level > 20 and r.pose_x is not None and r.pose_y is not None
+        ]
         
         if not available_robots: return None
         robot_distances = []

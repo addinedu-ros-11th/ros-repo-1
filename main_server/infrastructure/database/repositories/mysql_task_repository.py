@@ -18,22 +18,48 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
         super().__init__(table_name="Tasks", model=Task, pk_name="task_id")
 
     async def get_by_id(self, task_id: int) -> Optional[Task]:
-        task_data = await super().get_by_id(task_id)
-        if task_data:
-            # DB에 JSON 문자열로 저장된 'details' 필드를 dict로 변환
-            if isinstance(task_data.details, str):
-                task_data.details = json.loads(task_data.details)
-        return task_data
+        """ID로 단일 항목을 조회하고 JSON 필드를 처리합니다."""
+        query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"
+        result = await self._execute(query, (task_id,), fetch="one")
+        if not result:
+            return None
+            
+        # DB의 JSON 문자열을 dict로 변환 (Pydantic 모델 생성 전)
+        if "details" in result and isinstance(result["details"], str):
+            try:
+                result["details"] = json.loads(result["details"])
+            except json.JSONDecodeError:
+                result["details"] = {}
+                
+        return self.model(**result)
 
     async def get_all_by_status(self, status: TaskStatus) -> List[Task]:
         query = f"SELECT * FROM {self.table_name} WHERE status = %s ORDER BY created_at ASC"
         results = await self._execute(query, (status.value,), fetch="all")
-        return [self.model(**row) for row in results]
+        
+        processed_results = []
+        for row in results:
+            if "details" in row and isinstance(row["details"], str):
+                try:
+                    row["details"] = json.loads(row["details"])
+                except json.JSONDecodeError:
+                    row["details"] = {}
+            processed_results.append(self.model(**row))
+        return processed_results
 
     async def get_all_for_user(self, user_id: int) -> List[Task]:
         query = f"SELECT * FROM {self.table_name} WHERE requester_id = %s ORDER BY created_at DESC"
         results = await self._execute(query, (user_id,), fetch="all")
-        return [self.model(**row) for row in results]
+        
+        processed_results = []
+        for row in results:
+            if "details" in row and isinstance(row["details"], str):
+                try:
+                    row["details"] = json.loads(row["details"])
+                except json.JSONDecodeError:
+                    row["details"] = {}
+            processed_results.append(self.model(**row))
+        return processed_results
 
     async def create(self, data: Dict[str, Any], items: Optional[List[Dict[str, Any]]] = None) -> Optional[Task]:
         """

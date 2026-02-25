@@ -28,7 +28,9 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
         data_dict = {
             "name": name,
             "battery_level": battery_level,
-            "status": RobotStatus.IDLE.value  # 기본 상태
+            "status": RobotStatus.IDLE.value,  # 기본 상태
+            "current_x": 0.0,
+            "current_y": 0.0
         }
         new_robot_id = await super().create(data_dict)
         return Robot(id=new_robot_id, **data_dict)
