@@ -1,6 +1,6 @@
 import math
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 
 from main_server.domains.robots.schemas import Robot, RobotStatus
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
@@ -149,8 +149,17 @@ class FleetManager:
         self.robot_communicator.send_action_sequence(robot_name, actions)
         logger.info(f"로봇 '{robot_name}'에게 {len(actions)}개의 액션 전송 완료.")
 
-    async def update_robot_status(self, robot_id: int, status: RobotStatus, location: tuple, battery: float) -> Optional[Robot]:
+    async def update_robot_status(self, robot_id: Union[int, str], status: RobotStatus, location: tuple, battery: float) -> Optional[Robot]:
         """로봇으로부터 수신된 텔레메트리 정보를 DB에 갱신합니다."""
+        
+        # robot_id가 이름(str)인 경우 ID(int)로 변환
+        if isinstance(robot_id, str):
+            robot = await self.robot_repo.get_by_name(robot_id)
+            if not robot:
+                logger.warning(f"로봇 '{robot_id}'를 찾을 수 없어 상태 업데이트를 건너뜁니다.")
+                return None
+            robot_id = robot.id
+            
         update_data = {
             "status": status,
             "pose_x": location[0],

@@ -28,7 +28,8 @@ async def startup_event():
         host=config.ROS_BRIDGE_HOST, 
         port=config.ROS_BRIDGE_PORT, 
         fleet_manager=container.fleet_manager,
-        task_manager=container.task_manager
+        task_manager=container.task_manager,
+        log_repo=container.log_repository
     )
     bridge_task = asyncio.create_task(ros_bridge.start())
     background_tasks.add(bridge_task)

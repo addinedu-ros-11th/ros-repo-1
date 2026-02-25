@@ -14,6 +14,14 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
     async def get_by_id(self, robot_id: int) -> Optional[Robot]:
         return await super().get_by_id(robot_id)
 
+    async def get_by_name(self, name: str) -> Optional[Robot]:
+        """이름으로 특정 로봇을 조회합니다."""
+        query = f"SELECT * FROM {self.table_name} WHERE name = %s"
+        result = await self._execute(query, (name,), fetch="one")
+        if result:
+            return self.model(**result)
+        return None
+
     async def get_all(self) -> List[Robot]:
         return await super().get_all()
 

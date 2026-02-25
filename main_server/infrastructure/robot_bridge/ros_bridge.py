@@ -144,13 +144,14 @@ class ROSBridge:
     애플리케이션 시작 시 백그라운드에서 실행되어 
     ROS 통신 및 FleetManager 상태 동기화를 담당하는 고수준 브리지 서비스.
     """
-    def __init__(self, host: str, port: int, fleet_manager: Any, task_manager: Any = None, mutex_manager: Any = None):
+    def __init__(self, host: str, port: int, fleet_manager: Any, task_manager: Any = None, mutex_manager: Any = None, log_repo: Any = None):
         self.communicator = ROSBridgeCommunicator(host, port)
         self.fleet_manager = fleet_manager
         self.task_manager = task_manager
         self.mutex_manager = mutex_manager
-        # 임시 로봇 목록 (나중에 DB나 설정 파일에서 가져오도록 변경 가능)
-        self.managed_robots = ["robot_1", "robot_2"]
+        self.log_repo = log_repo
+        # DB에서 동적으로 로드하기 위해 초기화 시에는 빈 리스트
+        self.managed_robots = []
 
     async def start(self):
         """ROS Bridge 연결 및 상태 수신 루프 실행"""
@@ -165,6 +166,18 @@ class ROSBridge:
                 )
             except Exception as e:
                 logger.error(f"상태 동기화 핸들러 오류: {e}")
+
+        # DB에서 관리 대상 로봇 목록 동적 로드
+        try:
+            robots = await self.fleet_manager.get_all_robot_status()
+            if robots:
+                self.managed_robots = [r.name for r in robots]
+                logger.info(f"관리 대상 로봇 {len(self.managed_robots)}대 로드 완료: {self.managed_robots}")
+            else:
+                logger.warning("관리 대상 로봇이 DB에 없습니다.")
+        except Exception as e:
+            logger.error(f"로봇 목록 로드 실패: {e}")
+            self.managed_robots = []
 
         # 등록된 모든 로봇에 대해 구독 설정
         for robot_name in self.managed_robots:
@@ -188,7 +201,21 @@ class ROSBridge:
         # 1. FleetManager를 통해 상태 업데이트 (DB 반영)
         updated_robot = await self.fleet_manager.update_robot_status(robot_id, status, location, battery)
         
-        # 2. Mutex Zone 관련 이벤트 처리
+        # 2. 로봇 에러 상태 별도 로깅 (System_Logs)
+        if status == "ERROR" and updated_robot and self.log_repo:
+            try:
+                await self.log_repo.create({
+                    "timestamp": asyncio.get_event_loop().time(), # or use DB default (NOW()) by omitting
+                    # create 메서드는 보통 Dict를 받아서 INSERT
+                    "log_level": "ERROR",
+                    "event_type": "ROBOT_ERROR",
+                    "robot_id": updated_robot.id,
+                    "message": f"로봇 {updated_robot.name} (ID:{updated_robot.id}) 상태 오류 보고됨."
+                })
+            except Exception as e:
+                logger.error(f"시스템 로그 기록 실패: {e}")
+
+        # 3. Mutex Zone 관련 이벤트 처리
         if event and self.mutex_manager:
             zone_id = data.get("zone_id")
             if event == "MUTEX_ZONE_ENTRY_REQUEST" and zone_id:
