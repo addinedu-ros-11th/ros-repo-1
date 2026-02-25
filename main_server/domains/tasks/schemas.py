@@ -35,6 +35,7 @@ class RobotActionType(str, Enum):
     LEAD_GUEST = "LEAD_GUEST"           # 게스트와 함께 이동
     PICKUP = "PICKUP"                   # 물품 집기/적재 대기
     DROPOFF = "DROPOFF"                 # 물품 내려놓기/수령 대기
+    QR_SCAN = "QR_SCAN"                 # QR 코드 스캔 요청
     DISPLAY_TEXT = "DISPLAY_TEXT"       # LCD 텍스트 표시
     PLAY_SOUND = "PLAY_SOUND"           # 부저/음성 출력
     STOP = "STOP"                       # 긴급 정지

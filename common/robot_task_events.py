@@ -12,6 +12,7 @@ class RobotEvent(str, Enum):
     # 간식 배달 시나리오 (Snack Delivery)
     ARRIVED_AT_PANTRY_ENTRANCE = "ARRIVED_AT_PANTRY_ENTRANCE"
     ARRIVED_AT_SNACK_POINT = "ARRIVED_AT_SNACK_POINT"
+    QR_SCANNED = "QR_SCANNED" # QR 코드 스캔 완료 이벤트
     
     # 가이드 시나리오 (Guide)
     # (기본적으로 ARRIVED_AT_DESTINATION, ARRIVED_AT_BASE 활용)
