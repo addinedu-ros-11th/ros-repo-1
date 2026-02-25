@@ -67,10 +67,13 @@ app.mount("/static", StaticFiles(directory=config.STATIC_FILES_DIR), name="stati
 # --- API 및 웹 라우터 등록 ---
 from main_server.api.v1 import admin_routes, employee_routes, guest_routes
 from main_server.web import routes as web_router
+from main_server.api.v1 import admin_routes, login_routes  # login_routes 추가 임포트
+
 app.include_router(admin_routes.router)
 app.include_router(employee_routes.router)
 app.include_router(guest_routes.router)
 app.include_router(web_router.router) # 웹 UI 라우터 추가
+app.include_router(login_routes.router)
 
 # --- WebSocket 엔드포인트 ---
 @app.websocket("/ws/admin/status")

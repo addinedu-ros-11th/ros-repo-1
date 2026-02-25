@@ -91,6 +91,24 @@
     </div>
 
     <script>
+        (function() {
+            const getCookie = (name) => {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+            };
+
+            const userRole = getCookie('user_role');
+
+            // 디버깅용: 쿠키가 제대로 읽히는지 콘솔에서 확인 가능
+            console.log("현재 접속 유저 권한:", userRole);
+
+            if (userRole !== 'ADMIN') {
+                alert("접근 권한이 없습니다. 관리자로 로그인해주세요.");
+                window.location.href = '/'; // 메인(로그인) 페이지로 이동
+            }
+        })();
+
         let isZoneSetupMode = false;
         let isDragging = false;
         let startX, startY;
@@ -403,11 +421,15 @@
 
         /* 로그아웃 시 탭 저장 정보 삭제 */
         function logout() {
-            if (confirm("로그아웃 하시겠습니까?")) {
-                localStorage.removeItem('activeTab'); // 저장된 탭 정보 삭제
-                sessionStorage.clear();
-                window.location.href = '/'; 
-            }
+            // 1. 쿠키 삭제 (만료일을 과거로 설정하여 브라우저가 버리게 함)
+            document.cookie = "user_role=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            
+            // 2. 필요하다면 세션 스토리지나 로컬 스토리지도 비움
+            localStorage.clear();
+            
+            // 3. 로그인 창으로 이동
+            alert("로그아웃 되었습니다.");
+            window.location.href = "/";
         }
 
         async function updateRobotMarkers() {

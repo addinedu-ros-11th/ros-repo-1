@@ -1,10 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Cookie # Cookie 추가
 from typing import Dict, Any
 from main_server.container import container
 from main_server.domains.tasks.schemas import ConfirmTaskRequest
 import uuid
 
-router = APIRouter(prefix="/api/v1/employee", tags=["Employee"])
+# 직원 확인용 함수
+async def verify_staff(user_role: str = Cookie(None)):
+    # 관리자(ADMIN)는 직원 페이지도 볼 수 있게 하려면 or user_role == "ADMIN" 추가
+    if user_role not in ["STAFF", "ADMIN"]:
+        raise HTTPException(
+            status_code=403, 
+            detail="직원 권한이 없습니다."
+        )
+
+# 라우터 전체에 문지기 적용
+router = APIRouter(
+    prefix="/api/v1/employee", 
+    tags=["Employee"],
+    dependencies=[Depends(verify_staff)] # 여기 추가!
+)
 
 import logging
 logger = logging.getLogger(__name__)

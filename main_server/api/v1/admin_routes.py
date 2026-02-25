@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Cookie # Cookie 추가
 from pydantic import BaseModel
 from datetime import datetime
 from PIL import Image
@@ -17,9 +17,18 @@ from main_server.infrastructure.database.repositories.mysql_admin_repository imp
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
 from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
 
+async def verify_admin(user_role: str = Cookie(None)):
+    if user_role != "ADMIN":
+        raise HTTPException(
+            status_code=403, 
+            detail="관리자 권한이 없습니다."
+        )
+
+# 라우터 전체에 이 문지기(dependencies)를 적용
 router = APIRouter(
     prefix="/api/v1/admin",
     tags=["Admin/Control"],
+    dependencies=[Depends(verify_admin)] # 모든 admin API 접근 전 실행됨
 )
 
 # ---------------------------------------------------------

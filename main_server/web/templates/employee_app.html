@@ -203,8 +203,8 @@
         </div>
 
         <div class="panel chat-panel">
-            <div class="logout-wrapper">
-                <button class="btn-logout" onclick="logout()">로그아웃</button>
+            <div class="logout-btn" onclick="logout()">
+                <span class="icon"></span> 로그아웃
             </div>
             <div class="chat-header">
                 <div class="ai-status"></div> AI Assistant
@@ -219,191 +219,214 @@
         </div>
     </div>
 
-<script>
-    // [1] 로그아웃 경로 수정
-    function logout() {
-        if(confirm("로그아웃 하시겠습니까?")) {
-            location.href = "http://127.0.0.1:8000"; 
-        }
-    }
+    <script>
+        (function() {
+            const cookies = document.cookie.split('; ').reduce((acc, cookie) => {
+                const [key, value] = cookie.split('=');
+                acc[key] = value;
+                return acc;
+            }, {});
 
-    // [2] 공조 시스템 로직
-    let currentTemp = 24;
-    let windLevel = 2;
-    function tempChange(val) {
-        currentTemp += val;
-        document.getElementById('temp-val').innerText = `${currentTemp}°C`;
-        aiSpeak(`실내 온도를 ${currentTemp}도로 조정합니다.`);
-    }
-    function windChange(val) {
-        windLevel = Math.max(0, Math.min(4, windLevel + val));
-        const bars = document.getElementById('wind-display').children;
-        for(let i=0; i<4; i++) bars[i].className = i < windLevel ? 'bar active' : 'bar';
-        aiSpeak(`바람 세기를 ${windLevel}단계로 변경하였습니다.`);
-    }
-
-    // [3] 방문 예약 등록 및 리스트 관리 (엑셀 스타일)
-    const reservations = [];
-    function submitReservation() {
-        const name = document.getElementById('res-name').value;
-        const purpose = document.getElementById('res-purpose').value;
-        const date = document.getElementById('res-date').value;
-        const phone = document.getElementById('res-phone').value;
-        const today = new Date().toISOString().split('T')[0];
-
-        if(!name || !date) {
-            aiSpeak("방문자 이름과 날짜는 필수 입력 항목입니다.");
-            return;
-        }
-
-        const newEntry = { today, name, purpose, date, phone };
-        reservations.push(newEntry);
-        updateReservationTable();
-        
-        aiSpeak(`${name} 고객님의 ${date} 방문 예약을 완료했습니다. 목록에서 확인하실 수 있습니다.`);
-        
-        // 입력창 초기화
-        document.querySelectorAll('.res-input').forEach(input => input.value = '');
-    }
-
-    function updateReservationTable() {
-        const body = document.getElementById('res-table-body');
-        // 방문객 이름 부분에 폰트 굵기를 주어 더 잘 보이게 수정
-        body.innerHTML = reservations.map(r => `
-            <tr>
-                <td style="color: #888;">${r.today}</td>
-                <td style="font-size: 15px; font-weight: bold; color: #222;">${r.name}</td>
-                <td>${r.purpose}</td>
-                <td style="color: #4285f4; font-weight: 600;">${r.date}</td>
-                <td>${r.phone}</td>
-            </tr>
-        `).join('');
-    }
-
-    // [4] 로봇 제어 및 AI 피드백
-    function robotAction(type) {
-        let msg = "";
-        if(type === 'call') msg = "알겠습니다. 로봇을 현재 위치로 호출하겠습니다. 잠시만 기다려 주세요.";
-        else if(type === 'cancel') msg = "로봇 호출을 취소했습니다. 로봇이 대기 장소로 복귀합니다.";
-        else msg = "수령 확인을 완료했습니다. 감사합니다.";
-        aiSpeak(msg);
-    }
-
-    // [5] AI Assistant 발화 (LLM 이식 포인트)
-    function aiSpeak(text) {
-        appendMessage('ai', text);
-    }
-
-    async function sendMessage() {
-        const input = document.getElementById('user-input');
-        const text = input.value.trim();
-        if (!text) return;
-        
-        appendMessage('user', text);
-        input.value = '';
-
-        // 쿠키에서 user_id 가져오기
-        const getCookie = (name) => {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
-        };
-        const userId = getCookie('user_id') || 'unknown';
-
-        try {
-            const response = await fetch('/api/v1/employee/command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    message: text,
-                    user_id: userId  // 쿠키에서 가져온 사용자 ID 포함
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (result.status === 'success') {
-                let aiMsg = result.message;
-                if (result.ai_fields) {
-                    aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
-                }
-                aiSpeak(aiMsg);
-            } else if (result.status === 'retry') {
-                aiSpeak(`죄송합니다. ${result.message}\n(분석 결과: ${result.ai_result.task_type})`);
-            } else {
-                aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
+            // STAFF 또는 ADMIN 권한이 없으면 로그인 창으로
+            if (cookies['user_role'] !== 'STAFF' && cookies['user_role'] !== 'ADMIN') {
+                alert("접근 권한이 없습니다.");
+                window.location.href = "/";
             }
-        } catch (e) {
-            console.error("명령 전송 실패:", e);
-            aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
+        })();
+
+        // [1] 로그아웃 경로 수정
+        function logout() {
+            // [추가] 확인 메시지 창 띄우기
+            const isConfirmed = confirm("로그아웃 하시겠습니까?");
+            
+            if (isConfirmed) {
+                // 1. 쿠키 삭제
+                document.cookie = "user_role=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                
+                // 2. 알림 및 이동
+                alert("로그아웃 되었습니다.");
+                window.location.href = "/";
+            }
+            // '취소'를 누르면 아무 일도 일어나지 않습니다.
         }
-    }
 
-    function appendMessage(sender, text) {
-        const chatMessages = document.getElementById('chat-messages');
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `message ${sender}`;
-        msgDiv.innerText = text;
-        chatMessages.appendChild(msgDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    // [6] WebSocket 및 알림 처리 로직
-    let currentTaskData = null;
-    const ws = new WebSocket(`ws://${location.host}/ws/admin/status`); // 관리자용 채널 일단 공용 사용 (필요시 전용 채널 분리)
-
-    ws.onmessage = function(event) {
-        const message = JSON.parse(event.data);
-        console.log("WS 수신:", message);
-
-        if (message.event === "user_action_required") {
-            showNotification(message.data);
+        // [2] 공조 시스템 로직
+        let currentTemp = 24;
+        let windLevel = 2;
+        function tempChange(val) {
+            currentTemp += val;
+            document.getElementById('temp-val').innerText = `${currentTemp}°C`;
+            aiSpeak(`실내 온도를 ${currentTemp}도로 조정합니다.`);
         }
-    };
+        function windChange(val) {
+            windLevel = Math.max(0, Math.min(4, windLevel + val));
+            const bars = document.getElementById('wind-display').children;
+            for(let i=0; i<4; i++) bars[i].className = i < windLevel ? 'bar active' : 'bar';
+            aiSpeak(`바람 세기를 ${windLevel}단계로 변경하였습니다.`);
+        }
 
-    function showNotification(data) {
-        currentTaskData = data;
-        document.getElementById('noti-message').innerText = data.message;
-        document.getElementById('notification-overlay').style.display = 'flex';
-        
-        // 브라우저 기본 알림음 (선택 사항)
-        // new Audio('/static/notification.mp3').play().catch(e => {});
-    }
+        // [3] 방문 예약 등록 및 리스트 관리 (엑셀 스타일)
+        const reservations = [];
+        function submitReservation() {
+            const name = document.getElementById('res-name').value;
+            const purpose = document.getElementById('res-purpose').value;
+            const date = document.getElementById('res-date').value;
+            const phone = document.getElementById('res-phone').value;
+            const today = new Date().toISOString().split('T')[0];
 
-    async function handleNotification(action) {
-        if (!currentTaskData) return;
-        
-        const overlay = document.getElementById('notification-overlay');
-        overlay.style.display = 'none';
+            if(!name || !date) {
+                aiSpeak("방문자 이름과 날짜는 필수 입력 항목입니다.");
+                return;
+            }
 
-        if (action === 'accept') {
+            const newEntry = { today, name, purpose, date, phone };
+            reservations.push(newEntry);
+            updateReservationTable();
+            
+            aiSpeak(`${name} 고객님의 ${date} 방문 예약을 완료했습니다. 목록에서 확인하실 수 있습니다.`);
+            
+            // 입력창 초기화
+            document.querySelectorAll('.res-input').forEach(input => input.value = '');
+        }
+
+        function updateReservationTable() {
+            const body = document.getElementById('res-table-body');
+            // 방문객 이름 부분에 폰트 굵기를 주어 더 잘 보이게 수정
+            body.innerHTML = reservations.map(r => `
+                <tr>
+                    <td style="color: #888;">${r.today}</td>
+                    <td style="font-size: 15px; font-weight: bold; color: #222;">${r.name}</td>
+                    <td>${r.purpose}</td>
+                    <td style="color: #4285f4; font-weight: 600;">${r.date}</td>
+                    <td>${r.phone}</td>
+                </tr>
+            `).join('');
+        }
+
+        // [4] 로봇 제어 및 AI 피드백
+        function robotAction(type) {
+            let msg = "";
+            if(type === 'call') msg = "알겠습니다. 로봇을 현재 위치로 호출하겠습니다. 잠시만 기다려 주세요.";
+            else if(type === 'cancel') msg = "로봇 호출을 취소했습니다. 로봇이 대기 장소로 복귀합니다.";
+            else msg = "수령 확인을 완료했습니다. 감사합니다.";
+            aiSpeak(msg);
+        }
+
+        // [5] AI Assistant 발화 (LLM 이식 포인트)
+        function aiSpeak(text) {
+            appendMessage('ai', text);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            appendMessage('user', text);
+            input.value = '';
+
+            // 쿠키에서 user_id 가져오기
+            const getCookie = (name) => {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+            };
+            const userId = getCookie('user_id') || 'unknown';
+
             try {
-                const response = await fetch('/api/v1/employee/confirm', {
+                const response = await fetch('/api/v1/employee/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        task_id: currentTaskData.task_id,
-                        action_type: currentTaskData.action_type
+                    body: JSON.stringify({ 
+                        message: text,
+                        user_id: userId  // 쿠키에서 가져온 사용자 ID 포함
                     })
                 });
+                
                 const result = await response.json();
+                
                 if (result.status === 'success') {
-                    aiSpeak("수령 확인이 처리되었습니다. 로봇이 복귀합니다.");
+                    let aiMsg = result.message;
+                    if (result.ai_fields) {
+                        aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
+                    }
+                    aiSpeak(aiMsg);
+                } else if (result.status === 'retry') {
+                    aiSpeak(`죄송합니다. ${result.message}\n(분석 결과: ${result.ai_result.task_type})`);
                 } else {
-                    aiSpeak("확인 처리 중 오류가 발생했습니다: " + result.message);
+                    aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
                 }
             } catch (e) {
-                console.error("확인 요청 실패:", e);
-                aiSpeak("서버 통신에 실패했습니다.");
+                console.error("명령 전송 실패:", e);
+                aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
             }
-        } else {
-            aiSpeak("수령을 거절하셨습니다. 로봇이 대기합니다.");
-            // 거절 처리는 현재 백엔드 로직에 없으나, 필요시 추가 API 호출 가능
         }
-        
-        currentTaskData = null;
-    }
-</script>
+
+        function appendMessage(sender, text) {
+            const chatMessages = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+            msgDiv.innerText = text;
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // [6] WebSocket 및 알림 처리 로직
+        let currentTaskData = null;
+        const ws = new WebSocket(`ws://${location.host}/ws/admin/status`); // 관리자용 채널 일단 공용 사용 (필요시 전용 채널 분리)
+
+        ws.onmessage = function(event) {
+            const message = JSON.parse(event.data);
+            console.log("WS 수신:", message);
+
+            if (message.event === "user_action_required") {
+                showNotification(message.data);
+            }
+        };
+
+        function showNotification(data) {
+            currentTaskData = data;
+            document.getElementById('noti-message').innerText = data.message;
+            document.getElementById('notification-overlay').style.display = 'flex';
+            
+            // 브라우저 기본 알림음 (선택 사항)
+            // new Audio('/static/notification.mp3').play().catch(e => {});
+        }
+
+        async function handleNotification(action) {
+            if (!currentTaskData) return;
+            
+            const overlay = document.getElementById('notification-overlay');
+            overlay.style.display = 'none';
+
+            if (action === 'accept') {
+                try {
+                    const response = await fetch('/api/v1/employee/confirm', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            task_id: currentTaskData.task_id,
+                            action_type: currentTaskData.action_type
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        aiSpeak("수령 확인이 처리되었습니다. 로봇이 복귀합니다.");
+                    } else {
+                        aiSpeak("확인 처리 중 오류가 발생했습니다: " + result.message);
+                    }
+                } catch (e) {
+                    console.error("확인 요청 실패:", e);
+                    aiSpeak("서버 통신에 실패했습니다.");
+                }
+            } else {
+                aiSpeak("수령을 거절하셨습니다. 로봇이 대기합니다.");
+                // 거절 처리는 현재 백엔드 로직에 없으나, 필요시 추가 API 호출 가능
+            }
+            
+            currentTaskData = null;
+        }
+    </script>
 
 </body>
 </html>
