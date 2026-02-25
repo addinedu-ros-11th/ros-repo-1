@@ -33,6 +33,18 @@ class BaseTaskProcessor(ABC):
         await self.task_repo.update(task.id, {"status": TaskStatus.COMPLETED})
         await self.fleet_manager.update_robot_task_status(robot_id, None, RobotStatus.IDLE)
         logger.info(f"태스크 {task.id} 완료 및 로봇 {robot_id} 배차 해제.")
+        await self.broadcast_task_update(f"작업(ID:{task.id})이 완료되었습니다.")
+
+    async def broadcast_task_update(self, message: str):
+        """작업 진행 상황을 클라이언트에게 알립니다."""
+        try:
+            payload = {
+                "event": "task_update",
+                "data": {"message": message}
+            }
+            await self.connection_manager.broadcast(json.dumps(payload))
+        except Exception as e:
+            logger.error(f"진행 상황 브로드캐스트 실패: {e}")
 
 class SnackProcessor(BaseTaskProcessor):
     """간식 배달 시나리오 처리기"""
@@ -54,6 +66,7 @@ class SnackProcessor(BaseTaskProcessor):
         if not robot: return
 
         if event == RobotEvent.ARRIVED_AT_PANTRY_ENTRANCE:
+            await self.broadcast_task_update("로봇이 간식 창고 입구에 도착했습니다.")
             # AI 결과는 items 리스트로 제공됨 (ScenarioDataHandler 처리 결과)
             items = task.details.get("items", [])
             item_name = "snack" # 기본값
@@ -79,6 +92,7 @@ class SnackProcessor(BaseTaskProcessor):
         elif event == RobotEvent.ARRIVED_AT_SNACK_POINT:
             # 간식 포인트 도착 시 QR 스캔 요청
             logger.info(f"로봇 {robot.name} 간식 포인트 도착. QR 코드 스캔 요청.")
+            await self.broadcast_task_update("간식 진열대에 도착했습니다. QR 코드를 스캔합니다.")
             self.fleet_manager.send_action_commands(robot.name, [{
                 "action": "QR_SCAN", 
                 "params": {}, 
@@ -94,6 +108,7 @@ class SnackProcessor(BaseTaskProcessor):
             
             if not scanned_data:
                 logger.warning("QR 데이터가 없습니다. 재시도합니다.")
+                await self.broadcast_task_update("QR 인식이 되지 않았습니다. 재시도합니다.")
                 # 재시도 로직 (다시 스캔 요청)
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "QR_SCAN", 
@@ -108,6 +123,7 @@ class SnackProcessor(BaseTaskProcessor):
             # 여기서는 편의상 아이템 이름이 포함되어 있는지 확인.
             if target_item_name in scanned_data:
                 logger.info("QR 검증 성공! 목적지로 이동합니다.")
+                await self.broadcast_task_update(f"물품({target_item_name}) 확인 완료. 배달을 시작합니다.")
                 await asyncio.sleep(1) 
                 
                 # 최종 목적지 (요청자 위치)로 이동
@@ -123,6 +139,7 @@ class SnackProcessor(BaseTaskProcessor):
                     logger.error(f"목적지 '{dest_name}'를 찾을 수 없습니다.")
             else:
                 logger.warning(f"QR 검증 실패. 기대값: {target_item_name}, 실제값: {scanned_data}")
+                await self.broadcast_task_update("잘못된 물품이 감지되었습니다.")
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "DISPLAY_TEXT", 
                     "params": {"text": "Wrong Item!", "duration": 3}
@@ -131,6 +148,7 @@ class SnackProcessor(BaseTaskProcessor):
         elif event == RobotEvent.ARRIVED_AT_DESTINATION:
             # 도착 알림 및 수령 확인 요청 전송
             logger.info(f"로봇 {robot.name} 목적지 도착. 사용자 수령 확인 대기 중.")
+            await self.broadcast_task_update("목적지에 도착했습니다. 간식을 수령해주세요.")
             message = {
                 "event": "user_action_required",
                 "data": {
@@ -163,6 +181,7 @@ class GuideProcessor(BaseTaskProcessor):
         if not robot: return
 
         if event == RobotEvent.ARRIVED_AT_DESTINATION:
+            await self.broadcast_task_update("안내 목적지에 도착했습니다.")
             self.fleet_manager.send_action_commands(robot.name, [{"action": "DISPLAY_TEXT", "params": {"text": "Welcome!", "duration": 5}}])
             await asyncio.sleep(5)
             # 복귀 위치 (예: 대기 구역)
@@ -207,6 +226,7 @@ class ItemProcessor(BaseTaskProcessor):
         
         if event == RobotEvent.ARRIVED_AT_SENDER:
             logger.info(f"로봇 {robot.name} 발송처 도착. 사용자 로딩 대기 중.")
+            await self.broadcast_task_update("발송 위치에 도착했습니다. 물품을 적재해주세요.")
             message = {
                 "event": "user_action_required",
                 "data": {
@@ -219,6 +239,7 @@ class ItemProcessor(BaseTaskProcessor):
             await self.connection_manager.broadcast(json.dumps(message))
 
         elif event == RobotEvent.LOADING_COMPLETE:
+            await self.broadcast_task_update("적재 확인 완료. 수신처로 이동합니다.")
             # 수신자 위치로 이동
             dest_name = task.target_location_name # ScenarioDataHandler가 설정함
             loc = await self.location_repo.find_by_name(dest_name)
@@ -233,6 +254,7 @@ class ItemProcessor(BaseTaskProcessor):
 
         elif event == RobotEvent.ARRIVED_AT_RECEIVER:
             logger.info(f"로봇 {robot.name} 수신처 도착. 수령 확인 대기 중.")
+            await self.broadcast_task_update("수신 위치에 도착했습니다. 물품을 수령해주세요.")
             message = {
                 "event": "user_action_required",
                 "data": {
