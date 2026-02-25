@@ -4,154 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Employee Workspace</title>
-    <style>
-        :root {
-            --bg-color: #f8f9fa;
-            --ai-blue: #4285f4;
-            --user-gray: #e9ecef;
-            --text-main: #202124;
-            --border-color: #eee;
-            --logout-red: #ea4335;
-        }
-
-        body, html {
-            margin: 0; padding: 0; height: 100%; font-family: 'Pretendard', sans-serif;
-            background-color: var(--bg-color); color: var(--text-main);
-            overflow: hidden;
-        }
-
-        /* [1] 화면 레이아웃 구성 */
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 1.2fr; /* 우측 채팅창 비중 소폭 확대 */
-            grid-template-rows: 2fr 1fr;
-            height: 100vh;
-            gap: 15px;
-            padding: 15px;
-            box-sizing: border-box;
-        }
-
-        .panel {
-            background: #fff;
-            border-radius: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-            position: relative;
-        }
-
-        /* [2] 구역 배치 설정 */
-        .reservation-panel { grid-area: 1 / 1 / 2 / 2; padding: 25px; overflow-y: auto; }
-        .combined-control-panel { grid-area: 2 / 1 / 3 / 2; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        .chat-panel { grid-area: 1 / 2 / 3 / 3; }
-
-        /* [3] 컴포넌트: 방문예약 폼 및 리스트 */
-        .res-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-        .res-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 13px; }
-        .full-width { grid-column: span 2; }
-        .btn-submit { grid-column: span 2; padding: 12px; background: var(--ai-blue); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-
-        /* [예약 현황 리스트 글자 크기 및 스타일 강화] */
-        .res-list-container { 
-            flex-grow: 1; 
-            border-top: 2px solid #f1f1f1; 
-            padding-top: 15px; 
-            overflow-y: auto; 
-        }
-        .res-list-container h4 {
-            font-size: 18px; /* 제목 크기 확대 */
-            margin: 0 0 15px 0;
-            color: #333;
-        }
-
-        .res-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            font-size: 14px; /* 표 전체 글자 크기 확대 (기존 12px -> 14px) */
-            text-align: left; 
-        }
-        .res-table th { 
-            background: #f8f9fa; 
-            padding: 12px 10px; 
-            border-bottom: 2px solid #eee; 
-            font-weight: 700;
-            color: #555;
-        }
-        .res-table td { 
-            padding: 14px 10px; /* 행 간격 확대 */
-            border-bottom: 1px solid #f0f0f0; 
-            color: #444;
-        }
-        .res-table tr:hover { background-color: #fcfcfc; } /* 마우스 오버 시 시각 효과 */
-
-        /* [4] 컴포넌트: 공조 및 로봇 제어 */
-        .control-section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #555; }
-        .remote-grid { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 8px; margin-bottom: 15px; }
-        .temp-display { 
-            background: #222; color: #0f0; font-family: monospace;
-            text-align: center; padding: 10px; border-radius: 8px; font-size: 16px;
-            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
-        }
-        .wind-bars { display: flex; gap: 3px; }
-        .bar { width: 6px; height: 12px; background: #444; border-radius: 1px; }
-        .bar.active { background: #0f0; box-shadow: 0 0 5px #0f0; }
-        .remote-btn { padding: 8px; border: none; border-radius: 6px; background: #f1f3f4; cursor: pointer; font-weight: bold; font-size: 12px; }
-        .btn-pwr { background: #ea4335; color: white; }
-        .robot-btn-group { display: flex; gap: 8px; }
-        .ctrl-btn { flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; font-size: 13px; }
-        .btn-call { background: #4285f4; }
-        .btn-cancel { background: #5f6368; }
-        .btn-receive { background: #34a853; }
-
-        /* [5] 컴포넌트: AI 채팅 및 로그아웃 */
-        .logout-wrapper { position: absolute; top: 15px; right: 20px; z-index: 100; }
-        .btn-logout { padding: 8px 15px; background: var(--logout-red); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; }
-        .chat-header { padding: 20px; font-weight: 600; border-bottom: 1px solid #f1f1f1; display: flex; align-items: center; gap: 10px; }
-        .ai-status { width: 10px; height: 10px; background: #34a853; border-radius: 50%; }
-        #chat-messages { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-        .message { max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
-        .message.ai { align-self: flex-start; background: #fff; border: 1px solid #eee; border-top-left-radius: 2px; }
-        .message.user { align-self: flex-end; background: var(--user-gray); border-top-right-radius: 2px; }
-        .chat-input-area { padding: 20px; border-top: 1px solid #f1f1f1; display: flex; gap: 10px; }
-        #user-input { flex-grow: 1; border: 1px solid #dfe1e5; border-radius: 25px; padding: 12px 20px; outline: none; }
-
-        /* [6] 알림 팝업 (Push Notification) */
-        #notification-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center;
-            z-index: 9999;
-        }
-        .notification-card {
-            background: white; padding: 30px; border-radius: 20px; width: 350px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center;
-            animation: slideUp 0.3s ease-out;
-        }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .noti-icon { font-size: 50px; margin-bottom: 15px; }
-        .noti-title { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
-        .noti-msg { font-size: 15px; color: #666; margin-bottom: 25px; line-height: 1.4; }
-        .noti-btns { display: flex; gap: 10px; }
-        .noti-btn { flex: 1; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 15px; }
-        .btn-accept { background: var(--ai-blue); color: white; }
-        .btn-reject { background: #f1f3f4; color: #555; }
-    </style>
+    <link rel="stylesheet" href="../static/employee_style.css">
 </head>
-<body>
 
-    <!-- 알림 오버레이 추가 -->
-    <div id="notification-overlay">
-        <div class="notification-card">
-            <div class="noti-icon">🤖</div>
-            <div class="noti-title">로봇 도착 알림</div>
-            <div id="noti-message" class="noti-msg">로봇이 도착했습니다. 수령하시겠습니까?</div>
-            <div class="noti-btns">
-                <button class="noti-btn btn-reject" onclick="handleNotification('reject')">거절</button>
-                <button class="noti-btn btn-accept" onclick="handleNotification('accept')">확인</button>
-            </div>
-        </div>
-    </div>
+<body>
 
     <div class="container">
         <div class="panel reservation-panel">
@@ -160,18 +16,17 @@
                 <input type="text" id="res-name" class="res-input" placeholder="성함">
                 <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
                 <input type="date" id="res-date" class="res-input full-width">
-                <input type="text" id="res-phone" class="res-input full-width" placeholder="전화번호 (010-0000-0000)">
+                <input type="text" id="res-phone" class="res-input full-width" placeholder="전화번호">
                 <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
             </div>
 
             <div class="res-list-container">
-                <h4 style="margin: 0 0 10px 0;">📋 내 예약 현황</h4>
+                <h4>📋 내 예약 현황</h4>
                 <table class="res-table">
                     <thead>
-                        <tr><th>신청일</th><th>이름</th><th>목적</th><th>방문일</th><th>연락처</th></tr>
+                        <tr><th>신청일</th><th>이름</th><th>목적</th><th>방문일</th></tr>
                     </thead>
-                    <tbody id="res-table-body">
-                        </tbody>
+                    <tbody id="res-table-body"></tbody>
                 </table>
             </div>
         </div>
@@ -181,45 +36,49 @@
             <div class="remote-grid">
                 <div class="temp-display">
                     <span id="temp-val">24°C</span>
-                    <div class="wind-bars" id="wind-display">
+                    <div class="wind-display" id="wind-display">
                         <div class="bar active"></div><div class="bar active"></div><div class="bar"></div><div class="bar"></div>
                     </div>
                 </div>
-                <button class="remote-btn btn-pwr" onclick="aiSpeak('공조 시스템 전원을 조작했습니다. 현재 상태를 확인하세요.')">전원</button>
+                <button class="remote-btn btn-pwr">전원</button>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                    <button class="remote-btn" onclick="tempChange(1)">온도 ▲</button>
-                    <button class="remote-btn" onclick="tempChange(-1)">온도 ▼</button>
-                    <button class="remote-btn" onclick="windChange(1)">바람 ▲</button>
-                    <button class="remote-btn" onclick="windChange(-1)">바람 ▼</button>
+                    <button class="remote-btn" onclick="tempChange(1)">▲</button>
+                    <button class="remote-btn" onclick="tempChange(-1)">▼</button>
+                    <button class="remote-btn" onclick="windChange(1)">바람▲</button>
+                    <button class="remote-btn" onclick="windChange(-1)">바람▼</button>
                 </div>
             </div>
-
-            <div class="control-section-title">🤖 로봇 원격 제어</div>
+            
+            <div class="control-section-title">🤖 로봇 기본 제어</div>
             <div class="robot-btn-group">
                 <button class="ctrl-btn btn-call" onclick="robotAction('call')">로봇 호출</button>
                 <button class="ctrl-btn btn-cancel" onclick="robotAction('cancel')">호출 취소</button>
-                <button class="ctrl-btn btn-receive" onclick="robotAction('receive')">수령 확인</button>
             </div>
         </div>
 
-        <div class="panel chat-panel">
-            <div class="logout-btn" onclick="logout()">
-                <span class="icon"></span> 로그아웃
+        <div class="right-container">
+            <div class="panel logout-section">
+                <button class="btn-logout" onclick="logout()">로그아웃</button>
             </div>
-            <div class="chat-header">
-                <div class="ai-status"></div> AI Assistant
-            </div>
-            <div id="chat-messages">
-                <div class="message ai">무엇을 도와드릴까요? 기기 제어나 예약 등록을 도와드릴 수 있습니다.</div>
-            </div>
-            <div class="chat-input-area">
-                <input type="text" id="user-input" placeholder="AI 비서와 대화하기..." onkeypress="if(event.key==='Enter')sendMessage()">
-                <button onclick="sendMessage()" style="border:none; background:none; color:var(--ai-blue); cursor:pointer; font-weight:bold;">전송</button>
+            <div class="panel ai-assistant-section">
+                <div class="chat-header">
+                    <div class="ai-status"></div> AI Assistant
+                </div>
+                <div id="chat-messages">
+                    <div class="message ai">무엇을 도와드릴까요?</div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="user-input" placeholder="명령어를 입력하세요..." onkeypress="if(event.key==='Enter')sendMessage()">
+                    <button onclick="sendMessage()" class="send-btn">전송</button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // # ---------------------------------------------------------
+        // # 1. 인증 및 권한 확인 (Authentication & Security)
+        // # ---------------------------------------------------------
         (function() {
             const cookies = document.cookie.split('; ').reduce((acc, cookie) => {
                 const [key, value] = cookie.split('=');
@@ -227,37 +86,32 @@
                 return acc;
             }, {});
 
-            // STAFF 또는 ADMIN 권한이 없으면 로그인 창으로
             if (cookies['user_role'] !== 'STAFF' && cookies['user_role'] !== 'ADMIN') {
                 alert("접근 권한이 없습니다.");
                 window.location.href = "/";
             }
         })();
 
-        // [1] 로그아웃 경로 수정
         function logout() {
-            // [추가] 확인 메시지 창 띄우기
-            const isConfirmed = confirm("로그아웃 하시겠습니까?");
-            
-            if (isConfirmed) {
-                // 1. 쿠키 삭제
+            if (confirm("로그아웃 하시겠습니까?")) {
                 document.cookie = "user_role=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-                
-                // 2. 알림 및 이동
                 alert("로그아웃 되었습니다.");
                 window.location.href = "/";
             }
-            // '취소'를 누르면 아무 일도 일어나지 않습니다.
         }
 
-        // [2] 공조 시스템 로직
+        // # ---------------------------------------------------------
+        // # 2. 공조 및 로봇 제어 (IoT & Robot Control)
+        // # ---------------------------------------------------------
         let currentTemp = 24;
         let windLevel = 2;
+
         function tempChange(val) {
             currentTemp += val;
             document.getElementById('temp-val').innerText = `${currentTemp}°C`;
             aiSpeak(`실내 온도를 ${currentTemp}도로 조정합니다.`);
         }
+
         function windChange(val) {
             windLevel = Math.max(0, Math.min(4, windLevel + val));
             const bars = document.getElementById('wind-display').children;
@@ -265,101 +119,66 @@
             aiSpeak(`바람 세기를 ${windLevel}단계로 변경하였습니다.`);
         }
 
-        // [3] 방문 예약 등록 및 리스트 관리 (엑셀 스타일)
+        function robotAction(type) {
+            let msg = (type === 'call') ? "로봇을 호출하겠습니다." : "호출을 취소했습니다.";
+            aiSpeak(msg);
+        }
+
+        // # ---------------------------------------------------------
+        // # 3. 방문 예약 시스템 (Reservation System)
+        // # ---------------------------------------------------------
         const reservations = [];
+
         function submitReservation() {
             const name = document.getElementById('res-name').value;
-            const purpose = document.getElementById('res-purpose').value;
             const date = document.getElementById('res-date').value;
-            const phone = document.getElementById('res-phone').value;
-            const today = new Date().toISOString().split('T')[0];
+            if(!name || !date) return aiSpeak("이름과 날짜를 입력해주세요.");
 
-            if(!name || !date) {
-                aiSpeak("방문자 이름과 날짜는 필수 입력 항목입니다.");
-                return;
-            }
-
-            const newEntry = { today, name, purpose, date, phone };
-            reservations.push(newEntry);
+            reservations.push({ 
+                today: new Date().toISOString().split('T')[0], 
+                name, 
+                purpose: document.getElementById('res-purpose').value, 
+                date 
+            });
+            
             updateReservationTable();
-            
-            aiSpeak(`${name} 고객님의 ${date} 방문 예약을 완료했습니다. 목록에서 확인하실 수 있습니다.`);
-            
-            // 입력창 초기화
-            document.querySelectorAll('.res-input').forEach(input => input.value = '');
+            aiSpeak(`${name}님 예약 완료.`);
         }
 
         function updateReservationTable() {
             const body = document.getElementById('res-table-body');
-            // 방문객 이름 부분에 폰트 굵기를 주어 더 잘 보이게 수정
             body.innerHTML = reservations.map(r => `
                 <tr>
-                    <td style="color: #888;">${r.today}</td>
-                    <td style="font-size: 15px; font-weight: bold; color: #222;">${r.name}</td>
+                    <td>${r.today}</td>
+                    <td><b>${r.name}</b></td>
                     <td>${r.purpose}</td>
-                    <td style="color: #4285f4; font-weight: 600;">${r.date}</td>
-                    <td>${r.phone}</td>
+                    <td>${r.date}</td>
                 </tr>
             `).join('');
         }
 
-        // [4] 로봇 제어 및 AI 피드백
-        function robotAction(type) {
-            let msg = "";
-            if(type === 'call') msg = "알겠습니다. 로봇을 현재 위치로 호출하겠습니다. 잠시만 기다려 주세요.";
-            else if(type === 'cancel') msg = "로봇 호출을 취소했습니다. 로봇이 대기 장소로 복귀합니다.";
-            else msg = "수령 확인을 완료했습니다. 감사합니다.";
-            aiSpeak(msg);
-        }
-
-        // [5] AI Assistant 발화 (LLM 이식 포인트)
-        function aiSpeak(text) {
-            appendMessage('ai', text);
-        }
+        // # ---------------------------------------------------------
+        // # 4. AI Assistant 통신 (AI Chat & API)
+        // # ---------------------------------------------------------
+        function aiSpeak(text) { appendMessage('ai', text); }
 
         async function sendMessage() {
             const input = document.getElementById('user-input');
             const text = input.value.trim();
             if (!text) return;
-            
+
             appendMessage('user', text);
             input.value = '';
-
-            // 쿠키에서 user_id 가져오기
-            const getCookie = (name) => {
-                const value = `; ${document.cookie}`;
-                const parts = value.split(`; ${name}=`);
-                if (parts.length === 2) return parts.pop().split(';').shift();
-            };
-            const userId = getCookie('user_id') || 'unknown';
 
             try {
                 const response = await fetch('/api/v1/employee/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: text,
-                        user_id: userId  // 쿠키에서 가져온 사용자 ID 포함
-                    })
+                    body: JSON.stringify({ message: text })
                 });
-                
                 const result = await response.json();
-                
-                if (result.status === 'success') {
-                    let aiMsg = result.message;
-                    if (result.ai_fields) {
-                        aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
-                    }
-                    aiSpeak(aiMsg);
-                } else if (result.status === 'retry') {
-                    aiSpeak(`죄송합니다. ${result.message}\n(분석 결과: ${result.ai_result.task_type})`);
-                } else {
-                    aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
-                }
-            } catch (e) {
-                console.error("명령 전송 실패:", e);
-                aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
-            }
+                aiSpeak(result.status === 'success' ? result.message : "이해하지 못했습니다.");
+            } catch (e) { aiSpeak("서버 통신 오류."); }
         }
 
         function appendMessage(sender, text) {
@@ -371,62 +190,16 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // [6] WebSocket 및 알림 처리 로직
-        let currentTaskData = null;
-        const ws = new WebSocket(`ws://${location.host}/ws/admin/status`); // 관리자용 채널 일단 공용 사용 (필요시 전용 채널 분리)
+        // # ---------------------------------------------------------
+        // # 5. 실시간 상태 업데이트 (Real-time Updates)
+        // # ---------------------------------------------------------
+        const ws = new WebSocket(`ws://${location.host}/ws/admin/status`);
 
         ws.onmessage = function(event) {
             const message = JSON.parse(event.data);
             console.log("WS 수신:", message);
-
-            if (message.event === "user_action_required") {
-                showNotification(message.data);
-            }
+            // 필요한 실시간 처리 로직 작성
         };
-
-        function showNotification(data) {
-            currentTaskData = data;
-            document.getElementById('noti-message').innerText = data.message;
-            document.getElementById('notification-overlay').style.display = 'flex';
-            
-            // 브라우저 기본 알림음 (선택 사항)
-            // new Audio('/static/notification.mp3').play().catch(e => {});
-        }
-
-        async function handleNotification(action) {
-            if (!currentTaskData) return;
-            
-            const overlay = document.getElementById('notification-overlay');
-            overlay.style.display = 'none';
-
-            if (action === 'accept') {
-                try {
-                    const response = await fetch('/api/v1/employee/confirm', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            task_id: currentTaskData.task_id,
-                            action_type: currentTaskData.action_type
-                        })
-                    });
-                    const result = await response.json();
-                    if (result.status === 'success') {
-                        aiSpeak("수령 확인이 처리되었습니다. 로봇이 복귀합니다.");
-                    } else {
-                        aiSpeak("확인 처리 중 오류가 발생했습니다: " + result.message);
-                    }
-                } catch (e) {
-                    console.error("확인 요청 실패:", e);
-                    aiSpeak("서버 통신에 실패했습니다.");
-                }
-            } else {
-                aiSpeak("수령을 거절하셨습니다. 로봇이 대기합니다.");
-                // 거절 처리는 현재 백엔드 로직에 없으나, 필요시 추가 API 호출 가능
-            }
-            
-            currentTaskData = null;
-        }
     </script>
-
 </body>
 </html>

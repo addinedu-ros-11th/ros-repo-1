@@ -1,69 +1,113 @@
-body {
-    font-family: Arial, sans-serif;
-    background-color: #f0f2f5;
-    color: #333;
-    margin: 0;
-    padding: 20px;
+/* # ---------------------------------------------------------
+# 0. 디자인 시스템 및 초기화
+# --------------------------------------------------------- */
+:root {
+    --bg-color: #f8f9fa;
+    --ai-blue: #4285f4;
+    --user-gray: #e9ecef;
+    --text-main: #202124;
+    --border-color: #eee;
+    --logout-red: #ea4335;
+}
+
+body, html {
+    margin: 0; padding: 0; height: 100%; font-family: 'Pretendard', sans-serif;
+    background-color: var(--bg-color); color: var(--text-main);
+    overflow: hidden;
+}
+
+/* # ---------------------------------------------------------
+# 1. 화면 4등분 레이아웃 (Grid & Flex)
+# --------------------------------------------------------- */
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr; /* 좌측 : 우측 비율 */
+    grid-template-rows: 1fr 1fr;    /* 좌측 상단 : 좌측 하단 (5:5) */
+    height: 100vh;
+    gap: 15px;
+    padding: 15px;
+    box-sizing: border-box;
+}
+
+/* 우측 전체 컨테이너 (2:8 분할용) */
+.right-container {
+    grid-area: 1 / 2 / 3 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.panel {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    border: 1px solid var(--border-color);
+}
+
+/* # ---------------------------------------------------------
+# 2. 구역별 높이 및 배치 설정
+# --------------------------------------------------------- */
+/* 좌상단 */
+.reservation-panel { grid-area: 1 / 1 / 2 / 2; padding: 20px; overflow-y: auto; }
+
+/* 좌하단 */
+.combined-control-panel { grid-area: 2 / 1 / 3 / 2; padding: 20px; }
+
+/* 우측 상단 (20%) */
+.logout-section {
+    height: 20%;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 100vh;
 }
 
-.container {
-    width: 100%;
-    max-width: 500px;
-    background: #fff;
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-h1, h2 {
-    text-align: center;
-    color: #1c1e21;
-}
-
-.task-form {
+/* 우측 하단 (80%) */
+.ai-assistant-section {
+    height: 80%;
     display: flex;
     flex-direction: column;
 }
 
-.form-group {
-    margin-bottom: 15px;
-}
+/* # ---------------------------------------------------------
+# 3. 컴포넌트 스타일 (방문예약 & 공조)
+# --------------------------------------------------------- */
+.res-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+.res-input { padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.btn-submit { grid-column: span 2; padding: 10px; background: var(--ai-blue); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
-label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+.temp-display { 
+    background: #222; color: #0f0; padding: 15px; border-radius: 12px;
+    text-align: center; font-family: monospace; font-size: 20px;
 }
+.remote-grid { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 10px; margin-top: 10px; }
+.remote-btn { padding: 8px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; font-size: 12px; }
 
-input[type="text"], select {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    box-sizing: border-box; /* important */
-}
+/* # ---------------------------------------------------------
+# 4. AI Assistant 채팅 영역 스타일
+# --------------------------------------------------------- */
+.chat-header { padding: 15px; border-bottom: 1px solid #eee; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+.ai-status { width: 10px; height: 10px; background: #34a853; border-radius: 50%; }
+#chat-messages { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+.message { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 14px; }
+.message.ai { align-self: flex-start; background: #f1f3f4; }
+.message.user { align-self: flex-end; background: var(--ai-blue); color: white; }
 
-button {
-    background-color: #007bff;
-    color: white;
-    border: none;
-    padding: 12px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: background-color 0.3s;
-}
+.chat-input-area { padding: 15px; border-top: 1px solid #eee; display: flex; gap: 8px; }
+#user-input { flex-grow: 1; padding: 10px; border-radius: 20px; border: 1px solid #ddd; outline: none; }
+.send-btn { background: none; border: none; color: var(--ai-blue); font-weight: bold; cursor: pointer; }
 
-button:hover {
-    background-color: #0056b3;
+/* # ---------------------------------------------------------
+# 5. 버튼 및 기타 UI
+# --------------------------------------------------------- */
+.btn-logout { 
+    padding: 12px 40px; 
+    background: var(--logout-red); 
+    color: white; 
+    border: none; 
+    border-radius: 10px; 
+    font-weight: bold; 
+    cursor: pointer; 
 }
-
-#response-message {
-    margin-top: 20px;
-    text-align: center;
-    font-weight: bold;
-}
+.ctrl-btn { flex: 1; padding: 12px; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; }
+.btn-call { background: var(--ai-blue); }
+.btn-cancel { background: #5f6368; }
