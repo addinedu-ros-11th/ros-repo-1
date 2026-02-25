@@ -11,6 +11,7 @@
   - `/{robot_ns}/commands` (`std_msgs/msg/String`)
   - `/{robot_ns}/status` (`std_msgs/msg/String`)
   - `/{robot_ns}/event` (`std_msgs/msg/String`)
+  - `/{robot_ns}/ai_link` (`std_msgs/msg/Bool`, AI link health)
 
 ## Namespace / Multi-Robot
 - Default namespace: `robot_1`
@@ -66,8 +67,26 @@ ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
 ## Ops Notes
 - rosbridge port: `9090/tcp`
 - UDP camera stream target: `54321/udp`
+- Camera source mode:
+  - `CAMERA_SOURCE=topic`: `robot-camera.service` -> `/camera/image_raw`
+  - `CAMERA_SOURCE=rpicam`: `robot-udp-bridge.service` captures directly via `rpicam-vid`
+  - PinkyPro default is `rpicam` (`/etc/robot_runtime.env`)
+- AI link health:
+  - `communication_node` publishes `/{robot_ns}/ai_link` (`true`/`false`)
+  - `office_robot_executor` mirrors this as `ai_link_alive` key in `/{robot_ns}/status`
+- Video stream tuning defaults (battery/network friendly):
+  - `max_fps=8.0`, `resize_width=640`, `resize_height=360`, `jpeg_quality=70`
+- If AI vision is down:
+  - stream is paused when `skip_stream_when_ai_dead=true`
+  - periodic healthcheck uses `ai_healthcheck_port` (default `50052`)
 - Local-only directories are ignored:
   - `robot/jazzy_ws/build`
   - `robot/jazzy_ws/install`
   - `robot/jazzy_ws/log`
   - `robot/jazzy_ws/mujoco_menagerie`
+
+## Runtime Templates
+- `robot/systemd/robot-camera.service`
+- `robot/systemd/robot-udp-bridge.service`
+- `robot/systemd/robot_runtime.env.example`
+- `robot/scripts/camera_probe.sh`

@@ -1,0 +1,15 @@
+[Unit]
+Description=Robot Camera Publisher (/camera/image_raw)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pinky
+EnvironmentFile=-/etc/robot_runtime.env
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && source /home/pinky/pinky_pro/install/setup.bash && export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}; CAMERA_DEVICE_RESOLVED=${CAMERA_DEVICE}; if [ -z "$${CAMERA_DEVICE_RESOLVED}" ] || [ ! -e "$${CAMERA_DEVICE_RESOLVED}" ]; then CAMERA_DEVICE_RESOLVED=$$(/home/pinky/ros-repo-1/robot/scripts/camera_probe.sh); fi; if command -v v4l2-ctl >/dev/null 2>&1; then v4l2-ctl -d "$${CAMERA_DEVICE_RESOLVED}" --set-fmt-video=width=${CAMERA_WIDTH:-640},height=${CAMERA_HEIGHT:-360} >/dev/null 2>&1 || true; v4l2-ctl -d "$${CAMERA_DEVICE_RESOLVED}" --set-parm=${CAMERA_FPS:-8} >/dev/null 2>&1 || true; fi; exec ros2 run v4l2_camera v4l2_camera_node --ros-args -r __node:=robot_camera -r __ns:=/camera -p video_device:=$${CAMERA_DEVICE_RESOLVED}'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

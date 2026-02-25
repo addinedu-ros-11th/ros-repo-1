@@ -18,7 +18,22 @@
 - Command topic: `/{robot_ns}/commands` (`std_msgs/msg/String`, JSON payload)
 - Status topic: `/{robot_ns}/status`
 - Event topic: `/{robot_ns}/event`
+- AI link topic: `/{robot_ns}/ai_link` (`std_msgs/msg/Bool`)
 - rosbridge: `/{robot_ns}` graph exposed via WebSocket `9090`
+
+## Communication Node Defaults
+- `max_fps=8.0`
+- `resize_width=640`, `resize_height=360`
+- `jpeg_quality=70`
+- `ai_healthcheck_mode=tcp_port`, `ai_healthcheck_port=50052`
+- `skip_stream_when_ai_dead=true`
+
+## Runtime Systemd Templates
+- `robot/systemd/robot-camera.service`: optional topic camera publisher (`v4l2_camera`).
+- `robot/systemd/robot-udp-bridge.service`: sends JPEG UDP stream to AI server.
+- `robot-udp-bridge` supports `camera_source=topic|rpicam` (PinkyPro default: `rpicam`).
+- `robot/systemd/robot_runtime.env.example`: runtime environment defaults.
+- `robot/scripts/camera_probe.sh`: picks a capture-capable `/dev/video*` device.
 
 ## Build / Run
 ```bash
