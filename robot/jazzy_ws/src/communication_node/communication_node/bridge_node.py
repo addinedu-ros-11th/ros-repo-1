@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
@@ -35,8 +36,11 @@ class CommunicationBridgeNode(Node):
         self.declare_parameter("max_fps", 8.0)
         self.declare_parameter("resize_width", 640)
         self.declare_parameter("resize_height", 360)
+        self.declare_parameter("rotate_180", False)
         self.declare_parameter("jpeg_quality", 70)
         self.declare_parameter("udp_warn_throttle_sec", 5.0)
+        self.declare_parameter("tx_stats_log_period_sec", 5.0)
+        self.declare_parameter("frame_id_seed", -1)
         self.declare_parameter("ai_link_topic", "/robot_1/ai_link")
         self.declare_parameter("ai_healthcheck_enabled", True)
         self.declare_parameter("ai_healthcheck_mode", "tcp_port")  # tcp_port or none
@@ -68,9 +72,16 @@ class CommunicationBridgeNode(Node):
         self.max_fps = self.get_parameter("max_fps").get_parameter_value().double_value
         self.resize_width = self.get_parameter("resize_width").get_parameter_value().integer_value
         self.resize_height = self.get_parameter("resize_height").get_parameter_value().integer_value
+        self.rotate_180 = self.get_parameter("rotate_180").get_parameter_value().bool_value
         self.jpeg_quality = self.get_parameter("jpeg_quality").get_parameter_value().integer_value
         self.udp_warn_throttle_sec = (
             self.get_parameter("udp_warn_throttle_sec").get_parameter_value().double_value
+        )
+        self.tx_stats_log_period_sec = (
+            self.get_parameter("tx_stats_log_period_sec").get_parameter_value().double_value
+        )
+        self.frame_id_seed = (
+            self.get_parameter("frame_id_seed").get_parameter_value().integer_value
         )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
         self.ai_healthcheck_enabled = (
@@ -136,9 +147,18 @@ class CommunicationBridgeNode(Node):
 
         self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._udp_target: Tuple[str, int] = (self.ai_server_ip, self.ai_server_port)
-        self._frame_id = 0
+        if self.frame_id_seed >= 0:
+            self._frame_id = int(self.frame_id_seed) & 0xFFFFFFFF
+        else:
+            # Avoid frame-id collisions after restarts and across accidental duplicate senders.
+            self._frame_id = (int(time.time() * 1000) ^ os.getpid()) & 0xFFFFFFFF
         self._next_frame_send_at = 0.0
         self._last_udp_warn_at = 0.0
+        self._tx_stats_last_log_at = time.monotonic()
+        self._tx_frames = 0
+        self._tx_packets = 0
+        self._tx_bytes = 0
+        self._tx_failures = 0
         self._consecutive_ai_failures = 0
         self._consecutive_ai_success = 0
         self._last_ai_dead_log_at = 0.0
@@ -165,7 +185,9 @@ class CommunicationBridgeNode(Node):
             f"(source={self.camera_source}, ai={self.ai_server_ip}:{self.ai_server_port}, "
             f"encoding={self.encoding_mode}, "
             f"max_fps={self.max_fps}, resize={self.resize_width}x{self.resize_height}, "
-            f"healthcheck={self.ai_healthcheck_mode}:{self.ai_healthcheck_port})."
+            f"rotate_180={self.rotate_180}, "
+            f"healthcheck={self.ai_healthcheck_mode}:{self.ai_healthcheck_port}, "
+            f"frame_id_seed={self._frame_id}, tx_log={self.tx_stats_log_period_sec}s)."
         )
 
     def _on_image(self, msg: Image) -> None:
@@ -196,6 +218,8 @@ class CommunicationBridgeNode(Node):
             if frame is None:
                 continue
             frame = self._resize_frame(frame)
+            if self.rotate_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             encoded = self._encode_frame(frame)
             if encoded is None:
                 continue
@@ -208,7 +232,7 @@ class CommunicationBridgeNode(Node):
         width = self.resize_width if self.resize_width > 0 else 640
         height = self.resize_height if self.resize_height > 0 else 360
         quality = int(max(10, min(95, self.jpeg_quality)))
-        return [
+        cmd = [
             self.rpicam_cmd,
             "--nopreview",
             "--codec",
@@ -226,6 +250,9 @@ class CommunicationBridgeNode(Node):
             "-o",
             "-",
         ]
+        if self.rotate_180:
+            cmd += ["--hflip", "--vflip"]
+        return cmd
 
     def _build_rpicam_env(self) -> dict:
         env = dict(os.environ)
@@ -477,6 +504,7 @@ class CommunicationBridgeNode(Node):
             self.get_logger().warn("Frame too large to chunk within u32 limit.")
             return
 
+        frame_failed = False
         for idx in range(total_chunks):
             start = idx * payload_max
             end = min(start + payload_max, len(data))
@@ -487,12 +515,42 @@ class CommunicationBridgeNode(Node):
             packet = header + chunk
             try:
                 self._udp_sock.sendto(packet, self._udp_target)
+                self._tx_packets += 1
+                self._tx_bytes += len(packet)
             except OSError as exc:
+                self._tx_failures += 1
+                frame_failed = True
                 now = time.monotonic()
                 if (now - self._last_udp_warn_at) >= max(1.0, self.udp_warn_throttle_sec):
                     self._last_udp_warn_at = now
                     self.get_logger().warn(f"UDP send failed: {exc}.")
                 break
+
+        if not frame_failed:
+            self._tx_frames += 1
+        self._maybe_log_tx_stats()
+
+    def _maybe_log_tx_stats(self) -> None:
+        period = max(1.0, self.tx_stats_log_period_sec)
+        now = time.monotonic()
+        elapsed = now - self._tx_stats_last_log_at
+        if elapsed < period:
+            return
+        fps = self._tx_frames / max(1e-6, elapsed)
+        kbps = (self._tx_bytes * 8.0 / 1000.0) / max(1e-6, elapsed)
+        self.get_logger().info(
+            "UDP TX stats: "
+            f"frames={self._tx_frames} ({fps:.1f} fps), "
+            f"packets={self._tx_packets}, "
+            f"bitrate={kbps:.0f} kbps, "
+            f"failures={self._tx_failures}, "
+            f"target={self.ai_server_ip}:{self.ai_server_port}"
+        )
+        self._tx_frames = 0
+        self._tx_packets = 0
+        self._tx_bytes = 0
+        self._tx_failures = 0
+        self._tx_stats_last_log_at = now
 
     def destroy_node(self) -> bool:
         self._stop_event.set()
@@ -511,11 +569,12 @@ def main() -> None:
     node = CommunicationBridgeNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
