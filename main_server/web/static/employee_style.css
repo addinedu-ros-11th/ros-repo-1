@@ -111,3 +111,44 @@ body, html {
 .ctrl-btn { flex: 1; padding: 12px; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; }
 .btn-call { background: var(--ai-blue); }
 .btn-cancel { background: #5f6368; }
+
+/* 엑셀 스타일 테이블 */
+.res-table.excel-style {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background: white;
+}
+
+.res-table.excel-style th {
+    background: #f2f2f2;
+    border: 1px solid #ccc;
+    padding: 10px;
+    color: #333;
+}
+
+.res-table.excel-style td {
+    border: 1px solid #eee;
+    padding: 10px;
+    text-align: center;
+}
+
+.res-table.excel-style tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* 상태 배지 디자인 */
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+.status-pending { background: #fff3cd; color: #856404; }
+.status-approved { background: #d4edda; color: #155724; }
+.status-rejected { background: #f8d7da; color: #721c24; }
+.res-table th:nth-child(1) { width: 15%; } /* 방문객 */
+.res-table th:nth-child(2) { width: 30%; } /* 목적 */
+.res-table th:nth-child(3) { width: 20%; } /* 날짜 */
+.res-table th:nth-child(4) { width: 15%; } /* 시간 */
+.res-table th:nth-child(5) { width: 20%; } /* 상태 */

@@ -16,6 +16,7 @@ from main_server.infrastructure.database.repositories.mysql_admin_repository imp
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
 from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
 from main_server.infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
+from main_server.infrastructure.database.repositories.mysql_reservation_repository import MySQLReservationRepository
 
 # --- Communication Instances ---
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
@@ -72,6 +73,7 @@ class Container:
         self.product_repository = MySQLProductRepository()
         self.admin_repository = MySQLAdminRepository()
         self.log_repository = MySQLLogRepository()
+        self.reservation_repository = MySQLReservationRepository()
         
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
         self.connection_manager = connection_manager # WebSocket 관리자

@@ -59,6 +59,13 @@
             const result = await response.json();
 
             if (response.ok && result.status === "success") {
+                // [추가된 부분] 로그인이 성공했으므로 사용자 정보를 쿠키에 저장합니다.
+                // result 내에 user 정보가 포함되어 있다고 가정합니다 (name, account 등)
+                if (result.user) {
+                    document.cookie = `user_name=${encodeURIComponent(result.user.name)}; path=/`;
+                    document.cookie = `user_account=${result.user.account}; path=/`;
+                }
+                
                 if (result.role === "ADMIN") {
                     // 주소를 /admin으로 정확히 수정!
                     window.location.href = "/admin"; 

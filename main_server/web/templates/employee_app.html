@@ -13,21 +13,32 @@
         <div class="panel reservation-panel">
             <h3 style="margin-top: 0;">📅 방문 예약 및 현황</h3>
             <div class="res-form">
-                <input type="text" id="res-name" class="res-input" placeholder="성함">
+                <input type="text" id="res-name" class="res-input" placeholder="방문객 성함">
                 <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
-                <input type="date" id="res-date" class="res-input full-width">
-                <input type="text" id="res-phone" class="res-input full-width" placeholder="전화번호">
+                <input type="date" id="res-date" class="res-input">
+                <input type="time" id="res-time" class="res-input"> 
+                <input type="text" id="res-phone" class="res-input full-width" 
+                    placeholder="연락처 (010-0000-0000)" maxlength="13" oninput="autoHyphen(this)">
                 <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
             </div>
 
             <div class="res-list-container">
                 <h4>📋 내 예약 현황</h4>
-                <table class="res-table">
-                    <thead>
-                        <tr><th>신청일</th><th>이름</th><th>목적</th><th>방문일</th></tr>
-                    </thead>
-                    <tbody id="res-table-body"></tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table class="res-table excel-style">
+                        <thead>
+                            <tr>
+                                <th>방문객</th>
+                                <th>방문 목적</th>
+                                <th>방문 날짜</th>
+                                <th>방문 시간</th>
+                                <th>진행 상태</th>
+                            </tr>
+                        </thead>
+                        <tbody id="res-table-body">
+                            </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -127,58 +138,188 @@
         // # ---------------------------------------------------------
         // # 3. 방문 예약 시스템 (Reservation System)
         // # ---------------------------------------------------------
-        const reservations = [];
+ 
+        // # 3-1. 유틸리티: 자동 하이픈 및 세션 정보 추출
 
-        function submitReservation() {
-            const name = document.getElementById('res-name').value;
-            const date = document.getElementById('res-date').value;
-            if(!name || !date) return aiSpeak("이름과 날짜를 입력해주세요.");
+        //전화번호 입력 시 자동으로 하이픈(-)을 삽입합니다.
 
-            reservations.push({ 
-                today: new Date().toISOString().split('T')[0], 
-                name, 
-                purpose: document.getElementById('res-purpose').value, 
-                date 
-            });
+        function autoHyphen(target) {
+            target.value = target.value
+                .replace(/[^0-9]/g, '')
+                .replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3")
+                .replace(/(\-{1,2})$/g, "");
+        }
+
+        // 특정 이름의 쿠키 값을 가져옵니다.
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            return null;
+        }
+
+        // 쿠키에 저장된 name을 우선적으로 가져오고, 없으면 account를 반환합니다.
+        function getLoggedInUserName() {
+            const userName = getCookie('name'); 
+            const userAccount = getCookie('user_id'); 
             
-            updateReservationTable();
-            aiSpeak(`${name}님 예약 완료.`);
+            if (userName) return userName;
+            if (userAccount) return userAccount; 
+            
+            return "미인증 사용자";
+        }
+        // # 3-2. 방문 예약 등록 로직 (수정본)
+
+        async function submitReservation() {
+            const visitorName = document.getElementById('res-name').value;
+            const purpose = document.getElementById('res-purpose').value;
+            const visitDate = document.getElementById('res-date').value;
+            const visitTime = document.getElementById('res-time').value;
+            const visitorPhone = document.getElementById('res-phone').value;
+
+            if (!visitorName || !visitDate) {
+                aiSpeak("방문객 성함과 날짜를 입력해주세요.");
+                return;
+            }
+
+            const data = {
+                manager_account: getCookie('user_id'), // 쿠키에서 계정 정보 가져오기
+                manager_name: getLoggedInUserName(),       // 쿠키에서 이름 가져오기
+                visitor_name: visitorName,
+                purpose: purpose,
+                visit_date: visitDate,
+                visit_time: visitTime,
+                visitor_phone: visitorPhone
+            };
+
+            try {
+                const response = await fetch('/api/v1/employee/reservations/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    aiSpeak(`${visitorName} 고객님(담당: ${data.manager_name})의 예약이 신청되었습니다.`);
+                    // 테이블 즉시 갱신 (이미 구현된 함수가 있다면 호출)
+                    if(typeof loadReservationTables === 'function') loadReservationTables();
+                }
+            } catch (e) {
+                aiSpeak("DB 연동 중 오류가 발생했습니다.");
+            }
         }
 
-        function updateReservationTable() {
-            const body = document.getElementById('res-table-body');
-            body.innerHTML = reservations.map(r => `
-                <tr>
-                    <td>${r.today}</td>
-                    <td><b>${r.name}</b></td>
-                    <td>${r.purpose}</td>
-                    <td>${r.date}</td>
-                </tr>
-            `).join('');
+       async function loadReservationTables() {
+            const userAccount = getCookie('user_id');
+            try {
+                const [pendingRes, approvedRes] = await Promise.all([
+                    fetch('/api/v1/employee/reservations/pending').then(res => res.json()),
+                    fetch('/api/v1/employee/reservations/approved').then(res => res.json())
+                ]);
+
+                const allRes = [...pendingRes, ...approvedRes];
+                const tbody = document.getElementById('res-table-body');
+                tbody.innerHTML = '';
+
+                allRes.filter(r => r.manager_account === userAccount).forEach(res => {
+                    const tr = document.createElement('tr');
+                    
+                    // [수정] 방문 시간 포맷팅 (초 단위 숫자로 올 경우 처리)
+                    let displayTime = res.visit_time || '-';
+                    if (typeof res.visit_time === 'number') {
+                        // 63360 같은 초 단위를 HH:MM 형식으로 변환
+                        const hours = Math.floor(res.visit_time / 3600);
+                        const minutes = Math.floor((res.visit_time % 3600) / 60);
+                        displayTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                    } else if (typeof res.visit_time === 'string' && res.visit_time.includes(':')) {
+                        // '17:36:00' 형식을 '17:36'으로 자르기
+                        displayTime = res.visit_time.substring(0, 5);
+                    }
+
+                    let statusLabel = '';
+                    let statusClass = '';
+                    if (res.status === 'PENDING') { statusLabel = '⏳ 대기중'; statusClass = 'status-pending'; }
+                    else if (res.status === 'APPROVED') { statusLabel = '✅ 승인됨'; statusClass = 'status-approved'; }
+                    else { statusLabel = '❌ 반려됨'; statusClass = 'status-rejected'; }
+
+                    tr.innerHTML = `
+                        <td>${res.visitor_name}</td>  <td>${res.purpose}</td>
+                        <td>${res.visit_date}</td>
+                        <td>${displayTime}</td>        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error("예약 목록 로드 실패:", e);
+            }
         }
+
+        // 페이지 로드 시 실행
+        window.onload = function() {
+            loadReservationTables();
+        };
 
         // # ---------------------------------------------------------
         // # 4. AI Assistant 통신 (AI Chat & API)
         // # ---------------------------------------------------------
-        function aiSpeak(text) { appendMessage('ai', text); }
+        // [4] 로봇 제어 및 AI 피드백
+        function robotAction(type) {
+            let msg = "";
+            if(type === 'call') msg = "알겠습니다. 로봇을 현재 위치로 호출하겠습니다. 잠시만 기다려 주세요.";
+            else if(type === 'cancel') msg = "로봇 호출을 취소했습니다. 로봇이 대기 장소로 복귀합니다.";
+            else msg = "수령 확인을 완료했습니다. 감사합니다.";
+            aiSpeak(msg);
+        }
+
+        // [5] AI Assistant 발화 (LLM 이식 포인트)
+        function aiSpeak(text) {
+            appendMessage('ai', text);
+        }
 
         async function sendMessage() {
             const input = document.getElementById('user-input');
             const text = input.value.trim();
             if (!text) return;
-
+            
             appendMessage('user', text);
             input.value = '';
+
+            // 쿠키에서 user_id 가져오기
+            const getCookie = (name) => {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+            };
+            const userId = getCookie('user_id') || 'unknown';
 
             try {
                 const response = await fetch('/api/v1/employee/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
+                    body: JSON.stringify({ 
+                        message: text,
+                        user_id: userId  // 쿠키에서 가져온 사용자 ID 포함
+                    })
                 });
+                
                 const result = await response.json();
-                aiSpeak(result.status === 'success' ? result.message : "이해하지 못했습니다.");
-            } catch (e) { aiSpeak("서버 통신 오류."); }
+                
+                if (result.status === 'success') {
+                    let aiMsg = result.message;
+                    if (result.ai_fields) {
+                        aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
+                    }
+                    aiSpeak(aiMsg);
+                } else if (result.status === 'retry') {
+                    aiSpeak(`죄송합니다. ${result.message}\n(분석 결과: ${result.ai_result.task_type})`);
+                } else {
+                    aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
+                }
+            } catch (e) {
+                console.error("명령 전송 실패:", e);
+                aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
+            }
         }
 
         function appendMessage(sender, text) {
@@ -188,6 +329,62 @@
             msgDiv.innerText = text;
             chatMessages.appendChild(msgDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // [6] WebSocket 및 알림 처리 로직
+        let currentTaskData = null;
+        const ws = new WebSocket(`ws://${location.host}/ws/admin/status`); // 관리자용 채널 일단 공용 사용 (필요시 전용 채널 분리)
+
+        ws.onmessage = function(event) {
+            const message = JSON.parse(event.data);
+            console.log("WS 수신:", message);
+
+            if (message.event === "user_action_required") {
+                showNotification(message.data);
+            }
+        };
+
+        function showNotification(data) {
+            currentTaskData = data;
+            document.getElementById('noti-message').innerText = data.message;
+            document.getElementById('notification-overlay').style.display = 'flex';
+            
+            // 브라우저 기본 알림음 (선택 사항)
+            // new Audio('/static/notification.mp3').play().catch(e => {});
+        }
+
+        async function handleNotification(action) {
+            if (!currentTaskData) return;
+            
+            const overlay = document.getElementById('notification-overlay');
+            overlay.style.display = 'none';
+
+            if (action === 'accept') {
+                try {
+                    const response = await fetch('/api/v1/employee/confirm', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            task_id: currentTaskData.task_id,
+                            action_type: currentTaskData.action_type
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        aiSpeak("수령 확인이 처리되었습니다. 로봇이 복귀합니다.");
+                    } else {
+                        aiSpeak("확인 처리 중 오류가 발생했습니다: " + result.message);
+                    }
+                } catch (e) {
+                    console.error("확인 요청 실패:", e);
+                    aiSpeak("서버 통신에 실패했습니다.");
+                }
+            } else {
+                aiSpeak("수령을 거절하셨습니다. 로봇이 대기합니다.");
+                // 거절 처리는 현재 백엔드 로직에 없으나, 필요시 추가 API 호출 가능
+            }
+            
+            currentTaskData = null;
         }
 
         // # ---------------------------------------------------------
