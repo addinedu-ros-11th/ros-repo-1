@@ -20,6 +20,13 @@ async def login_api(response: Response, username: str = Form(...), password: str
     
     # [핵심 수정] 로그인 성공 시 브라우저에 쿠키를 심음
     response.set_cookie(
+        key="user_id",
+        value=user.account,
+        httponly=False,
+        max_age=3600,
+        path="/"
+    )
+    response.set_cookie(
         key="user_role", 
         # user.role이 Enum이므로 .value를 붙여서 "ADMIN" 문자열만 뽑아냅니다.
         value=user.role.value if hasattr(user.role, 'value') else str(user.role), 
@@ -38,5 +45,6 @@ async def login_api(response: Response, username: str = Form(...), password: str
 @router.post("/logout")
 async def logout(response: Response):
     # 쿠키를 삭제합니다. (만료 시간을 0으로 설정하여 즉시 삭제)
+    response.delete_cookie(key="user_id", path="/")
     response.delete_cookie(key="user_role", path="/")
     return {"status": "success", "message": "로그아웃 되었습니다."}

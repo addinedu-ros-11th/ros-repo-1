@@ -54,12 +54,13 @@ class TaskManager:
             ai_result["fields"] = {}
         
         fields = ai_result["fields"]
-        if caller_name:
-            fields["requester_name"] = caller_name
-        elif not fields.get("requester_name") and caller_name:
+        
+        # Requester name이 AI 결과에 없을 경우, 쿠키에서 가져온 caller_name을 기본값으로 사용
+        if not fields.get("requester_name") and caller_name:
             fields["requester_name"] = caller_name
             logger.info(f"Requester name missing in AI result. Injected caller_name: {caller_name}")
-        elif not fields.get("requester_name") and not caller_name:
+        
+        if not fields.get("requester_name"):
             logger.warning("Both requester_name and caller_name are missing.")
 
         # 2. 시나리오 핸들러를 통해 AI 결과 처리 및 DB 저장용 데이터 준비
