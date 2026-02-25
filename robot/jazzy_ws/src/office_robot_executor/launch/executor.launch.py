@@ -18,6 +18,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("stop_cmd_vel_topic", default_value="cmd_vel"),
             DeclareLaunchArgument("stop_publish_count", default_value="10"),
             DeclareLaunchArgument("stop_publish_hz", default_value="20.0"),
+            DeclareLaunchArgument("safety_lock_topic", default_value="safety_lock"),
             Node(
                 package="office_robot_executor",
                 executable="office_robot_executor_node",
@@ -35,6 +36,7 @@ def generate_launch_description() -> LaunchDescription:
                         "stop_cmd_vel_topic": LaunchConfiguration("stop_cmd_vel_topic"),
                         "stop_publish_count": LaunchConfiguration("stop_publish_count"),
                         "stop_publish_hz": LaunchConfiguration("stop_publish_hz"),
+                        "safety_lock_topic": LaunchConfiguration("safety_lock_topic"),
                     }
                 ],
             ),

@@ -12,6 +12,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>office_robot_executor</exec_depend>
   <exec_depend>office_robot_bridge</exec_depend>
+  <exec_depend>office_robot_safety</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

@@ -1,0 +1,10 @@
+office_robot_safety:
+  ros__parameters:
+    robot_name: robot_1
+    robot_id: 1
+    cmd_topic: commands
+    lock_topic: safety_lock
+    stop_cmd_vel_topic: cmd_vel
+    stop_publish_hz: 20.0
+    lock_keepalive_hz: 2.0
+    stop_publish_count: 10

@@ -6,8 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import PoseStamped, Twist
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 try:
     from nav2_msgs.action import NavigateToPose
@@ -37,6 +38,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("stop_cmd_vel_topic", "cmd_vel")
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
+        self.declare_parameter("safety_lock_topic", "safety_lock")
         self.declare_parameter("nav2_success_status_code", 4)
         self.declare_parameter("nav2_feedback_log_period_sec", 1.5)
 
@@ -66,6 +68,9 @@ class OfficeRobotExecutor(Node):
         self.stop_publish_hz = (
             self.get_parameter("stop_publish_hz").get_parameter_value().double_value
         )
+        self.safety_lock_topic = (
+            self.get_parameter("safety_lock_topic").get_parameter_value().string_value
+        )
         self.nav2_success_status_code = (
             self.get_parameter("nav2_success_status_code").get_parameter_value().integer_value
         )
@@ -87,11 +92,20 @@ class OfficeRobotExecutor(Node):
         self._last_feedback_log_at: float = 0.0
         self._cancel_requested = False
         self._cancel_reason: Optional[str] = None
+        self._safety_locked = False
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
+        safety_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.safety_sub = self.create_subscription(
+            Bool, self.safety_lock_topic, self._on_safety_lock, safety_qos
+        )
 
         self.nav_client = None
         if self.use_nav2 and not self.mock_mode:
@@ -103,7 +117,8 @@ class OfficeRobotExecutor(Node):
         self.status_timer = self.create_timer(5.0, self._publish_heartbeat)
 
         self.get_logger().info(
-            f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2})."
+            f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
+            f"safety_lock_topic={self.safety_lock_topic})."
         )
 
     def _publish_heartbeat(self) -> None:
@@ -121,13 +136,50 @@ class OfficeRobotExecutor(Node):
             return
 
         command_type = str(payload.get("type", "")).upper()
-        if command_type in {"STOP", "CANCEL"}:
+        if command_type in {"STOP", "PAUSE"}:
+            self._set_safety_lock(True, source=f"command:{command_type}")
+            return
+
+        if command_type == "RESUME":
+            self._set_safety_lock(False, source="command:RESUME")
+            return
+
+        if command_type == "CANCEL":
             self._cancel_active_sequence(reason=command_type)
             return
 
         actions = self._extract_actions(payload)
         if not actions:
             self.get_logger().warn("Received command message without executable actions.")
+            return
+
+        if self._safety_locked:
+            previous_task_id = self._current_task_id
+            incoming_task_id = self._extract_task_id(payload)
+            if incoming_task_id is not None:
+                self._current_task_id = incoming_task_id
+            self._publish_event(
+                "ACTION_FAILED",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_lock_active",
+                        "reason_code": "safety_locked",
+                        "status_code": 423,
+                        "status_text": "safety lock active",
+                    }
+                ),
+            )
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_lock_active",
+                        "reason_code": "safety_locked",
+                    }
+                ),
+            )
+            self.get_logger().warn("Rejecting action sequence while safety lock is active.")
+            self._current_task_id = previous_task_id
             return
 
         if self._action_queue or self._current_action is not None:
@@ -139,11 +191,92 @@ class OfficeRobotExecutor(Node):
         self._publish_status("ASSIGNED", self._task_id_payload())
         self._run_next_action()
 
+    def _on_safety_lock(self, msg: Bool) -> None:
+        self._set_safety_lock(bool(msg.data), source="topic")
+
+    def _set_safety_lock(self, enabled: bool, source: str) -> None:
+        if self._safety_locked == enabled:
+            return
+
+        self._safety_locked = enabled
+        if enabled:
+            self._enter_safety_lock(source)
+        else:
+            self._exit_safety_lock(source)
+
+    def _enter_safety_lock(self, source: str) -> None:
+        elapsed_sec = self._goal_elapsed_sec()
+        if self._action_timer is not None:
+            self._action_timer.cancel()
+            self._action_timer = None
+        self._stop_timeout_watchdog()
+
+        if self._current_goal_handle is not None:
+            try:
+                self._cancel_requested = True
+                self._cancel_reason = "safety_lock"
+                self.get_logger().warn(
+                    f"Safety lock cancel requested (task_id={self._current_task_id}, "
+                    f"source={source}, elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                )
+                cancel_future = self._current_goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(
+                    lambda f: self._on_nav_cancel_response(f, "cancel:safety_lock")
+                )
+            except Exception as exc:
+                self.get_logger().warn(f"Safety lock goal cancel failed: {exc}")
+            self._current_goal_handle = None
+
+        self._publish_zero_cmd_vel_burst()
+        self._action_queue = []
+        self._current_action = None
+        self._clear_nav_goal_context()
+        self.current_status = "WAITING"
+        payload = self._task_id_payload(
+            {
+                "reason": "safety_stop",
+                "reason_code": "safety_locked",
+                "source": source,
+            }
+        )
+        self._publish_event("SAFETY_STOPPED", payload)
+        self._publish_status("WAITING", payload)
+
+    def _exit_safety_lock(self, source: str) -> None:
+        self._action_queue = []
+        self._current_action = None
+        self._clear_nav_goal_context()
+        self._cancel_requested = False
+        self._cancel_reason = None
+        self.current_status = "IDLE"
+        payload = self._task_id_payload(
+            {
+                "reason": "safety_resume",
+                "reason_code": "safety_resumed",
+                "source": source,
+            }
+        )
+        self._publish_event("SAFETY_RESUMED", payload)
+        self._publish_status("IDLE", payload)
+        self._current_task_id = None
+
     def _run_next_action(self) -> None:
         self._current_action = None
         if not self._action_queue:
-            self.current_status = "IDLE"
-            self._publish_status("IDLE", self._task_id_payload())
+            if self._safety_locked:
+                self.current_status = "WAITING"
+                self._publish_status(
+                    "WAITING",
+                    self._task_id_payload(
+                        {
+                            "reason": "safety_stop",
+                            "reason_code": "safety_locked",
+                        }
+                    ),
+                )
+            else:
+                self.current_status = "IDLE"
+                self._publish_status("IDLE", self._task_id_payload())
             self._clear_nav_goal_context()
             self._current_task_id = None
             return
@@ -159,8 +292,10 @@ class OfficeRobotExecutor(Node):
             y = float(params.get("y", self.location[1]))
             self.location = (x, y)
             self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
-        elif action == "DISPLAY_TEXT":
+        elif action in {"DISPLAY_TEXT", "PAUSE"}:
             self.current_status = "WAITING"
+        elif action == "RESUME":
+            self.current_status = "IDLE"
         else:
             self.current_status = "MOVING"
 
@@ -173,7 +308,27 @@ class OfficeRobotExecutor(Node):
             },
         )
 
-        if action in {"STOP", "CANCEL"}:
+        if action in {"PAUSE", "STOP"}:
+            self._set_safety_lock(True, source=f"action:{action}")
+            return
+
+        if action == "RESUME":
+            self._set_safety_lock(False, source="action:RESUME")
+            self._finish_action_once(on_success)
+            return
+
+        if self._safety_locked:
+            self._fail_current_action(
+                "safety_lock_active",
+                {
+                    "reason_code": "safety_locked",
+                    "status_code": 423,
+                    "status_text": "safety lock active",
+                },
+            )
+            return
+
+        if action == "CANCEL":
             self._cancel_active_sequence(reason=action)
             return
 
@@ -533,13 +688,37 @@ class OfficeRobotExecutor(Node):
 
         self._publish_zero_cmd_vel_burst()
         self._publish_event(
-            "SEQUENCE_CANCELED", self._task_id_payload({"reason": reason})
+            "SEQUENCE_CANCELED",
+            self._task_id_payload(
+                {
+                    "reason": reason,
+                    "reason_code": self._normalize_reason_code(reason),
+                }
+            ),
         )
-        self.current_status = "IDLE"
         self._action_queue = []
         self._current_action = None
         self._clear_nav_goal_context()
-        cancel_status = self._task_id_payload({"reason": reason})
+        if self._safety_locked:
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                    }
+                ),
+            )
+            return
+
+        self.current_status = "IDLE"
+        cancel_status = self._task_id_payload(
+            {
+                "reason": reason,
+                "reason_code": self._normalize_reason_code(reason),
+            }
+        )
         self._current_task_id = None
         self._publish_status("IDLE", cancel_status)
 
@@ -611,6 +790,10 @@ class OfficeRobotExecutor(Node):
             10: "STATUS_LOST",
         }.get(status_code, "STATUS_UNKNOWN")
 
+    @staticmethod
+    def _normalize_reason_code(reason: str) -> str:
+        return str(reason or "unknown").strip().lower().replace(" ", "_")
+
     def _build_nav2_result_detail(self, status_code: int, result: Any) -> Dict[str, Any]:
         detail: Dict[str, Any] = self._task_id_payload(
             {
@@ -641,13 +824,36 @@ class OfficeRobotExecutor(Node):
         self._cancel_requested = False
         self._cancel_reason = None
         self.current_status = "ERROR"
-        payload = self._task_id_payload({"reason": reason})
+        payload = self._task_id_payload(
+            {
+                "reason": reason,
+                "reason_code": self._normalize_reason_code(reason),
+            }
+        )
         if extra is not None:
             payload.update(extra)
+        payload.setdefault("reason_code", self._normalize_reason_code(reason))
         self._publish_event("ACTION_FAILED", payload)
         self._publish_status("ERROR", payload)
+        if self._safety_locked:
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                    }
+                ),
+            )
+            return
         self.current_status = "IDLE"
-        idle_status = self._task_id_payload({"reason": "recover_after_error"})
+        idle_status = self._task_id_payload(
+            {
+                "reason": "recover_after_error",
+                "reason_code": "recover_after_error",
+            }
+        )
         self._current_task_id = None
         self._publish_status("IDLE", idle_status)
 
@@ -656,6 +862,7 @@ class OfficeRobotExecutor(Node):
             "robot_id": int(self.robot_id),
             "robot_name": self.robot_name,
             "status": status,
+            "safety_lock": bool(self._safety_locked),
             "location": [float(self.location[0]), float(self.location[1])],
             "battery": float(self.battery),
             **extra,
