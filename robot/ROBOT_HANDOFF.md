@@ -1,36 +1,73 @@
 # Robot Handoff (ROS 2 Jazzy)
 
-## Definition of Done (DoD)
-- `robot-han/jazzy_ws` exists and `colcon build` succeeds.
-- This workspace is intended for ROS 2 Jazzy only.
-- `office_robot_bringup` launch brings up the executor (and optional rosbridge).
-- Namespaced topics exist per robot:
-  - `/<robot_ns>/commands` (std_msgs/String)
-  - `/<robot_ns>/status` (std_msgs/String)
-  - `/<robot_ns>/event` (std_msgs/String)
+## Scope
+- This document covers only `robot/` runtime behavior and ops commands.
+- `main_server/` and `ai_server/` are out of scope.
+
+## Definition of Done (Current)
+- `robot/jazzy_ws` builds successfully (`colcon build --symlink-install`).
+- `office_robot_bringup` launches executor + safety (+ optional rosbridge).
+- Namespaced topics exist:
+  - `/{robot_ns}/commands` (`std_msgs/msg/String`)
+  - `/{robot_ns}/status` (`std_msgs/msg/String`)
+  - `/{robot_ns}/event` (`std_msgs/msg/String`)
 
 ## Namespace / Multi-Robot
-- Use `robot_ns` launch argument (default `robot_a`).
-- Example namespaces: `/robot_a`, `/robot_b`.
-- All executor topics live under the namespace via `PushRosNamespace`.
+- Default namespace: `robot_1`
+- Launch arg: `robot_ns` (example: `robot_1`, `robot_2`)
+- All robot runtime nodes are launched under `PushRosNamespace(robot_ns)`.
 
-## Topic Contracts (v0, mock)
-- `commands` (String JSON):
-  - Example: `{"robot_name":"robot","type":"ACTION_SEQUENCE","payload":[{"action":"GOTO","params":{"x":1.2,"y":-0.4},"on_success":"ARRIVED_AT_DESTINATION"}]}`
-- `status` (String JSON):
-  - Example: `{"robot_id":1,"robot_name":"robot","status":"MOVING","location":[1.2,-0.4],"battery":100.0,"event":"ARRIVED_AT_DESTINATION"}`
-- `event` (String JSON):
-  - Example: `{"robot_id":1,"robot_name":"robot","event":"ARRIVED_AT_DESTINATION","task_id":1}`
+## Command / Status Contract
+- Command envelope: JSON string on `/{robot_ns}/commands`
+- Supported top-level command `type`:
+  - `ACTION_SEQUENCE`
+  - `STOP`
+  - `PAUSE`
+  - `RESUME`
+  - `CANCEL`
+- `task_id`/`sequence_id` are both carried by executor for compatibility.
+- Safety lock behavior:
+  - `STOP`/`PAUSE` => lock enabled, `cmd_vel` zero hold, running goal canceled.
+  - `RESUME` => lock released, new action sequence can run.
 
-## How to Run
+## Bringup Arguments (Current)
+- `robot_ns`
+- `robot_id`
+- `enable_rosbridge`
+- `use_nav2`
+- `nav2_action_name`
+- `mock_mode` (default `false`)
+
+## Standard Run
 ```bash
-cd robot-han/jazzy_ws
-colcon build
+cd /home/changpc/ros-repo-1/robot/jazzy_ws
+colcon build --symlink-install
 source install/setup.bash
-ros2 launch office_robot_bringup bringup.launch.py robot_ns:=robot_a
+
+ros2 launch office_robot_bringup bringup.launch.py \
+  robot_ns:=robot_1 robot_id:=1 enable_rosbridge:=true \
+  use_nav2:=true nav2_action_name:=/robot_1/navigate_to_pose
 ```
 
-## Quick Test (publish a task)
+## Smoke Commands
 ```bash
-ros2 topic pub /robot/commands std_msgs/String "{data: '{\"robot_name\":\"robot\",\"type\":\"ACTION_SEQUENCE\",\"payload\":[{\"action\":\"GOTO\",\"params\":{\"x\":2.0,\"y\":3.0},\"on_success\":\"ARRIVED_AT_DESTINATION\"}] }'}"
+# ACTION_SEQUENCE (example)
+ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot_1\",\"type\":\"ACTION_SEQUENCE\",\"task_id\":101,\"payload\":[{\"action\":\"DISPLAY_TEXT\",\"params\":{\"text\":\"hello\"},\"on_success\":\"DONE\"}]}"}'
+
+# STOP / RESUME
+ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot_1\",\"type\":\"STOP\",\"task_id\":102}"}'
+
+ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot_1\",\"type\":\"RESUME\",\"task_id\":102}"}'
 ```
+
+## Ops Notes
+- rosbridge port: `9090/tcp`
+- UDP camera stream target: `54321/udp`
+- Local-only directories are ignored:
+  - `robot/jazzy_ws/build`
+  - `robot/jazzy_ws/install`
+  - `robot/jazzy_ws/log`
+  - `robot/jazzy_ws/mujoco_menagerie`
