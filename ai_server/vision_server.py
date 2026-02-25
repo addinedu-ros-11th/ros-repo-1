@@ -38,7 +38,6 @@ async def serve():
     # 2. Vision 서비스 초기화 (YOLO + face_recognition)
     logger.info("Vision 서비스 초기화 중...")
     vision_service = VisionService(
-        product_model_path=config.PRODUCT_MODEL_PATH,
         obstacle_model_path=config.OBSTACLE_MODEL_PATH,
         face_match_threshold=config.FACE_MATCH_THRESHOLD,
         yolo_confidence=config.YOLO_CONFIDENCE_THRESHOLD,
@@ -87,7 +86,6 @@ async def serve():
     logger.info(
         f"  UDP 영상 수신  : {config.VIDEO_STREAM_HOST}:{config.VIDEO_STREAM_PORT}"
     )
-    logger.info(f"  상품 모델      : {config.PRODUCT_MODEL_PATH}")
     logger.info(f"  장애물 모델    : {config.OBSTACLE_MODEL_PATH}")
     logger.info(f"  추론 간격      : {config.INFERENCE_INTERVAL}s")
     logger.info(f"  YOLO 신뢰도   : {config.YOLO_CONFIDENCE_THRESHOLD}")

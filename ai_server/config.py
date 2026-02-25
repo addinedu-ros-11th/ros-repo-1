@@ -27,10 +27,7 @@ VISION_GRPC_PORT = int(os.getenv("VISION_GRPC_PORT", 50052))
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "qwen3-4b")
 LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", str(_BASE_DIR / "models" / "qwen3-4b"))
 
-# Vision YOLO Model Paths
-PRODUCT_MODEL_PATH = os.getenv(
-    "PRODUCT_MODEL_PATH", str(_BASE_DIR / "models" / "product.pt")
-)
+# Vision YOLO Model Path (장애물 감지만 사용)
 OBSTACLE_MODEL_PATH = os.getenv(
     "OBSTACLE_MODEL_PATH", str(_BASE_DIR / "models" / "obstacle.pt")
 )

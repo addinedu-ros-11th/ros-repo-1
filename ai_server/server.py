@@ -52,7 +52,6 @@ async def serve():
     state_manager = InferenceStateManager()
 
     vision_service = VisionService(
-        product_model_path=config.PRODUCT_MODEL_PATH,
         obstacle_model_path=config.OBSTACLE_MODEL_PATH,
         face_match_threshold=config.FACE_MATCH_THRESHOLD,
         yolo_confidence=config.YOLO_CONFIDENCE_THRESHOLD,
@@ -117,7 +116,6 @@ async def serve():
         f"  UDP 영상 수신  : {config.VIDEO_STREAM_HOST}:{config.VIDEO_STREAM_PORT}"
     )
     logger.info(f"  LLM 모델       : {config.LLM_MODEL_NAME}")
-    logger.info(f"  상품 모델      : {config.PRODUCT_MODEL_PATH}")
     logger.info(f"  장애물 모델    : {config.OBSTACLE_MODEL_PATH}")
     logger.info("=" * 60)
 

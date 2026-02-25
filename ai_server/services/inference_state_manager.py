@@ -19,11 +19,10 @@ class InferenceStateManager:
 
     지원 모델 타입:
         - EMPLOYEE : 얼굴 인식 (유휴 모드)
-        - SNACK    : 상품/간식 감지 (배달 시나리오)
-        - OBSTACLE : 장애물 감지 (주행 모드 - 사람/의자/화분)
+        - OBSTACLE : 장애물 감지 (주행 모드 - 사람/의자/화분/가방/로봇)
     """
 
-    VALID_MODEL_TYPES = {"EMPLOYEE", "SNACK", "OBSTACLE"}
+    VALID_MODEL_TYPES = {"EMPLOYEE", "OBSTACLE"}
 
     def __init__(self):
         # { robot_id: { model_type: is_active } }
