@@ -39,6 +39,8 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("safety_lock_topic", "safety_lock")
+        self.declare_parameter("ai_link_topic", "ai_link")
+        self.declare_parameter("include_ai_link_in_status", True)
         self.declare_parameter("nav2_success_status_code", 4)
         self.declare_parameter("nav2_feedback_log_period_sec", 1.5)
 
@@ -71,6 +73,10 @@ class OfficeRobotExecutor(Node):
         self.safety_lock_topic = (
             self.get_parameter("safety_lock_topic").get_parameter_value().string_value
         )
+        self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
+        self.include_ai_link_in_status = (
+            self.get_parameter("include_ai_link_in_status").get_parameter_value().bool_value
+        )
         self.nav2_success_status_code = (
             self.get_parameter("nav2_success_status_code").get_parameter_value().integer_value
         )
@@ -93,6 +99,7 @@ class OfficeRobotExecutor(Node):
         self._cancel_requested = False
         self._cancel_reason: Optional[str] = None
         self._safety_locked = False
+        self._ai_link_alive: Optional[bool] = None
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
@@ -106,6 +113,9 @@ class OfficeRobotExecutor(Node):
         self.safety_sub = self.create_subscription(
             Bool, self.safety_lock_topic, self._on_safety_lock, safety_qos
         )
+        self.ai_link_sub = self.create_subscription(
+            Bool, self.ai_link_topic, self._on_ai_link, safety_qos
+        )
 
         self.nav_client = None
         if self.use_nav2 and not self.mock_mode:
@@ -118,7 +128,7 @@ class OfficeRobotExecutor(Node):
 
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
-            f"safety_lock_topic={self.safety_lock_topic})."
+            f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic})."
         )
 
     def _publish_heartbeat(self) -> None:
@@ -193,6 +203,14 @@ class OfficeRobotExecutor(Node):
 
     def _on_safety_lock(self, msg: Bool) -> None:
         self._set_safety_lock(bool(msg.data), source="topic")
+
+    def _on_ai_link(self, msg: Bool) -> None:
+        previous = self._ai_link_alive
+        self._ai_link_alive = bool(msg.data)
+        if previous is None or previous == self._ai_link_alive:
+            return
+        state = "alive" if self._ai_link_alive else "dead"
+        self.get_logger().info(f"AI link state updated: {state}.")
 
     def _set_safety_lock(self, enabled: bool, source: str) -> None:
         if self._safety_locked == enabled:
@@ -867,6 +885,8 @@ class OfficeRobotExecutor(Node):
             "battery": float(self.battery),
             **extra,
         }
+        if self.include_ai_link_in_status and self._ai_link_alive is not None:
+            data["ai_link_alive"] = bool(self._ai_link_alive)
         if event:
             data["event"] = event
         self.status_pub.publish(String(data=json.dumps(data)))

@@ -9,6 +9,12 @@ robot/
   docs/
     STRUCTURE.md
     pinky_navigation_cmdvel_remap.patch
+  scripts/
+    camera_probe.sh
+  systemd/
+    robot-camera.service
+    robot-udp-bridge.service
+    robot_runtime.env.example
   jazzy_ws/
     src/
       communication_node/
@@ -26,6 +32,7 @@ robot/
 - Runtime logic: `robot/jazzy_ws/src/**`
 - Launch/config wiring: `office_robot_bringup/launch`, `office_robot_bringup/config`
 - Robot docs: `robot/*.md`, `robot/docs/*.md`
+- Runtime templates/scripts: `robot/systemd/**`, `robot/scripts/**`
 
 ## What Not To Commit
 - `robot/jazzy_ws/build`

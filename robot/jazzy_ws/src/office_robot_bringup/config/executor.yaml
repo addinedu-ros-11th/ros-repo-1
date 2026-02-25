@@ -12,3 +12,5 @@ office_robot_executor:
     stop_publish_count: 10
     stop_publish_hz: 20.0
     safety_lock_topic: safety_lock
+    ai_link_topic: ai_link
+    include_ai_link_in_status: true
