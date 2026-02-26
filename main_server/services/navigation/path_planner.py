@@ -38,12 +38,14 @@ class PathPlannerService:
             self.map_invert_y = True 
 
             # 1. 이진화 (ROS 표준: 255는 통로, 0은 벽, 205는 미탐색)
-            # pathfinding용: 1(이동가능), 0(장애물)
-            binary_map = np.where(raw_data >= 250, 1, 0).astype(np.uint8)
+            # 문턱값을 200으로 완화하여 밝은 회색(미탐색/노이즈)도 최대한 통로로 포함
+            binary_map = np.where(raw_data >= 200, 1, 0).astype(np.uint8)
 
             # 2. 로봇 크기만큼 Inflation 적용
             # 로봇 12cm / 해상도 5cm = 약 2.4칸 -> 안전하게 2~3칸 팽창
-            self.static_matrix = self.inflate_map(binary_map, inflation_cells=3)
+            # 테스트를 위해 임시로 1셀(5cm)로 축소
+            self.static_matrix = self.inflate_map(binary_map, inflation_cells=0)
+            self.binary_map = binary_map # 진단용 저장
             # 초기 그리드는 정적 장애물만 포함
             self.matrix = np.copy(self.static_matrix)
             self.grid = Grid(matrix=self.matrix.tolist())
@@ -133,20 +135,39 @@ class PathPlannerService:
         start_gx, start_gy = self.world_to_grid(robot.pose_x, robot.pose_y)
         end_gx, end_gy = self.world_to_grid(goal_x, goal_y)
 
-        logger.info(f"[PathPlanner] A* 계산 요청: Grid({start_gx}, {start_gy}) -> Grid({end_gx}, {end_gy})")
+        logger.info(f"[PathPlanner] A* 계산 요청: World({robot.pose_x:.2f}, {robot.pose_y:.2f}) -> World({goal_x:.2f}, {goal_y:.2f})")
 
         # 그리드 범위 체크 (Strict Validation)
         if not (0 <= start_gx < self.width and 0 <= start_gy < self.height):
-            logger.error(f"시작점이 맵 범위를 벗어났습니다: ({start_gx}, {start_gy}), Map Size: {self.width}x{self.height}")
+            logger.error(f"시작점이 맵 범위를 벗어났습니다: World({robot.pose_x:.2f}, {robot.pose_y:.2f})")
             return None
         
         if not (0 <= end_gx < self.width and 0 <= end_gy < self.height):
-            logger.error(f"목적지가 맵 범위를 벗어났습니다: ({end_gx}, {end_gy}), Map Size: {self.width}x{self.height}")
+            logger.error(f"목적지가 맵 범위를 벗어났습니다: World({goal_x:.2f}, {goal_y:.2f})")
             return None
 
-        # 워커블 체크 (선택 사항: 시작점이 벽이면 근처 탐색 or 에러)
+        # 워커블 체크 및 주변 보정 (Soft Start)
         if not self.grid.walkable(start_gx, start_gy):
-            logger.warning(f"시작 위치({start_gx}, {start_gy})가 장애물(벽)입니다.")
+            logger.warning(f"시작 위치 World({robot.pose_x:.2f}, {robot.pose_y:.2f}) -> Grid({start_gx}, {start_gy})가 장애물 영역입니다. 주변 탐색 시작...")
+            
+            found_alt = False
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    nx, ny = start_gx + dx, start_gy + dy
+                    if 0 <= nx < self.width and 0 <= ny < self.height and self.grid.walkable(nx, ny):
+                        logger.info(f"시작점 보정 완료: Grid({start_gx}, {start_gy}) -> Grid({nx}, {ny})")
+                        start_gx, start_gy = nx, ny
+                        found_alt = True
+                        break
+                if found_alt: break
+            
+            if not found_alt:
+                # 진단 로그 추가
+                is_original_wall = self.binary_map[start_gy][start_gx] == 0
+                is_inflation = not is_original_wall and self.static_matrix[start_gy][start_gx] == 0
+                
+                logger.error(f"보정 실패: 주변에도 이동 가능한 영역이 없습니다. (원인: {'벽' if is_original_wall else '인플레이션'})")
+                return None
             # return None # 필요시 주석 해제하여 엄격하게 차단
 
         try:
@@ -160,7 +181,7 @@ class PathPlannerService:
             self.grid.cleanup()
 
             if not path or len(path) == 0:
-                logger.warning(f"경로를 찾을 수 없습니다: ({start_gx},{start_gy}) -> ({end_gx},{end_gy})")
+                logger.warning(f"경로를 찾을 수 없습니다: World({robot.pose_x:.2f}, {robot.pose_y:.2f}) -> World({goal_x:.2f}, {goal_y:.2f})")
                 return None
 
             logger.info(f"경로 계산 완료 (단계: {runs}, 길이: {len(path)})")

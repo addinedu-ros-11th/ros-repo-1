@@ -257,7 +257,7 @@ CREATE TABLE `Tasks` (
   `requester_id` int DEFAULT NULL COMMENT '요청자',
   `receiver_id` int DEFAULT NULL COMMENT '수신자 (물품 배송 시)',
   `assigned_robot_id` int DEFAULT NULL COMMENT '스마트 배차 (SR-011)',
-  `task_type` enum('GUIDE_GUEST','SNACK_DELIVERY','ITEM_DELIVERY','RETURN','PATROL') DEFAULT NULL,
+  `task_type` enum('GUIDE_GUEST','SNACK_DELIVERY','ITEM_DELIVERY','RETURN','PATROL','MANUAL_MOVE') DEFAULT NULL,
   `priority` int DEFAULT '3' COMMENT '1:가이드, 2:물품, 3:간식 (SR-012)',
   `status` enum('PENDING','ASSIGNED','IN_PROGRESS','ARRIVED','COMPLETED','FAILED','CANCELLED') DEFAULT 'PENDING',
   `destination_id` int DEFAULT NULL,

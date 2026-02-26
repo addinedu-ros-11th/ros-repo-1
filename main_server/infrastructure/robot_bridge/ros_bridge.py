@@ -193,6 +193,7 @@ class ROSBridge:
     async def _handle_status_update(self, data: Dict[str, Any]):
         """로봇 상태를 업데이트하고, 이벤트가 있으면 TaskManager 또는 MutexZoneManager에 전달합니다."""
         robot_id = data.get("robot_id")
+        logger.info(f"[{robot_id}] 로봇 상태 데이터 수신: {data}")
         status = data.get("status")
         location = tuple(data.get("location", [0, 0]))
         battery = data.get("battery", 0.0)

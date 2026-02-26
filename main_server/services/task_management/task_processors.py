@@ -266,17 +266,28 @@ class ItemProcessor(BaseTaskProcessor):
             }
             await self.connection_manager.broadcast(json.dumps(message))
 
-        elif event == RobotEvent.DELIVERY_CONFIRMED:
-            # 복귀 (대기 구역)
-            base_loc = await self.location_repo.find_by_name("waiting_area")
-            if base_loc:
-                self.fleet_manager.send_action_commands(robot.name, [{
-                    "action": "GOTO", 
-                    "params": {"x": base_loc["coordinate_x"], "y": base_loc["coordinate_y"]},
-                    "on_success": RobotEvent.ARRIVED_AT_BASE
-                }])
-            else:
-                await self._complete_task(task, robot_id)
-
         elif event == RobotEvent.ARRIVED_AT_BASE:
+            await self._complete_task(task, robot_id)
+
+class ManualMoveProcessor(BaseTaskProcessor):
+    """수동 좌표 이동 시나리오 처리기 (테스트 및 디버깅용)"""
+    async def get_initial_actions(self, task: Task):
+        # task.details에 저장된 x, y 좌표 사용
+        x = task.details.get("x")
+        y = task.details.get("y")
+        
+        if x is not None and y is not None:
+            return [{
+                "action": "GOTO", 
+                "params": {"x": x, "y": y},
+                "on_success": RobotEvent.ARRIVED_AT_DESTINATION
+            }]
+        
+        logger.error(f"수동 이동 좌표가 누락되었습니다: {task.details}")
+        return []
+
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
+        if event == RobotEvent.ARRIVED_AT_DESTINATION:
+            logger.info(f"로봇 {robot_id} 수동 이동 목적지 도착.")
+            await self.broadcast_task_update("수동 이동 목적지에 도착했습니다.")
             await self._complete_task(task, robot_id)
