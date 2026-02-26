@@ -1,5 +1,6 @@
 import json
 import math
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -46,6 +47,9 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
+        self.declare_parameter("emit_command_received_event", True)
+        self.declare_parameter("enable_legacy_topic_alias", True)
+        self.declare_parameter("legacy_topic_alias_ns", "")
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -93,6 +97,21 @@ class OfficeRobotExecutor(Node):
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
         )
+        self.emit_command_received_event = (
+            self.get_parameter("emit_command_received_event").get_parameter_value().bool_value
+        )
+        self.enable_legacy_topic_alias = (
+            self.get_parameter("enable_legacy_topic_alias").get_parameter_value().bool_value
+        )
+        self.legacy_topic_alias_ns = (
+            self.get_parameter("legacy_topic_alias_ns").get_parameter_value().string_value.strip()
+        )
+
+        self._legacy_alias_ns = self._resolve_legacy_alias_ns(
+            self.robot_name,
+            self.enable_legacy_topic_alias,
+            self.legacy_topic_alias_ns,
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -117,6 +136,19 @@ class OfficeRobotExecutor(Node):
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
         self.display_pub = self.create_publisher(String, self.display_topic, 10)
+        self.status_alias_pub = None
+        self.event_alias_pub = None
+        self.display_alias_pub = None
+        if self._legacy_alias_ns:
+            self.status_alias_pub = self.create_publisher(
+                String, f"/{self._legacy_alias_ns}/status", 10
+            )
+            self.event_alias_pub = self.create_publisher(
+                String, f"/{self._legacy_alias_ns}/event", 10
+            )
+            self.display_alias_pub = self.create_publisher(
+                String, f"/{self._legacy_alias_ns}/{self.display_topic}", 10
+            )
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
 
         safety_qos = QoSProfile(
@@ -143,7 +175,8 @@ class OfficeRobotExecutor(Node):
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
             f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
-            f"display_topic={self.display_topic})."
+            f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event}, "
+            f"legacy_alias={self._legacy_alias_ns or 'disabled'})."
         )
         self._publish_display("대기", "idle")
 
@@ -162,6 +195,9 @@ class OfficeRobotExecutor(Node):
             return
 
         command_type = str(payload.get("type", "")).upper().strip()
+        actions = self._extract_actions(payload)
+        self._publish_command_received(payload, command_type, actions)
+
         if command_type in {"STOP", "PAUSE"}:
             self._set_safety_lock(True, source=f"command:{command_type}")
             return
@@ -172,7 +208,6 @@ class OfficeRobotExecutor(Node):
             self._cancel_active_sequence(reason=command_type)
             return
 
-        actions = self._extract_actions(payload)
         if not actions:
             self.get_logger().warn("Received command message without executable actions.")
             return
@@ -916,7 +951,10 @@ class OfficeRobotExecutor(Node):
             data["ai_link_alive"] = bool(self._ai_link_alive)
         if event:
             data["event"] = event
-        self.status_pub.publish(String(data=json.dumps(data)))
+        msg = String(data=json.dumps(data))
+        self.status_pub.publish(msg)
+        if self.status_alias_pub is not None:
+            self.status_alias_pub.publish(msg)
 
     def _publish_event(self, event: str, extra: Dict[str, Any]) -> None:
         data = {
@@ -925,7 +963,30 @@ class OfficeRobotExecutor(Node):
             "event": event,
             **extra,
         }
-        self.event_pub.publish(String(data=json.dumps(data)))
+        msg = String(data=json.dumps(data))
+        self.event_pub.publish(msg)
+        if self.event_alias_pub is not None:
+            self.event_alias_pub.publish(msg)
+
+    def _publish_command_received(
+        self, payload: Dict[str, Any], command_type: str, actions: List[Dict[str, Any]]
+    ) -> None:
+        if not self.emit_command_received_event:
+            return
+
+        incoming_task_id = self._extract_task_id(payload)
+        normalized_type = command_type or ("ACTION_SEQUENCE" if actions else "UNKNOWN")
+        event_data: Dict[str, Any] = {
+            "command_type": normalized_type,
+            "action_count": len(actions),
+            "has_actions": bool(actions),
+            "source": "commands_topic",
+            "received_at": time.time(),
+        }
+        if incoming_task_id is not None:
+            event_data["task_id"] = incoming_task_id
+            event_data["sequence_id"] = incoming_task_id
+        self._publish_event("COMMAND_RECEIVED", event_data)
 
     def _publish_display(self, text: str, icon: str = "info") -> None:
         if not self.enable_display:
@@ -937,7 +998,29 @@ class OfficeRobotExecutor(Node):
             "icon": icon,
             "ts": time.time(),
         }
-        self.display_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
+        msg = String(data=json.dumps(payload, ensure_ascii=False))
+        self.display_pub.publish(msg)
+        if self.display_alias_pub is not None:
+            self.display_alias_pub.publish(msg)
+
+    @staticmethod
+    def _resolve_legacy_alias_ns(
+        robot_name: str, enabled: bool, manual_alias: str
+    ) -> Optional[str]:
+        if not enabled:
+            return None
+        if manual_alias and manual_alias != robot_name:
+            return manual_alias
+        match = re.match(r"^(.*_)(\d+)$", str(robot_name or ""))
+        if not match:
+            return None
+        prefix, digits = match.groups()
+        if len(digits) != 1:
+            return None
+        alias = f"{prefix}{int(digits):02d}"
+        if alias == robot_name:
+            return None
+        return alias
 
     @staticmethod
     def _extract_actions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -17,3 +17,6 @@ office_robot_executor:
     enable_display: true
     display_topic: display
     guide_display_period_sec: 2.0
+    emit_command_received_event: true
+    enable_legacy_topic_alias: true
+    legacy_topic_alias_ns: ""
