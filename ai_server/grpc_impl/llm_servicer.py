@@ -48,7 +48,7 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
         )
 
         try:
-            # LLM 서비스를 통해 자연어 해석
+            # LLM 서비스를 통해 자연어 해석 (2-Stage: 의도분류 → 분기처리)
             result = self.llm_service.parse_natural_language(request.message)
 
             # TaskType enum 매핑
@@ -58,6 +58,8 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
                 task_type_str,
                 ai_llm_pb2.TaskType.UNKNOWN,
             )
+
+            is_chat = result.get("is_chat", False)
 
             # StructuredMessage 생성
             fields = result.get("fields", {})
@@ -75,13 +77,16 @@ class LLMServicer(ai_llm_pb2_grpc.LLMServiceServicer):
                 raw_text=result.get("raw_text", ""),
             )
 
+            # 로그: 일반 챗 vs 명령 구분
+            mode_label = "Chat" if is_chat else "Command"
             logger.info(
-                f"자연어 해석 완료 [req_id={request.req_id}]: task_type={task_type_str}, confidence={result.get('confidence', 0.0)}"
+                f"자연어 해석 완료 [{mode_label}] [req_id={request.req_id}]: "
+                f"task_type={task_type_str}, confidence={result.get('confidence', 0.0)}"
             )
             # 메인서버 전송용 상세 로그 (GUI에서 파싱)
             fields_summary = {k: v for k, v in fields.items() if v}
             logger.info(
-                f"LLM 응답 전송 [req_id={request.req_id}]: "
+                f"LLM 응답 전송 [{mode_label}] [req_id={request.req_id}]: "
                 f"task_type={task_type_str}, "
                 f"confidence={result.get('confidence', 0.0):.2f}, "
                 f"fields={fields_summary}"
