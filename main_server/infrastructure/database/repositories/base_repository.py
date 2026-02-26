@@ -68,18 +68,23 @@ class BaseRepository:
 
     async def update(self, item_id: int, data: Dict[str, Any]) -> None:
         """ID로 기존 항목을 업데이트합니다."""
+        if not data:
+            return
+            
         set_clause = ", ".join([f"{key} = %s" for key in data.keys()])
         query = f"UPDATE {self.table_name} SET {set_clause} WHERE {self.pk_name} = %s"
         params = list(data.values()) + [item_id]
         
         async with Database.get_connection() as conn:
-            await self._execute(query, tuple(params), fetch="none")
-            await conn.commit()
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, tuple(params))
+                await conn.commit()
 
     async def delete(self, item_id: int) -> None:
         """ID로 항목을 삭제합니다."""
         query = f"DELETE FROM {self.table_name} WHERE {self.pk_name} = %s"
         async with Database.get_connection() as conn:
-            await self._execute(query, (item_id,), fetch="none")
-            await conn.commit()
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, (item_id,))
+                await conn.commit()
 

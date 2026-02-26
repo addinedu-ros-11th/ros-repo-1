@@ -146,7 +146,7 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
             return
 
         try:
-            while context.is_active():
+            while True:
                 # 비동기 루프에서 blocking queue.get()을 실행
                 loop = asyncio.get_event_loop()
                 result_data = await loop.run_in_executor(

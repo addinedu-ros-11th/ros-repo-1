@@ -53,10 +53,22 @@ async def process_command(request: Dict[str, Any]):
     # AI 서비스를 통해 자연어 해석 실행
     ai_result = await container.ai_processing_service.process_natural_language(req_id, message)
     
-    if ai_result.get("task_type") == "UNKNOWN":
+    task_type = ai_result.get("task_type")
+    
+    # 1. 일반 대화/인사 처리 (로봇 작업 생성 안 함)
+    if task_type in ["GREETING", "GENERAL_QUESTION"]:
+        # AI 서버가 생성한 답변 텍스트를 그대로 반환
+        answer_text = ai_result.get("fields", {}).get("message", "죄송합니다, 답변을 생성할 수 없습니다.")
+        return {
+            "status": "success", 
+            "message": answer_text,
+            "ai_fields": None 
+        }
+
+    if task_type == "UNKNOWN":
         return {"status": "error", "message": "명령을 이해하지 못했습니다.", "ai_result": ai_result}
 
-    # 해석된 데이터를 바탕으로 로봇 작업 생성
+    # 2. 로봇 작업 생성 (그 외 TaskType)
     task = await container.task_manager.create_task_from_ai(ai_result, caller_name=caller_id)
     
     if not task:

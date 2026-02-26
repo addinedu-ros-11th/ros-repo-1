@@ -358,7 +358,8 @@
                     }
                     aiSpeak(aiMsg);
                 } else {
-                    aiSpeak("죄송합니다. 명령을 이해하지 못했습니다.");
+                    // 서버에서 반환한 구체적인 에러 메시지 출력
+                    aiSpeak(result.message || "죄송합니다. 명령을 처리하는 중 문제가 발생했습니다.");
                 }
             } catch (e) {
                 aiSpeak("서버와 통신하는 중 오류가 발생했습니다.");
@@ -384,8 +385,12 @@
             const message = JSON.parse(event.data);
             console.log("WS 수신:", message);
             
+            // 작업 상태 업데이트 알림 (채팅창에 표시)
+            if (message.event === "task_update") {
+                aiSpeak(message.data.message);
+            }
             // 로봇 수령 확인 알림 로직
-            if (message.event === "user_action_required") {
+            else if (message.event === "user_action_required") {
                 showNotification(message.data);
             }
         };

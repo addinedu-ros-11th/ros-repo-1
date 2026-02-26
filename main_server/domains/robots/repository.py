@@ -16,6 +16,11 @@ class IRobotRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_by_name(self, name: str) -> Optional[Robot]:
+        """이름으로 특정 로봇을 조회합니다."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_all(self) -> List[Robot]:
         """모든 로봇 목록을 조회합니다."""
         raise NotImplementedError
