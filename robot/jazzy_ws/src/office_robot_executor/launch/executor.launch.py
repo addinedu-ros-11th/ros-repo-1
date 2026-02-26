@@ -25,8 +25,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
-            DeclareLaunchArgument("enable_legacy_topic_alias", default_value="true"),
-            DeclareLaunchArgument("legacy_topic_alias_ns", default_value=""),
             Node(
                 package="office_robot_executor",
                 executable="office_robot_executor_node",
@@ -51,8 +49,6 @@ def generate_launch_description() -> LaunchDescription:
                         "display_topic": LaunchConfiguration("display_topic"),
                         "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),
                         "emit_command_received_event": LaunchConfiguration("emit_command_received_event"),
-                        "enable_legacy_topic_alias": LaunchConfiguration("enable_legacy_topic_alias"),
-                        "legacy_topic_alias_ns": LaunchConfiguration("legacy_topic_alias_ns"),
                     }
                 ],
             ),
