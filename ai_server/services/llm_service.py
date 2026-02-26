@@ -90,11 +90,39 @@ PARSE_SYSTEM_PROMPT = """당신은 사무실 로봇 서비스를 위한 자연�
 출력: {"task_type": "SNACK_DELIVERY", "confidence": 0.95, "fields": {"requester_name": "홍길동", "location": "회의실", "items": [{"item_name": "커피", "quantity": 2}]}}"""
 
 
+# ── 의도 분류 프롬프트 (Stage 1) ──────────────────────────
+INTENT_CLASSIFY_PROMPT = """당신은 사무실 로봇 서비스의 의도 분류기입니다.
+사용자의 입력이 다음 중 어느 카테고리에 해당하는지 판단하세요:
+
+1. COMMAND: 로봇에게 작업을 요청하는 명령 (배달, 안내 등)
+   예: "커피 갖다줘", "김철수한테 서류 전달해줘", "손님을 회의실로 안내해줘"
+
+2. GREETING: 인사 표현
+   예: "안녕", "반가워", "좋은 아침", "수고해"
+
+3. GENERAL_QUESTION: 일반 질문이나 대화
+   예: "오늘 날씨 어때?", "회사 규정 알려줘", "고마워", "뭐 할 수 있어?"
+
+반드시 COMMAND, GREETING, GENERAL_QUESTION 중 하나만 답변하세요.
+다른 텍스트는 절대 포함하지 마세요."""
+
+# ── 일반 챗 응답 프롬프트 ──────────────────────────────────
+CHAT_RESPONSE_PROMPT = """당신은 친절한 사무실 로봇 도우미입니다.
+이름은 '오피스봇'이고, 사무실에서 간식 배달, 물품 전달, 방문객 안내 등을 수행합니다.
+사용자와 자연스럽고 간결하게 대화하세요.
+- 인사에는 밝고 짧게 답하세요.
+- 일반 질문에는 도움이 되는 정보를 간결하게 제공하세요.
+- 너무 길지 않게, 2~3문장 이내로 답변하세요."""
+
+
 class LLMService:
     """
     LLM(Qwen3-4B) 모델을 사용한 자연어 처리 서비스
     Ollama를 통해 로컬 모델 실행
     """
+
+    # 일반 챗 유형 (명령이 아닌 대화)
+    CHAT_TASK_TYPES = {"GREETING", "GENERAL_QUESTION"}
 
     def __init__(
         self, model_name: str = "qwen3:4b-instruct-2507-q4_K_M", model_path: str = None
@@ -460,18 +488,80 @@ class LLMService:
             logger.error(f"엔티티 추출 실패: {e}")
             return {"location": None, "items": None, "confidence": 0.0, "error": str(e)}
 
-    def parse_natural_language(self, text: str) -> Dict[str, Any]:
+    # ------------------------------------------------------------------ #
+    #  Stage 1: 빠른 의도 분류 (COMMAND / GREETING / GENERAL_QUESTION)
+    # ------------------------------------------------------------------ #
+    def _classify_intent(self, text: str) -> str:
         """
-        자연어 프롬프트를 구조화된 작업 메시지로 변환
-
-        Args:
-            text: 사용자의 자연어 프롬프트
+        사용자 입력의 의도를 빠르게 분류한다.
 
         Returns:
-            구조화된 작업 정보 딕셔너리
+            "COMMAND" | "GREETING" | "GENERAL_QUESTION"
         """
-        logger.info(f"자연어 프롬프트 해석 요청: {text[:100]}...")
+        try:
+            raw = self._chat(
+                messages=[
+                    {"role": "system", "content": INTENT_CLASSIFY_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+                temperature=0.0,
+            )
+            intent = raw.strip().upper()
+            # 유효 값인지 확인
+            if intent in ("COMMAND", "GREETING", "GENERAL_QUESTION"):
+                logger.info(f"의도 분류 결과: {intent}")
+                return intent
+            # LLM이 부가 텍스트를 포함했을 경우 패턴 매칭
+            for label in ("COMMAND", "GREETING", "GENERAL_QUESTION"):
+                if label in intent:
+                    logger.info(f"의도 분류 결과(패턴): {label}")
+                    return label
+            logger.warning(f"의도 분류 실패, 기본값 COMMAND 사용: raw={raw}")
+            return "COMMAND"
+        except Exception as e:
+            logger.error(f"의도 분류 중 오류, 기본값 COMMAND: {e}")
+            return "COMMAND"
 
+    # ------------------------------------------------------------------ #
+    #  일반 챗(Greeting / General Question) 응답 생성
+    # ------------------------------------------------------------------ #
+    def _generate_chat_response(self, text: str, task_type: str) -> Dict[str, Any]:
+        """
+        인사 또는 일반 질문에 대해 단순 대화 응답을 생성한다.
+        명령 파싱 없이 자연어 응답만 반환.
+        """
+        logger.info(f"[Chat] 일반 챗 응답 생성 (type={task_type}): {text[:80]}")
+        try:
+            chat_reply = self._chat(
+                messages=[
+                    {"role": "system", "content": CHAT_RESPONSE_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+                temperature=0.7,
+            )
+            logger.info(f"[Chat] 응답 생성 완료: {chat_reply[:100]}")
+        except Exception as e:
+            logger.error(f"[Chat] 응답 생성 실패: {e}")
+            chat_reply = "죄송합니다, 응답을 생성하지 못했습니다."
+
+        return {
+            "task_type": task_type,
+            "confidence": 1.0,
+            "fields": {
+                "message": chat_reply,
+            },
+            "raw_text": chat_reply,
+            "is_chat": True,
+        }
+
+    # ------------------------------------------------------------------ #
+    #  명령(Command) 구조화 파싱 - 기존 로직
+    # ------------------------------------------------------------------ #
+    def _parse_command(self, text: str) -> Dict[str, Any]:
+        """
+        명령(SNACK_DELIVERY, ITEM_DELIVERY, GUIDE_GUEST 등)을
+        구조화된 작업 메시지로 변환한다.
+        """
         user_prompt = f"사용자 요청: {text}"
 
         try:
@@ -508,6 +598,7 @@ class LLMService:
                 "confidence": confidence,
                 "fields": fields,
                 "raw_text": result_text,
+                "is_chat": False,
             }
 
             logger.info(
@@ -523,6 +614,7 @@ class LLMService:
                 "fields": {},
                 "error": "JSON 파싱 실패",
                 "raw_text": result_text,
+                "is_chat": False,
             }
         except Exception as e:
             logger.error(f"자연어 해석 실패: {e}")
@@ -531,4 +623,35 @@ class LLMService:
                 "confidence": 0.0,
                 "fields": {},
                 "error": str(e),
+                "is_chat": False,
             }
+
+    # ------------------------------------------------------------------ #
+    #  공개 API: parse_natural_language  (2-Stage)
+    # ------------------------------------------------------------------ #
+    def parse_natural_language(self, text: str) -> Dict[str, Any]:
+        """
+        자연어 프롬프트를 구조화된 작업 메시지로 변환
+
+        Stage 1 - 의도 분류 (COMMAND / GREETING / GENERAL_QUESTION)
+        Stage 2a - 일반 챗이면 → 단순 대화 응답 생성
+        Stage 2b - 명령이면 → 구조화된 파싱
+
+        Args:
+            text: 사용자의 자연어 프롬프트
+
+        Returns:
+            구조화된 작업 정보 딕셔너리
+        """
+        logger.info(f"자연어 프롬프트 해석 요청: {text[:100]}...")
+
+        # Stage 1: 빠른 의도 분류
+        intent = self._classify_intent(text)
+
+        # Stage 2: 분기 처리
+        if intent in self.CHAT_TASK_TYPES:
+            # 일반 챗 (GREETING / GENERAL_QUESTION) → 대화 응답만 생성
+            return self._generate_chat_response(text, task_type=intent)
+        else:
+            # 명령 → 구조화 파싱
+            return self._parse_command(text)
