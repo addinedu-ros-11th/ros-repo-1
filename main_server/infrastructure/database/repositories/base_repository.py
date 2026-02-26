@@ -23,50 +23,45 @@ class BaseRepository:
         self.model = model
         self.pk_name = pk_name
 
-    async def _execute(self, query: str, params: Optional[Tuple] = None, fetch: str = "all") -> Any:
+    async def _execute(self, query: str, params: Optional[Tuple] = None, fetch: str = "all", is_write: bool = False) -> Any:
         """
-        주어진 쿼리를 실행하고 결과를 반환하는 내부 메서드입니다.
-
-        :param query: 실행할 SQL 쿼리
-        :param params: 쿼리에 바인딩할 파라미터
-        :param fetch: 'one', 'all', 'none' 중 하나
+        통합 쿼리 실행 메서드 (재시도 로직 + 트랜잭션 관리 포함)
         """
-        async with Database.get_connection() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(query, params or ())
-                if fetch == "one":
-                    return await cursor.fetchone()
-                elif fetch == "all":
-                    return await cursor.fetchall()
-                # fetch == 'none'의 경우, 아무것도 반환하지 않음 (e.g., INSERT, UPDATE, DELETE)
-
-    async def _execute_write(self, query: str, params: Optional[Tuple] = None) -> None:
-        """
-        데이터 변경(UPDATE, INSERT, DELETE) 전용 메서드.
-        실행 후 반드시 commit()을 수행합니다.
-        """
-        async with Database.get_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(query, params or ())
-                await conn.commit()  # 변경 사항 확정
-                print(f"DEBUG: Execute Write Success - Query: {query}")
-
-    async def _execute_with_retry(self, query: str, params: Optional[Tuple] = None, fetch: str = "all") -> Any:
-        """1412 에러 발생 시 재시도하는 전용 메서드"""
         import asyncio
         max_retries = 3
+        
         for attempt in range(max_retries):
             try:
-                # 기존 _execute 로직과 동일하지만 내부에서 호출
                 async with Database.get_connection() as conn:
+                    # 딕셔너리 커서 사용 (is_write가 아닐 때만 유용하지만 통합 사용 가능)
                     async with conn.cursor(aiomysql.DictCursor) as cursor:
                         await cursor.execute(query, params or ())
-                        if fetch == "one": return await cursor.fetchone()
-                        return await cursor.fetchall()
+                        
+                        if is_write:
+                            await conn.commit()  # 쓰기 작업은 커밋
+                            return cursor.lastrowid
+                        
+                        # 조회 작업
+                        if fetch == "one":
+                            result = await cursor.fetchone()
+                        elif fetch == "all":
+                            result = await cursor.fetchall()
+                        else:
+                            result = None
+                        
+                        # [중요] 조회 후 rollback을 호출하여 트랜잭션 스냅샷을 최신화함
+                        await conn.rollback()
+                        return result
+
             except aiomysql.OperationalError as e:
+                # 1412: Table definition has changed 에러 처리
                 if e.args[0] == 1412 and attempt < max_retries - 1:
                     await asyncio.sleep(0.2)
                     continue
+                raise e
+            except Exception as e:
+                # 기타 에러 발생 시 안전하게 롤백
+                print(f"DB Error: {e}")
                 raise e
 
     async def get_by_id(self, item_id: int) -> Optional[ModelType]:

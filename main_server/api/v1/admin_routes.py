@@ -83,11 +83,11 @@ async def get_office_status():
 # ---------------------------------------------------------
 @router.get("/visitors")
 async def get_visitors():
-    # DB에서 원본 데이터 가져오기
+    # 1. DB에서 데이터 가져오기
     pending_raw = await container.reservation_repository.get_pending_list()
     approved_raw = await container.reservation_repository.get_approved_list()
 
-    # PENDING 상태인 것만 확실하게 필터링 (REJECTED 제외)
+    # 2. PENDING 데이터 가공 (REJECTED가 섞여있어도 여기서 제거됨)
     pending_data = [
         {
             "id": v.get("id"),
@@ -97,9 +97,10 @@ async def get_visitors():
             "host": v.get("manager_name"),
             "status": v.get("status")
         }
-        for v in pending_raw if v.get("status") == "PENDING" # 여기서 REJECTED를 한 번 더 거름
+        for v in pending_raw if v.get("status") == "PENDING"
     ]
 
+    # 3. APPROVED 데이터 가공
     confirmed_data = [
         {
             "id": v.get("id"),

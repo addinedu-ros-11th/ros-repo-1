@@ -380,24 +380,23 @@
         }
 
         /* 2. 방문객 예약 현황 */
-        let isFetchingVisitors = false; // 중복 요청 방지 플래그
+        let isFetching = false; 
 
         async function fetchVisitors() {
-            if (isFetchingVisitors) return; // 이미 데이터를 가져오는 중이면 무시
-            isFetchingVisitors = true;
-            
-            console.log("데이터 업데이트 시작...");
+            if (isFetching) return;
+            isFetching = true;
             
             try {
                 const res = await fetch('/api/v1/admin/visitors');
-                if (!res.ok) throw new Error("서버 응답 오류");
-                
                 const data = await res.json();
-
-                // 1. 승인 대기 목록 (PENDING만 출력)
+                
                 const pendingBody = document.getElementById('pending-visitor-list');
-                if (data.pending && data.pending.length > 0) {
-                    pendingBody.innerHTML = data.pending.map(v => `
+                const confirmedBody = document.getElementById('visitor-list');
+
+                // 승인 대기 목록 (PENDING만)
+                const pendingHtml = data.pending
+                    .filter(v => v.status === 'PENDING') // 3중 방어: PENDING만 출력
+                    .map(v => `
                         <tr>
                             <td>${v.visitor}</td>
                             <td>${v.purpose}</td>
@@ -409,29 +408,25 @@
                             </td>
                         </tr>
                     `).join('');
-                } else {
-                    pendingBody.innerHTML = '<tr><td colspan="5">대기 중인 신청이 없습니다.</td></tr>';
-                }
+                
+                pendingBody.innerHTML = pendingHtml || '<tr><td colspan="5">대기 중인 신청이 없습니다.</td></tr>';
 
-                // 2. 최종 예약 확정 현황 (APPROVED만 출력)
-                const confirmedBody = document.getElementById('visitor-list');
-                if (data.confirmed && data.confirmed.length > 0) {
-                    confirmedBody.innerHTML = data.confirmed.map(v => `
-                        <tr>
-                            <td>${v.date}</td>
-                            <td>${v.time}</td>
-                            <td>${v.host}</td>
-                            <td>${v.visitor}</td>
-                        </tr>
-                    `).join('');
-                } else {
-                    confirmedBody.innerHTML = '<tr><td colspan="4">확정된 예약이 없습니다.</td></tr>';
-                }
+                // 확정 목록 (APPROVED만)
+                const confirmedHtml = data.confirmed.map(v => `
+                    <tr>
+                        <td>${v.date}</td>
+                        <td>${v.time || '-'}</td>
+                        <td>${v.host}</td>
+                        <td>${v.visitor}</td>
+                    </tr>
+                `).join('');
+                
+                confirmedBody.innerHTML = confirmedHtml || '<tr><td colspan="4">확정된 예약이 없습니다.</td></tr>';
 
             } catch (e) {
-                console.error("데이터 로드 실패:", e);
+                console.error("로드 실패:", e);
             } finally {
-                isFetchingVisitors = false; // 요청이 끝났으므로 다시 클릭 가능하게 설정
+                isFetching = false;
             }
         }
 
