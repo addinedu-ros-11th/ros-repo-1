@@ -30,11 +30,11 @@ from ai_server.grpc_impl import ai_vision_pb2, ai_vision_pb2_grpc
 # ── 설정 ──
 VISION_GRPC_ADDR = "localhost:50052"
 UDP_TARGET = ("127.0.0.1", 54321)
-ROBOT_ID = "127.0.0.1"         # UDP 소스 IP가 robot_id로 사용됨
+ROBOT_ID = "127.0.0.1"  # UDP 소스 IP가 robot_id로 사용됨
 MODEL_TYPE = "OBSTACLE"
-TEST_TIMEOUT = 15               # 최대 대기 시간 (초)
-MAX_UDP_PACKET = 60000          # UDP 페이로드 최대 크기
-NUM_FRAMES = 20                 # 전송할 프레임 수
+TEST_TIMEOUT = 15  # 최대 대기 시간 (초)
+MAX_UDP_PACKET = 60000  # UDP 페이로드 최대 크기
+NUM_FRAMES = 20  # 전송할 프레임 수
 
 
 def create_test_frame() -> np.ndarray:
@@ -173,11 +173,13 @@ async def test_vision_stream():
                     data["count"] = len(result.multi_objects.objects)
                     data["objects"] = []
                     for obj in result.multi_objects.objects:
-                        data["objects"].append({
-                            "name": obj.object_name,
-                            "conf": f"{obj.confidence:.2f}",
-                            "box": f"({obj.box.x},{obj.box.y},{obj.box.width},{obj.box.height})",
-                        })
+                        data["objects"].append(
+                            {
+                                "name": obj.object_name,
+                                "conf": f"{obj.confidence:.2f}",
+                                "box": f"({obj.box.x},{obj.box.y},{obj.box.width},{obj.box.height})",
+                            }
+                        )
 
                 received_results.append(data)
                 print(f"  📦 수신 [{len(received_results)}]: {data}")
@@ -213,9 +215,13 @@ async def test_vision_stream():
                 names = [o["name"] for o in r.get("objects", [])]
                 print(f"    [{i}] {rtype}: {r.get('count')}개 객체 → {names}")
             elif rtype == "object_detection":
-                print(f"    [{i}] {rtype}: {r.get('object_name')} ({r.get('confidence', 0):.2f})")
+                print(
+                    f"    [{i}] {rtype}: {r.get('object_name')} ({r.get('confidence', 0):.2f})"
+                )
             elif rtype == "face_recognition":
-                print(f"    [{i}] {rtype}: {r.get('person_type')} ({r.get('confidence', 0):.2f})")
+                print(
+                    f"    [{i}] {rtype}: {r.get('person_type')} ({r.get('confidence', 0):.2f})"
+                )
     else:
         print("  ❌ 추론 결과를 수신하지 못했습니다")
         print("  가능한 원인:")
