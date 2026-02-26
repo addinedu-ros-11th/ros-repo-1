@@ -66,6 +66,11 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
         새로운 작업을 생성하고, 연관된 아이템(Task_Items)이 있다면 함께 저장합니다.
         트랜잭션을 사용하여 원자성을 보장합니다.
         """
+        # Enum 객체 처리 (SR-011, SR-012 호환성 보장)
+        for key in ["task_type", "status"]:
+            if key in data and hasattr(data[key], "value"):
+                data[key] = data[key].value
+
         # 'details' 필드를 JSON 문자열로 변환
         if 'details' in data and isinstance(data['details'], dict):
             data['details'] = json.dumps(data['details'])
@@ -93,14 +98,14 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
                     # 2. 연관 아이템(Task_Items) 생성
                     if items:
                         item_query = "INSERT INTO Task_Items (task_id, product_id, quantity) VALUES (%s, %s, %s)"
-                        item_params = [(task_id, item['product_id'], item['quantity']) for item in items]
-                        await cursor.executemany(item_query, item_params)
+                        for item in items:
+                            await cursor.execute(item_query, (task_id, item['product_id'], item['quantity']))
                     
                     await conn.commit()
                     logger.info(f"Task {task_id} created successfully with {len(items) if items else 0} items.")
                 except Exception as e:
                     await conn.rollback()
-                    logger.error(f"Failed to create task: {e}")
+                    logger.error(f"Failed to create task (Step: {'Items' if 'task_id' in locals() else 'Task'}): {e}", exc_info=True)
                     return None
 
         return await self.get_by_id(task_id)

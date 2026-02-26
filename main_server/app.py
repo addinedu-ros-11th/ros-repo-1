@@ -1,7 +1,16 @@
-from main_server.config import config
+import logging
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from main_server.config import config
+
+# --- 로깅 설정 (INFO 레벨 이상의 로그를 터미널에 출력) ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # --- DI 컨테이너 및 서비스 초기화 ---
 from main_server.container import container

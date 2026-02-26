@@ -126,6 +126,8 @@ class ROSBridgeCommunicator(IRobotCommunicator):
         topic = roslibpy.Topic(self.client, f"/{robot_name}/status", "std_msgs/String")
         
         def _callback(msg):
+            # 원시 메시지 수신 로그 추가 (통신 여부 확인용)
+            logger.info(f"[{robot_name}] Raw message received: {msg}")
             try:
                 data = json.loads(msg["data"])
                 # 데이터에 robot_name이 없을 경우를 대비해 추가
@@ -133,7 +135,7 @@ class ROSBridgeCommunicator(IRobotCommunicator):
                     data["robot_name"] = robot_name
                 callback(data)
             except Exception as e:
-                logger.error(f"[{robot_name}] 상태 메시지 파싱 오류: {e}")
+                logger.error(f"[{robot_name}] 상태 메시지 파싱 오류: {e} (Raw: {msg})")
 
         topic.subscribe(_callback)
         self.status_topics[robot_name] = topic
@@ -155,14 +157,16 @@ class ROSBridge:
 
     async def start(self):
         """ROS Bridge 연결 및 상태 수신 루프 실행"""
+        # 현재 실행 중인 메인 이벤트 루프를 캡처합니다.
+        loop = asyncio.get_running_loop()
         self.communicator.connect()
         
         def status_handler(data: Dict[str, Any]):
             try:
-                # 비동기 업데이트 및 이벤트 처리를 메인 루프에서 실행
+                # 캡처한 메인 루프(loop)에 코루틴을 안전하게 전달합니다.
                 asyncio.run_coroutine_threadsafe(
                     self._handle_status_update(data),
-                    asyncio.get_event_loop()
+                    loop
                 )
             except Exception as e:
                 logger.error(f"상태 동기화 핸들러 오류: {e}")
@@ -193,7 +197,7 @@ class ROSBridge:
     async def _handle_status_update(self, data: Dict[str, Any]):
         """로봇 상태를 업데이트하고, 이벤트가 있으면 TaskManager 또는 MutexZoneManager에 전달합니다."""
         robot_id = data.get("robot_id")
-        logger.info(f"[{robot_id}] 로봇 상태 데이터 수신: {data}")
+        logger.debug(f"[{robot_id}] 로봇 상태 데이터 수신: {data}")
         status = data.get("status")
         location = tuple(data.get("location", [0, 0]))
         battery = data.get("battery", 0.0)
@@ -206,8 +210,6 @@ class ROSBridge:
         if status == "ERROR" and updated_robot and self.log_repo:
             try:
                 await self.log_repo.create({
-                    "timestamp": asyncio.get_event_loop().time(), # or use DB default (NOW()) by omitting
-                    # create 메서드는 보통 Dict를 받아서 INSERT
                     "log_level": "ERROR",
                     "event_type": "ROBOT_ERROR",
                     "robot_id": updated_robot.id,

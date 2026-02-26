@@ -39,15 +39,15 @@ CREATE TABLE `Locations` (
 LOCK TABLES `Locations` WRITE;
 /*!40000 ALTER TABLE `Locations` DISABLE KEYS */;
 INSERT INTO `Locations` (`name`, `type`, `coordinate_x`, `coordinate_y`, `theta`, `is_restricted`) VALUES
-('office_1', 'OFFICE', 0.5, 1.2, 0.0, 0),
-('office_2', 'OFFICE', 1.5, 1.2, 0.0, 0),
-('office_3', 'OFFICE', 2.5, 1.2, 0.0, 0),
-('snack_entrance', 'WAREHOUSE', 4.0, 0.5, 0.0, 0),
-('small_meeting_room', 'MEETING_ROOM', 3.5, 3.0, 0.0, 0),
-('large_meeting_room', 'MEETING_ROOM', 1.0, 3.0, 0.0, 0),
-('charger_1', 'CHARGER', 0.1, 0.1, 0.0, 0),
-('charger_2', 'CHARGER', 4.8, 0.1, 0.0, 0),
-('waiting_area', 'WAITING_AREA', 0.5, 0.5, 0.0, 0);
+('office_1', 'OFFICE', 0.5, -0.3, 0.0, 0),
+('office_2', 'OFFICE', 1.0, -0.3, 0.0, 0),
+('office_3', 'OFFICE', 1.5, -0.3, 0.0, 0),
+('snack_entrance', 'WAREHOUSE', 1.8, -1.0, 0.0, 0),
+('small_meeting_room', 'MEETING_ROOM', 0.5, -1.5, 0.0, 0),
+('large_meeting_room', 'MEETING_ROOM', 1.5, -1.5, 0.0, 0),
+('charger_1', 'CHARGER', 0.1, -2.2, 0.0, 0),
+('charger_2', 'CHARGER', 1.8, -2.2, 0.0, 0),
+('waiting_area', 'WAITING_AREA', 0.0, 0.0, 0.0, 0);
 /*!40000 ALTER TABLE `Locations` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -244,6 +244,31 @@ INSERT INTO `Products` (`name`, `type`, `stock_quantity`, `image_url`) VALUES
 ('Stapler', 'ITEM', 5, NULL);
 /*!40000 ALTER TABLE `Products` ENABLE KEYS */;
 UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS 'reservations';
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE IF 'reservations' (
+  'id' INT AUTO_INCREMENT PRIMARY KEY,
+
+  -- 담당자 정보 (쿠키의 user_account와 user_name에 대응)
+  'manager_account' VARCHAR(50) NOT NULL COMMENT '담당자 아이디 (user.account)',
+  'manager_name' VARCHAR(30) NOT NULL COMMENT '담당자 이름 (user.name)',
+
+  -- 방문객 정보
+  'visitor_name' VARCHAR(30) NOT NULL,
+  'visitor_phone' VARCHAR(15) NOT NULL,
+  'purpose' VARCHAR(100),
+
+  -- 예약 일시
+  'visit_date' DATE NOT NULL,
+  'visit_time' TIME,
+
+  -- 상태 및 생성일
+  'status' ENUM('PENDING', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+  'created_at' TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
 -- Table structure for table `Tasks`
