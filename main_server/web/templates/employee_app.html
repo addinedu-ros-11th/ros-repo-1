@@ -23,16 +23,23 @@
             </div>
 
             <div class="res-list-container">
-                <h4>📋 내 예약 현황</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="margin: 0;">📋 내 예약 현황</h4>
+                    <button type="button" class="btn-refresh" onclick="loadReservationTables()" 
+                            style="padding: 5px 15px; background: #4285f4; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85rem;">
+                        조회 🔄
+                    </button>
+                </div>
                 <div class="table-wrapper">
                     <table class="res-table excel-style">
                         <thead>
                             <tr>
                                 <th>방문객</th>
+                                <th>연락처</th> 
                                 <th>방문 목적</th>
                                 <th>방문 날짜</th>
                                 <th>방문 시간</th>
-                                <th>진행 상태</th>
+                                <th>상태</th>
                             </tr>
                         </thead>
                         <tbody id="res-table-body">
@@ -84,7 +91,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div id="notification-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
             <div style="background:white; padding:20px; border-radius:10px; text-align:center;">
                 <p id="noti-message"></p>
@@ -95,6 +102,23 @@
     </div>
 
     <script>
+        // 1. 모든 함수가 공통으로 사용할 쿠키 함수 (맨 위에 딱 한 번만!)
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null; // 못 찾으면 null 반환
+        }
+
+        // 2. 이름 가져오기 함수 (우리가 'name' 혹은 'user_id'로 합의한 것)
+        function getLoggedInUserName() {
+            // 백엔드에서 key="name"으로 구웠다면 'name'을 먼저 확인
+            const name = getCookie('name');
+            const id = getCookie('user_id'); // 이건 account 값
+            
+            // decodeURIComponent는 한글 깨짐 방지용입니다.
+            return name ? decodeURIComponent(name) : (id || "미인증 사용자");
+        }
         // # ---------------------------------------------------------
         // # 1. 인증 및 권한 확인 (Authentication & Security)
         // # ---------------------------------------------------------
@@ -157,47 +181,35 @@
                 .replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3")
                 .replace(/(\-{1,2})$/g, "");
         }
-
-        // 특정 이름의 쿠키 값을 가져옵니다.
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
-            return null;
-        }
-
-        // 쿠키에 저장된 name을 우선적으로 가져오고, 없으면 account를 반환합니다.
-        function getLoggedInUserName() {
-            const userName = getCookie('name'); 
-            const userAccount = getCookie('user_id'); 
-            
-            if (userName) return userName;
-            if (userAccount) return userAccount; 
-            
-            return "미인증 사용자";
-        }
-        // # 3-2. 방문 예약 등록 로직 (수정본)
-
+        // # 3-2. 방문 예약 등록 로직 (보완본)
         async function submitReservation() {
-            const visitorName = document.getElementById('res-name').value;
-            const purpose = document.getElementById('res-purpose').value;
-            const visitDate = document.getElementById('res-date').value;
-            const visitTime = document.getElementById('res-time').value;
-            const visitorPhone = document.getElementById('res-phone').value;
+            const vName = document.getElementById('res-name').value.trim();
+            const vPurpose = document.getElementById('res-purpose').value.trim();
+            const vDate = document.getElementById('res-date').value;
+            const vTime = document.getElementById('res-time').value;
+            const vPhone = document.getElementById('res-phone').value.trim().replace(/-/g, ''); // 하이픈 제거 후 숫자만 추출
 
-            if (!visitorName || !visitDate) {
-                aiSpeak("방문객 성함과 날짜를 입력해주세요.");
+            // 1. 빈 칸 검사
+            if (!vName || !vPurpose || !vDate || !vTime || !vPhone) {
+                alert("모든 입력 칸을 채워주세요.");
+                return;
+            }
+
+            // 2. 연락처 유효성 검사 (숫자만 & 11자리)
+            const phoneRegex = /^[0-9]{11}$/;
+            if (!phoneRegex.test(vPhone)) {
+                alert("연락처는 숫자 11자리로 입력해주세요. (예: 01012345678)");
                 return;
             }
 
             const data = {
-                manager_account: getCookie('user_id'), // 쿠키에서 계정 정보 가져오기
-                manager_name: getLoggedInUserName(),       // 쿠키에서 이름 가져오기
-                visitor_name: visitorName,
-                purpose: purpose,
-                visit_date: visitDate,
-                visit_time: visitTime,
-                visitor_phone: visitorPhone
+                manager_account: getCookie('user_id'),
+                manager_name: getLoggedInUserName(),
+                visitor_name: vName,
+                purpose: vPurpose,
+                visit_date: vDate,
+                visit_time: vTime,
+                visitor_phone: vPhone // 숫자 11자리만 전송
             };
 
             try {
@@ -209,61 +221,100 @@
                 
                 const result = await response.json();
                 if (result.status === 'success') {
-                    aiSpeak(`${visitorName} 고객님(담당: ${data.manager_name})의 예약이 신청되었습니다.`);
-                    // 테이블 즉시 갱신 (이미 구현된 함수가 있다면 호출)
-                    if(typeof loadReservationTables === 'function') loadReservationTables();
+                    alert("예약이 등록되었습니다.");
+                    // 입력창 초기화
+                    ['res-name', 'res-purpose', 'res-date', 'res-time', 'res-phone'].forEach(id => {
+                        document.getElementById(id).value = '';
+                    });
+                    loadReservationTables(); // 목록 갱신
                 }
             } catch (e) {
-                aiSpeak("DB 연동 중 오류가 발생했습니다.");
+                alert("서버 통신 오류가 발생했습니다.");
             }
         }
 
-       async function loadReservationTables() {
-            const userAccount = getCookie('user_id');
+        async function loadReservationTables() {
+            // 1. 함수가 실행되는 '지금 이 순간'의 쿠키를 다시 읽습니다.
+            const userAccount = getCookie('user_id'); 
+            const tbody = document.getElementById('res-table-body');
+            const refreshBtn = document.querySelector('.btn-refresh');
+
+            // 디버깅: 버튼 누를 때마다 콘솔에 현재 인지하는 ID를 찍어봅니다.
+            console.log("현재 브라우저가 인식한 유저 ID:", userAccount);
+
+            if (!userAccount || !tbody) {
+                console.error("사용자 계정 정보를 찾을 수 없습니다.");
+                return;
+            }
+
+            if (refreshBtn) {
+                refreshBtn.innerText = "조회 중... ⏳";
+                refreshBtn.disabled = true;
+            }
+
             try {
-                const [pendingRes, approvedRes] = await Promise.all([
-                    fetch('/api/v1/employee/reservations/pending').then(res => res.json()),
-                    fetch('/api/v1/employee/reservations/approved').then(res => res.json())
+                // 2. 캐시를 무시하고 서버의 최신 DB 정보를 직접 요청합니다.
+                const [pending, approved] = await Promise.all([
+                    fetch(`/api/v1/employee/reservations/pending?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()),
+                    fetch(`/api/v1/employee/reservations/approved?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json())
                 ]);
 
-                const allRes = [...pendingRes, ...approvedRes];
-                const tbody = document.getElementById('res-table-body');
-                tbody.innerHTML = '';
+                const allRes = [...pending, ...approved];
+                console.log("서버에서 받은 전체 데이터:", allRes);
 
-                allRes.filter(r => r.manager_account === userAccount).forEach(res => {
-                    const tr = document.createElement('tr');
-                    
-                    // [수정] 방문 시간 포맷팅 (초 단위 숫자로 올 경우 처리)
-                    let displayTime = res.visit_time || '-';
-                    if (typeof res.visit_time === 'number') {
-                        // 63360 같은 초 단위를 HH:MM 형식으로 변환
-                        const hours = Math.floor(res.visit_time / 3600);
-                        const minutes = Math.floor((res.visit_time % 3600) / 60);
-                        displayTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-                    } else if (typeof res.visit_time === 'string' && res.visit_time.includes(':')) {
-                        // '17:36:00' 형식을 '17:36'으로 자르기
-                        displayTime = res.visit_time.substring(0, 5);
-                    }
-
-                    let statusLabel = '';
-                    let statusClass = '';
-                    if (res.status === 'PENDING') { statusLabel = '⏳ 대기중'; statusClass = 'status-pending'; }
-                    else if (res.status === 'APPROVED') { statusLabel = '✅ 승인됨'; statusClass = 'status-approved'; }
-                    else { statusLabel = '❌ 반려됨'; statusClass = 'status-rejected'; }
-
-                    tr.innerHTML = `
-                        <td>${res.visitor_name}</td>  <td>${res.purpose}</td>
-                        <td>${res.visit_date}</td>
-                        <td>${displayTime}</td>        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
-                    `;
-                    tbody.appendChild(tr);
+                // 3. 필터링: DB의 manager_account와 현재 쿠키 ID를 대조합니다.
+                const myRes = allRes.filter(r => {
+                    const dbAcc = String(r.manager_account || "").trim().toLowerCase();
+                    const loginAcc = String(userAccount).trim().toLowerCase();
+                    return dbAcc === loginAcc;
                 });
+
+                // 4. 화면 갱신: 기존 내용을 지우고 새로 그립니다.
+                tbody.innerHTML = ''; 
+
+                if (myRes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">내 예약 내역이 없습니다.</td></tr>';
+                } else {
+                    myRes.forEach(res => {
+                        const tr = document.createElement('tr');
+                        
+                        const p = res.visitor_phone || '';
+                        const fPhone = p.length === 11 ? `${p.slice(0,3)}-${p.slice(3,7)}-${p.slice(7)}` : p;
+
+                        let fTime = '-';
+                        if (typeof res.visit_time === 'number') {
+                            const h = Math.floor(res.visit_time / 3600);
+                            const m = Math.floor((res.visit_time % 3600) / 60);
+                            fTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                        }
+
+                        let sLabel = '대기중', sClass = 'status-pending';
+                        if (res.status === 'APPROVED') { sLabel = '승인됨'; sClass = 'status-approved'; }
+                        else if (res.status === 'REJECTED') { sLabel = '반려됨'; sClass = 'status-rejected'; }
+
+                        tr.innerHTML = `
+                            <td>${res.visitor_name}</td>
+                            <td>${fPhone}</td>
+                            <td>${res.purpose}</td>
+                            <td>${res.visit_date}</td>
+                            <td>${fTime}</td>
+                            <td><span class="status-badge ${sClass}">${sLabel}</span></td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                    console.log("테이블 갱신 완료: ", myRes.length, "건");
+                }
             } catch (e) {
-                console.error("예약 목록 로드 실패:", e);
+                console.error("데이터 로드 중 에러 발생:", e);
+            } finally {
+                if (refreshBtn) {
+                    refreshBtn.innerText = "조회 🔄";
+                    refreshBtn.disabled = false;
+                }
             }
         }
 
-        // 페이지 로드 시 실행
+        // # 2. 페이지 로드 시 실행 (기존 로직 유지)
         window.onload = function() {
             loadReservationTables();
         };
