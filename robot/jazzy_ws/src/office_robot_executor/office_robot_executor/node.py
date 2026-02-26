@@ -4,10 +4,10 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import rclpy
+from geometry_msgs.msg import PoseStamped, Twist
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import Bool, String
 
 try:
@@ -18,9 +18,9 @@ except Exception:  # pragma: no cover - runtime environment dependent
 
 class OfficeRobotExecutor(Node):
     """
-    Minimal action-sequence executor node.
-    Subscribes: commands (std_msgs/String)
-    Publishes: status, event (std_msgs/String)
+    Action sequence executor.
+    Subscribes: commands (std_msgs/String), safety_lock (std_msgs/Bool), ai_link (std_msgs/Bool)
+    Publishes: status/event/display (std_msgs/String), cmd_vel stop burst (geometry_msgs/Twist)
     """
 
     def __init__(self) -> None:
@@ -28,7 +28,7 @@ class OfficeRobotExecutor(Node):
 
         self.declare_parameter("robot_name", "robot")
         self.declare_parameter("robot_id", 1)
-        self.declare_parameter("mock_mode", True)
+        self.declare_parameter("mock_mode", False)
         self.declare_parameter("use_nav2", True)
         self.declare_parameter("execution_delay_sec", 1.5)
         self.declare_parameter("initial_battery", 100.0)
@@ -43,6 +43,9 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("include_ai_link_in_status", True)
         self.declare_parameter("nav2_success_status_code", 4)
         self.declare_parameter("nav2_feedback_log_period_sec", 1.5)
+        self.declare_parameter("enable_display", True)
+        self.declare_parameter("display_topic", "display")
+        self.declare_parameter("guide_display_period_sec", 2.0)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -83,6 +86,13 @@ class OfficeRobotExecutor(Node):
         self.nav2_feedback_log_period_sec = (
             self.get_parameter("nav2_feedback_log_period_sec").get_parameter_value().double_value
         )
+        self.enable_display = (
+            self.get_parameter("enable_display").get_parameter_value().bool_value
+        )
+        self.display_topic = self.get_parameter("display_topic").get_parameter_value().string_value
+        self.guide_display_period_sec = (
+            self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -95,16 +105,20 @@ class OfficeRobotExecutor(Node):
         self._timeout_timer = None
         self._goal_target: Optional[Dict[str, Any]] = None
         self._last_nav_feedback: Optional[Dict[str, Any]] = None
-        self._last_feedback_log_at: float = 0.0
+        self._last_feedback_log_at = 0.0
         self._cancel_requested = False
         self._cancel_reason: Optional[str] = None
+        self._guide_display_timer = None
+        self._guide_display_toggle = False
         self._safety_locked = False
         self._ai_link_alive: Optional[bool] = None
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
+        self.display_pub = self.create_publisher(String, self.display_topic, 10)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
+
         safety_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -128,8 +142,10 @@ class OfficeRobotExecutor(Node):
 
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
-            f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic})."
+            f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
+            f"display_topic={self.display_topic})."
         )
+        self._publish_display("대기", "idle")
 
     def _publish_heartbeat(self) -> None:
         self._publish_status(self.current_status, {"note": "heartbeat"})
@@ -145,15 +161,13 @@ class OfficeRobotExecutor(Node):
             )
             return
 
-        command_type = str(payload.get("type", "")).upper()
+        command_type = str(payload.get("type", "")).upper().strip()
         if command_type in {"STOP", "PAUSE"}:
             self._set_safety_lock(True, source=f"command:{command_type}")
             return
-
         if command_type == "RESUME":
             self._set_safety_lock(False, source="command:RESUME")
             return
-
         if command_type == "CANCEL":
             self._cancel_active_sequence(reason=command_type)
             return
@@ -209,13 +223,13 @@ class OfficeRobotExecutor(Node):
         self._ai_link_alive = bool(msg.data)
         if previous is None or previous == self._ai_link_alive:
             return
-        state = "alive" if self._ai_link_alive else "dead"
-        self.get_logger().info(f"AI link state updated: {state}.")
+        self.get_logger().info(
+            f"AI link state updated: {'alive' if self._ai_link_alive else 'dead'}."
+        )
 
     def _set_safety_lock(self, enabled: bool, source: str) -> None:
         if self._safety_locked == enabled:
             return
-
         self._safety_locked = enabled
         if enabled:
             self._enter_safety_lock(source)
@@ -224,6 +238,7 @@ class OfficeRobotExecutor(Node):
 
     def _enter_safety_lock(self, source: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
+        self._stop_guide_display()
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -259,11 +274,13 @@ class OfficeRobotExecutor(Node):
         )
         self._publish_event("SAFETY_STOPPED", payload)
         self._publish_status("WAITING", payload)
+        self._publish_display("일시정지", "pause")
 
     def _exit_safety_lock(self, source: str) -> None:
         self._action_queue = []
         self._current_action = None
         self._clear_nav_goal_context()
+        self._stop_guide_display()
         self._cancel_requested = False
         self._cancel_reason = None
         self.current_status = "IDLE"
@@ -276,6 +293,7 @@ class OfficeRobotExecutor(Node):
         )
         self._publish_event("SAFETY_RESUMED", payload)
         self._publish_status("IDLE", payload)
+        self._publish_display("대기", "idle")
         self._current_task_id = None
 
     def _run_next_action(self) -> None:
@@ -292,16 +310,19 @@ class OfficeRobotExecutor(Node):
                         }
                     ),
                 )
+                self._publish_display("일시정지", "pause")
             else:
                 self.current_status = "IDLE"
                 self._publish_status("IDLE", self._task_id_payload())
+                self._publish_display("대기", "idle")
             self._clear_nav_goal_context()
+            self._stop_guide_display()
             self._current_task_id = None
             return
 
         action_msg = self._action_queue.pop(0)
         self._current_action = action_msg
-        action = str(action_msg.get("action", "")).upper()
+        action = str(action_msg.get("action", action_msg.get("type", ""))).upper().strip()
         params = action_msg.get("params", {}) or {}
         on_success = str(action_msg.get("on_success", "")).strip() or None
 
@@ -310,7 +331,7 @@ class OfficeRobotExecutor(Node):
             y = float(params.get("y", self.location[1]))
             self.location = (x, y)
             self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
-        elif action in {"DISPLAY_TEXT", "PAUSE"}:
+        elif action in {"DISPLAY_TEXT", "PAUSE", "QR_SCAN"}:
             self.current_status = "WAITING"
         elif action == "RESUME":
             self.current_status = "IDLE"
@@ -326,15 +347,29 @@ class OfficeRobotExecutor(Node):
             },
         )
 
+        if action == "LEAD_GUEST":
+            self._start_guide_display()
+        else:
+            self._stop_guide_display()
+            if action == "GOTO":
+                self._publish_display("배달 중", "delivery")
+            elif action == "DISPLAY_TEXT":
+                text = str(params.get("text", "")).strip() or "안내중"
+                self._publish_display(text, "display")
+            elif action == "QR_SCAN":
+                self._publish_display("QR 코드를 인증해주세요", "qr")
+            elif action == "PAUSE":
+                self._publish_display("일시정지", "pause")
+            elif action == "RESUME":
+                self._publish_display("대기", "idle")
+
         if action in {"PAUSE", "STOP"}:
             self._set_safety_lock(True, source=f"action:{action}")
             return
-
         if action == "RESUME":
             self._set_safety_lock(False, source="action:RESUME")
             self._finish_action_once(on_success)
             return
-
         if self._safety_locked:
             self._fail_current_action(
                 "safety_lock_active",
@@ -345,16 +380,19 @@ class OfficeRobotExecutor(Node):
                 },
             )
             return
-
         if action == "CANCEL":
             self._cancel_active_sequence(reason=action)
+            return
+        if action == "QR_SCAN":
+            self._action_timer = self.create_timer(
+                self.execution_delay_sec, lambda: self._finish_action_once(on_success)
+            )
             return
 
         if action in {"GOTO", "LEAD_GUEST"} and not self.mock_mode:
             if not self.use_nav2:
                 self._fail_current_action(
-                    "nav2_disabled",
-                    {"status_code": 501, "status_text": "nav2 disabled"},
+                    "nav2_disabled", {"status_code": 501, "status_text": "nav2 disabled"}
                 )
                 return
             if not self._execute_nav2_goal(params):
@@ -383,14 +421,30 @@ class OfficeRobotExecutor(Node):
         )
 
     def _finish_action_once(self, on_success: Optional[str]) -> None:
+        current_action = self._current_action or {}
+        action_name = str(
+            current_action.get("action", current_action.get("type", ""))
+        ).upper().strip()
+        event_extra: Dict[str, Any] = {}
+        if action_name == "QR_SCAN":
+            params = current_action.get("params", {}) or {}
+            scanned_data = params.get("scanned_data")
+            if scanned_data is not None:
+                event_extra["scanned_data"] = scanned_data
+
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
         self._clear_nav_goal_context()
+        if action_name == "LEAD_GUEST":
+            self._stop_guide_display()
         self._current_action = None
         if on_success:
-            self._publish_event(on_success, self._task_id_payload())
-            self._publish_status(self.current_status, self._task_id_payload(), event=on_success)
+            payload = self._task_id_payload(event_extra)
+            self._publish_event(on_success, payload)
+            self._publish_status(self.current_status, payload, event=on_success)
+            if on_success in {"ARRIVED_AT_DESTINATION", "ARRIVED_AT_BASE"}:
+                self._publish_display("도착완료", "arrived")
         self._run_next_action()
 
     def _extract_task_id(self, payload: Dict[str, Any]) -> Optional[Any]:
@@ -414,40 +468,30 @@ class OfficeRobotExecutor(Node):
 
     @staticmethod
     def _norm_command_id(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        if isinstance(value, bool):
+        if value is None or isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
-            if isinstance(value, bool):
-                return None
             return str(int(value))
         if isinstance(value, str):
-            v = value.strip()
-            if not v:
-                return None
-            return v
+            normalized = value.strip()
+            return normalized or None
         return None
 
     def _is_for_this_robot(self, payload: Dict[str, Any]) -> bool:
         command_robot_id = self._norm_command_id(payload.get("robot_id"))
-        command_robot_name = str(payload.get("robot_name", "")).strip() if payload.get("robot_name") else ""
+        command_robot_name = (
+            str(payload.get("robot_name", "")).strip() if payload.get("robot_name") else ""
+        )
 
         self_robot_id = str(self.robot_id)
         self_robot_name = str(self.robot_name or "")
 
-        robot_id_only = command_robot_id is not None
-        robot_name_only = bool(command_robot_name)
-
-        if not robot_id_only and not robot_name_only:
+        if command_robot_id is None and not command_robot_name:
             return True
-
-        if robot_id_only and command_robot_id == self_robot_id:
+        if command_robot_id is not None and command_robot_id == self_robot_id:
             return True
-
-        if robot_name_only and command_robot_name == self_robot_name:
+        if command_robot_name and command_robot_name == self_robot_name:
             return True
-
         return False
 
     def _execute_nav2_goal(self, params: Dict[str, Any]) -> bool:
@@ -471,16 +515,13 @@ class OfficeRobotExecutor(Node):
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = self.frame_id
-        # Use zero timestamp for cross-host execution (PC executor -> robot Nav2)
-        # to avoid clock skew causing transform lookup failures.
+        # Cross-host mode: avoid clock skew issues.
         goal.pose.header.stamp.sec = 0
         goal.pose.header.stamp.nanosec = 0
         goal.pose.pose.position.x = x
         goal.pose.pose.position.y = y
-        qz = math.sin(yaw * 0.5)
-        qw = math.cos(yaw * 0.5)
-        goal.pose.pose.orientation.z = qz
-        goal.pose.pose.orientation.w = qw
+        goal.pose.pose.orientation.z = math.sin(yaw * 0.5)
+        goal.pose.pose.orientation.w = math.cos(yaw * 0.5)
 
         send_ts = time.time()
         self._goal_target = {
@@ -533,7 +574,6 @@ class OfficeRobotExecutor(Node):
         if (now - self._last_feedback_log_at) < self.nav2_feedback_log_period_sec:
             return
         self._last_feedback_log_at = now
-
         self.get_logger().info(
             "Nav2 feedback "
             f"(task_id={self._current_task_id}, distance_remaining={snapshot.get('distance_remaining')}, "
@@ -543,7 +583,7 @@ class OfficeRobotExecutor(Node):
             f"current_pose=({snapshot.get('current_x')}, {snapshot.get('current_y')}))"
         )
 
-    def _on_nav_goal_response(self, future) -> None:
+    def _on_nav_goal_response(self, future: Any) -> None:
         try:
             goal_handle = future.result()
         except Exception as exc:
@@ -554,10 +594,7 @@ class OfficeRobotExecutor(Node):
             )
             self._fail_current_action(
                 "goal_send_exception",
-                {
-                    "failure_detail": "goal_send_exception",
-                    "error": str(exc),
-                },
+                {"failure_detail": "goal_send_exception", "error": str(exc)},
             )
             return
 
@@ -567,10 +604,7 @@ class OfficeRobotExecutor(Node):
             self.get_logger().warn(
                 f"Nav2 goal rejected (task_id={self._current_task_id}, action={self.nav2_action_name})."
             )
-            self._fail_current_action(
-                "goal_rejected",
-                {"failure_detail": "goal_rejected"},
-            )
+            self._fail_current_action("goal_rejected", {"failure_detail": "goal_rejected"})
             return
 
         self._current_goal_handle = goal_handle
@@ -580,7 +614,7 @@ class OfficeRobotExecutor(Node):
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._on_nav_goal_result)
 
-    def _on_nav_goal_result(self, future) -> None:
+    def _on_nav_goal_result(self, future: Any) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         feedback_snapshot = self._last_nav_feedback
         self._stop_timeout_watchdog()
@@ -592,10 +626,7 @@ class OfficeRobotExecutor(Node):
             self.get_logger().error(f"Nav2 result failed: {exc}")
             self._fail_current_action(
                 "goal_result_exception",
-                {
-                    "failure_detail": "goal_result_exception",
-                    "error": str(exc),
-                },
+                {"failure_detail": "goal_result_exception", "error": str(exc)},
             )
             self._cancel_requested = False
             self._cancel_reason = None
@@ -625,20 +656,19 @@ class OfficeRobotExecutor(Node):
             self._finish_action_once(on_success)
             self._cancel_requested = False
             self._cancel_reason = None
-        else:
-            detail = self._build_nav2_result_detail(status_code, result)
-            self.get_logger().error(
-                f"Nav2 goal failed (task_id={self._current_task_id}, status={detail.get('status_text', status_code)}, "
-                f"error_code={detail.get('error_code')}, error_msg={detail.get('error_msg')}, "
-                f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})"
-            )
-            if feedback_snapshot:
-                self.get_logger().error(
-                    f"Last Nav2 feedback before failure: {feedback_snapshot}"
-                )
-            self._fail_current_action(f"goal_failed_status_{status_code}", detail)
-            self._cancel_requested = False
-            self._cancel_reason = None
+            return
+
+        detail = self._build_nav2_result_detail(status_code, result)
+        self.get_logger().error(
+            f"Nav2 goal failed (task_id={self._current_task_id}, status={detail.get('status_text', status_code)}, "
+            f"error_code={detail.get('error_code')}, error_msg={detail.get('error_msg')}, "
+            f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})"
+        )
+        if feedback_snapshot:
+            self.get_logger().error(f"Last Nav2 feedback before failure: {feedback_snapshot}")
+        self._fail_current_action(f"goal_failed_status_{status_code}", detail)
+        self._cancel_requested = False
+        self._cancel_reason = None
 
     def _start_timeout_watchdog(self) -> None:
         self._stop_timeout_watchdog()
@@ -653,36 +683,34 @@ class OfficeRobotExecutor(Node):
     def _check_goal_timeout(self) -> None:
         if self._goal_started_at is None:
             return
-        if (time.time() - self._goal_started_at) > self.goal_timeout_sec:
-            elapsed_sec = self._goal_elapsed_sec()
-            if self._current_goal_handle is not None:
-                try:
-                    self.get_logger().warn(
-                        f"Nav2 timeout cancel requested (task_id={self._current_task_id}, "
-                        f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
-                    )
-                    cancel_future = self._current_goal_handle.cancel_goal_async()
-                    cancel_future.add_done_callback(
-                        lambda f: self._on_nav_cancel_response(f, "timeout")
-                    )
-                except Exception as exc:
-                    self.get_logger().warn(f"Goal cancel request failed during timeout: {exc}")
-            self._publish_zero_cmd_vel_burst()
-            self._current_goal_handle = None
-            self.get_logger().error(
-                f"Nav2 goal timeout (task_id={self._current_task_id}, elapsed_sec={elapsed_sec:.3f}, "
-                f"target={self._goal_target})."
-            )
-            self._fail_current_action(
-                "goal_timeout",
-                {
-                    "status_code": 408,
-                    "status_text": "goal timeout",
-                },
-            )
+        if (time.time() - self._goal_started_at) <= self.goal_timeout_sec:
+            return
+
+        elapsed_sec = self._goal_elapsed_sec()
+        if self._current_goal_handle is not None:
+            try:
+                self.get_logger().warn(
+                    f"Nav2 timeout cancel requested (task_id={self._current_task_id}, "
+                    f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                )
+                cancel_future = self._current_goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(lambda f: self._on_nav_cancel_response(f, "timeout"))
+            except Exception as exc:
+                self.get_logger().warn(f"Goal cancel request failed during timeout: {exc}")
+        self._publish_zero_cmd_vel_burst()
+        self._current_goal_handle = None
+        self.get_logger().error(
+            f"Nav2 goal timeout (task_id={self._current_task_id}, elapsed_sec={elapsed_sec:.3f}, "
+            f"target={self._goal_target})."
+        )
+        self._fail_current_action(
+            "goal_timeout",
+            {"status_code": 408, "status_text": "goal timeout"},
+        )
 
     def _cancel_active_sequence(self, reason: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
+        self._stop_guide_display()
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -708,10 +736,7 @@ class OfficeRobotExecutor(Node):
         self._publish_event(
             "SEQUENCE_CANCELED",
             self._task_id_payload(
-                {
-                    "reason": reason,
-                    "reason_code": self._normalize_reason_code(reason),
-                }
+                {"reason": reason, "reason_code": self._normalize_reason_code(reason)}
             ),
         )
         self._action_queue = []
@@ -722,23 +747,19 @@ class OfficeRobotExecutor(Node):
             self._publish_status(
                 "WAITING",
                 self._task_id_payload(
-                    {
-                        "reason": "safety_stop",
-                        "reason_code": "safety_locked",
-                    }
+                    {"reason": "safety_stop", "reason_code": "safety_locked"}
                 ),
             )
+            self._publish_display("일시정지", "pause")
             return
 
         self.current_status = "IDLE"
         cancel_status = self._task_id_payload(
-            {
-                "reason": reason,
-                "reason_code": self._normalize_reason_code(reason),
-            }
+            {"reason": reason, "reason_code": self._normalize_reason_code(reason)}
         )
         self._current_task_id = None
         self._publish_status("IDLE", cancel_status)
+        self._publish_display("대기", "idle")
 
     def _publish_zero_cmd_vel_burst(self) -> None:
         if self.stop_publish_count <= 0:
@@ -767,7 +788,7 @@ class OfficeRobotExecutor(Node):
         nanosec = getattr(duration_msg, "nanosec", None)
         if sec is None or nanosec is None:
             return None
-        return float(sec) + (float(nanosec) * 1e-9)
+        return float(sec) + float(nanosec) * 1e-9
 
     def _goal_elapsed_sec(self) -> float:
         if self._goal_started_at is None:
@@ -778,6 +799,25 @@ class OfficeRobotExecutor(Node):
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
+
+    def _start_guide_display(self) -> None:
+        self._stop_guide_display()
+        self._guide_display_toggle = False
+        self._publish_display("Follow me", "guide")
+
+        period = max(0.5, self.guide_display_period_sec)
+
+        def _tick() -> None:
+            self._guide_display_toggle = not self._guide_display_toggle
+            text = "안내중" if self._guide_display_toggle else "Follow me"
+            self._publish_display(text, "guide")
+
+        self._guide_display_timer = self.create_timer(period, _tick)
+
+    def _stop_guide_display(self) -> None:
+        if self._guide_display_timer is not None:
+            self._guide_display_timer.cancel()
+            self._guide_display_timer = None
 
     def _on_nav_cancel_response(self, future: Any, source: str) -> None:
         try:
@@ -814,27 +854,21 @@ class OfficeRobotExecutor(Node):
 
     def _build_nav2_result_detail(self, status_code: int, result: Any) -> Dict[str, Any]:
         detail: Dict[str, Any] = self._task_id_payload(
-            {
-                "status_code": status_code,
-                "status_text": self._goal_status_text(status_code),
-            }
+            {"status_code": status_code, "status_text": self._goal_status_text(status_code)}
         )
 
         result_data = getattr(result, "result", None)
         if result_data is None:
             return detail
-
         if hasattr(result_data, "error_code"):
             detail["error_code"] = int(getattr(result_data, "error_code"))
         if hasattr(result_data, "error_msg"):
             detail["error_msg"] = str(getattr(result_data, "error_msg"))
-
         return detail
 
-    def _fail_current_action(
-        self, reason: str, extra: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def _fail_current_action(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         self._stop_timeout_watchdog()
+        self._stop_guide_display()
         self._action_queue = []
         self._current_action = None
         self._current_goal_handle = None
@@ -843,10 +877,7 @@ class OfficeRobotExecutor(Node):
         self._cancel_reason = None
         self.current_status = "ERROR"
         payload = self._task_id_payload(
-            {
-                "reason": reason,
-                "reason_code": self._normalize_reason_code(reason),
-            }
+            {"reason": reason, "reason_code": self._normalize_reason_code(reason)}
         )
         if extra is not None:
             payload.update(extra)
@@ -858,22 +889,18 @@ class OfficeRobotExecutor(Node):
             self._publish_status(
                 "WAITING",
                 self._task_id_payload(
-                    {
-                        "reason": "safety_stop",
-                        "reason_code": "safety_locked",
-                    }
+                    {"reason": "safety_stop", "reason_code": "safety_locked"}
                 ),
             )
+            self._publish_display("일시정지", "pause")
             return
         self.current_status = "IDLE"
         idle_status = self._task_id_payload(
-            {
-                "reason": "recover_after_error",
-                "reason_code": "recover_after_error",
-            }
+            {"reason": "recover_after_error", "reason_code": "recover_after_error"}
         )
         self._current_task_id = None
         self._publish_status("IDLE", idle_status)
+        self._publish_display("대기", "idle")
 
     def _publish_status(self, status: str, extra: Dict[str, Any], event: Optional[str] = None) -> None:
         data = {
@@ -892,8 +919,25 @@ class OfficeRobotExecutor(Node):
         self.status_pub.publish(String(data=json.dumps(data)))
 
     def _publish_event(self, event: str, extra: Dict[str, Any]) -> None:
-        data = {"robot_id": int(self.robot_id), "robot_name": self.robot_name, "event": event, **extra}
+        data = {
+            "robot_id": int(self.robot_id),
+            "robot_name": self.robot_name,
+            "event": event,
+            **extra,
+        }
         self.event_pub.publish(String(data=json.dumps(data)))
+
+    def _publish_display(self, text: str, icon: str = "info") -> None:
+        if not self.enable_display:
+            return
+        payload = {
+            "robot_id": int(self.robot_id),
+            "robot_name": self.robot_name,
+            "text": text,
+            "icon": icon,
+            "ts": time.time(),
+        }
+        self.display_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
     @staticmethod
     def _extract_actions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -901,17 +945,14 @@ class OfficeRobotExecutor(Node):
             return payload["payload"]
         if payload.get("type") == "ACTION_SEQUENCE" and isinstance(payload.get("actions"), list):
             return payload["actions"]
-        if "action" in payload:
+        if "action" in payload or "type" in payload:
             return [payload]
         if "task_type" in payload and "destination" in payload:
             destination = payload.get("destination") or {}
             return [
                 {
                     "action": "GOTO",
-                    "params": {
-                        "x": destination.get("x", 0.0),
-                        "y": destination.get("y", 0.0),
-                    },
+                    "params": {"x": destination.get("x", 0.0), "y": destination.get("y", 0.0)},
                 }
             ]
         return []
@@ -919,9 +960,12 @@ class OfficeRobotExecutor(Node):
     @staticmethod
     def _parse_payload(raw: str) -> Dict[str, Any]:
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError:
             return {}
+        if not isinstance(parsed, dict):
+            return {}
+        return parsed
 
 
 def main() -> None:

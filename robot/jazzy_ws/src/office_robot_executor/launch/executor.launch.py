@@ -21,6 +21,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("safety_lock_topic", default_value="safety_lock"),
             DeclareLaunchArgument("ai_link_topic", default_value="ai_link"),
             DeclareLaunchArgument("include_ai_link_in_status", default_value="true"),
+            DeclareLaunchArgument("enable_display", default_value="true"),
+            DeclareLaunchArgument("display_topic", default_value="display"),
+            DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             Node(
                 package="office_robot_executor",
                 executable="office_robot_executor_node",
@@ -41,6 +44,9 @@ def generate_launch_description() -> LaunchDescription:
                         "safety_lock_topic": LaunchConfiguration("safety_lock_topic"),
                         "ai_link_topic": LaunchConfiguration("ai_link_topic"),
                         "include_ai_link_in_status": LaunchConfiguration("include_ai_link_in_status"),
+                        "enable_display": LaunchConfiguration("enable_display"),
+                        "display_topic": LaunchConfiguration("display_topic"),
+                        "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),
                     }
                 ],
             ),
