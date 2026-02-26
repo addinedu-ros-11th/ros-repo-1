@@ -378,7 +378,7 @@
             const res = await fetch('/api/v1/admin/visitors');
             const data = await res.json();
 
-            // 백엔드가 분류해서 준 pending 리스트
+            // 1. 승인 대기 목록 (PENDING 상태만 표시)
             document.getElementById('pending-visitor-list').innerHTML = data.pending.map(v => `
                 <tr>
                     <td>${v.visitor}</td>
@@ -386,13 +386,13 @@
                     <td>${v.date}</td>
                     <td>${v.host}</td>
                     <td>
-                        <button class="btn-approve" onclick="updateStatus(${v.id}, 'VERIFIED')">승인</button>
+                        <button class="btn-approve" onclick="updateStatus(${v.id}, 'APPROVED')">승인</button>
                         <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">거절</button>
                     </td>
                 </tr>
             `).join('');
 
-            // 백엔드가 분류해서 준 confirmed 리스트
+            // 2. 최종 예약 확정 현황 (APPROVED 상태만 표시) - 요구사항 3, 4 충족
             document.getElementById('visitor-list').innerHTML = data.confirmed.map(v => `
                 <tr>
                     <td>${v.date}</td>
@@ -401,6 +401,30 @@
                     <td>${v.visitor}</td>
                 </tr>
             `).join('');
+        }
+
+        // 상태 업데이트 함수
+        async function updateStatus(resId, status) {
+            // 1. resId가 undefined인지 로그로 먼저 확인해보세요.
+            console.log("수정할 예약 ID:", resId); 
+            
+            if (!confirm(`예약을 ${status === 'APPROVED' ? '승인' : '반려'}하시겠습니까?`)) return;
+
+            const response = await fetch('/api/v1/admin/reservations/decision', { // 이 주소가 이제 admin_routes.py와 연결됨
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: resId,
+                        status: status
+                    })
+                });
+
+            if (response.ok) {
+                alert("DB 수정 성공!");
+                location.reload(); // 일단 수정 확인을 위해 페이지 새로고침
+            } else {
+                alert("DB 수정 실패");
+            }
         }
 
         /* 3. 시스템 로그 */

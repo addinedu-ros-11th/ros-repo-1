@@ -148,7 +148,8 @@ body, html {
 .status-approved { background: #d4edda; color: #155724; }
 .status-rejected { background: #f8d7da; color: #721c24; }
 .res-table th:nth-child(1) { width: 15%; } /* 방문객 */
-.res-table th:nth-child(2) { width: 30%; } /* 목적 */
-.res-table th:nth-child(3) { width: 20%; } /* 날짜 */
-.res-table th:nth-child(4) { width: 15%; } /* 시간 */
-.res-table th:nth-child(5) { width: 20%; } /* 상태 */
+.res-table th:nth-child(2) { width: 20%; } /* 연락처*/
+.res-table th:nth-child(3) { width: 15%; } /* 목적 */
+.res-table th:nth-child(4) { width: 15%; } /* 날짜*/
+.res-table th:nth-child(5) { width: 15%; } /* 시간*/
+.res-table th:nth-child(6) { width: 20%; } /* 상태 */

@@ -83,14 +83,46 @@ async def get_office_status():
 # ---------------------------------------------------------
 @router.get("/visitors")
 async def get_visitor_management():
-    """프론트에서 필터링할 필요 없게 아예 나눠서 전달"""
-    all_visitors = await container.admin_repository.get_visitor_dashboard_data()
+    # 1. 리포지토리에서 각각의 목록을 가져옴
+    pending_raw = await container.reservation_repository.get_pending_list() # status='PENDING'만 조회
+    approved_raw = await container.reservation_repository.get_approved_list() # status='APPROVED'만 조회
     
-    # 백엔드에서 비즈니스 로직 처리 (상태별 분류)
+    # 2. 프론트엔드 필드명에 맞게 매핑
+    def transform(res_list):
+        return [{
+            "id": r['id'],
+            "visitor": r['visitor_name'],
+            "purpose": r['purpose'],
+            "date": str(r['visit_date']),
+            "time": str(r['visit_time']) if r.get('visit_time') else "-",
+            "host": r['manager_name'],
+            "status": r['status']
+        } for r in res_list]
+
     return {
-        "pending": [v for v in all_visitors if v['status'] == 'PENDING'],
-        "confirmed": [v for v in all_visitors if v['status'] != 'PENDING']
+        "pending": transform(pending_raw),
+        "confirmed": transform(approved_raw)
     }
+
+@router.post("/reservations/decision")
+async def decide_reservation(request: Dict[str, Any]):
+    """
+    관리자가 보낸 ID와 상태값으로 DB를 업데이트함
+    (사용자님 말씀대로 admin_routes에서 관리하는 것이 맞습니다)
+    """
+    res_id = request.get("id")      # 수정할 예약의 고유 번호
+    status = request.get("status")  # 'APPROVED' 또는 'REJECTED'
+
+    if not res_id or not status:
+        raise HTTPException(status_code=400, detail="ID 또는 상태값이 누락되었습니다.")
+
+    try:
+        # 리포지토리의 update_status 함수 호출 (UPDATE reservations SET status = ...)
+        await container.reservation_repository.update_status(res_id, status)
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Update Error: {e}")
+        raise HTTPException(status_code=500, detail="DB 수정 중 오류 발생")
 
 # ---------------------------------------------------------
 # 3. 시스템 동작 로그 (가독성 좋게 포맷팅)

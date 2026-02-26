@@ -127,12 +127,3 @@ async def apply_reservation(request: Dict[str, Any]):
         "status": "PENDING"
     })
     return {"status": "success", "id": res_id}
-
-@router.post("/reservations/decision")
-async def decide_reservation(request: Dict[str, Any]):
-    """승인(APPROVED) 또는 반려(REJECTED) 결정"""
-    await container.reservation_repository.update_status(
-        request['id'], 
-        request['status']
-    )
-    return {"status": "success"}
