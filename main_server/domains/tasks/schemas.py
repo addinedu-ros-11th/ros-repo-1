@@ -14,6 +14,7 @@ class TaskType(str, Enum):
     GUIDE_GUEST = "GUIDE_GUEST"         # 방문객 가이드
     RETURN = "RETURN"                   # 복귀 모드
     PATROL = "PATROL"                   # 순찰 모드
+    MANUAL_MOVE = "MANUAL_MOVE"         # 수동 좌표 이동 (테스트용)
 
 class TaskStatus(str, Enum):
     """태스크의 생명주기 상태 (SR-012)"""

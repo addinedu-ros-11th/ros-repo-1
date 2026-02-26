@@ -34,5 +34,10 @@ TASK_SCENARIO_MAP = {
         "model": GuideGuestScenario,
         "initial_destination": "waiting_area", # 방문객 대기 장소 (가정)
         "priority": 1,
+    },
+    "MANUAL_MOVE": {
+        "model": TaskScenario, # 별도 필드 검증 없이 통과
+        "initial_destination": None, # 좌표가 직접 주어짐
+        "priority": 1,
     }
 }
