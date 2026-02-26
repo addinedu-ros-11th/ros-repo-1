@@ -246,28 +246,19 @@ INSERT INTO `Products` (`name`, `type`, `stock_quantity`, `image_url`) VALUES
 UNLOCK TABLES;
 
 
-DROP TABLE IF EXISTS 'reservations';
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE IF 'reservations' (
-  'id' INT AUTO_INCREMENT PRIMARY KEY,
+DROP TABLE IF EXISTS `reservations`;
 
-  -- 담당자 정보 (쿠키의 user_account와 user_name에 대응)
-  'manager_account' VARCHAR(50) NOT NULL COMMENT '담당자 아이디 (user.account)',
-  'manager_name' VARCHAR(30) NOT NULL COMMENT '담당자 이름 (user.name)',
-
-  -- 방문객 정보
-  'visitor_name' VARCHAR(30) NOT NULL,
-  'visitor_phone' VARCHAR(15) NOT NULL,
-  'purpose' VARCHAR(100),
-
-  -- 예약 일시
-  'visit_date' DATE NOT NULL,
-  'visit_time' TIME,
-
-  -- 상태 및 생성일
-  'status' ENUM('PENDING', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
-  'created_at' TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS `reservations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `manager_account` VARCHAR(50) NOT NULL COMMENT '담당자 아이디 (user.account)',
+  `manager_name` VARCHAR(30) NOT NULL COMMENT '담당자 이름 (user.name)',
+  `visitor_name` VARCHAR(30) NOT NULL,
+  `visitor_phone` VARCHAR(15) NOT NULL,
+  `purpose` VARCHAR(100),
+  `visit_date` DATE NOT NULL,
+  `visit_time` TIME,
+  `status` ENUM('PENDING', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --

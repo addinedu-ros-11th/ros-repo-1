@@ -435,20 +435,27 @@
         async function updateStatus(resId, status) {
             if (!confirm(`예약을 ${status === 'APPROVED' ? '승인' : '반려'}하시겠습니까?`)) return;
 
-            const response = await fetch('/api/v1/admin/reservations/decision', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: resId, // 리포지토리에서 int로 변환하므로 그대로 전달
-                    status: status // 'APPROVED' 또는 'REJECTED' 전달
-                })
-            });
+            try {
+                const response = await fetch('/api/v1/admin/reservations/decision', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: resId,
+                        status: status // 'APPROVED' 또는 'REJECTED'
+                    })
+                });
 
-            if (response.ok) {
-                alert("처리가 완료되었습니다.");
-                fetchVisitors(); // 페이지 새로고침 대신 목록만 새로고침 권장
-            } else {
-                alert("처리에 실패했습니다.");
+                if (response.ok) {
+                    alert("처리가 완료되었습니다.");
+                    // [핵심] 반드시 await를 붙여서 DB 반영이 끝난 후 목록을 가져오게 합니다.
+                    await fetchVisitors(); 
+                } else {
+                    const errorData = await response.json();
+                    alert("처리에 실패했습니다: " + (errorData.detail || "알 수 없는 오류"));
+                }
+            } catch (error) {
+                console.error("오류 발생:", error);
+                alert("서버와 통신 중 오류가 발생했습니다.");
             }
         }
 
