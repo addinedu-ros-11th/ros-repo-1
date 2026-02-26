@@ -51,6 +51,24 @@ class BaseRepository:
                 await conn.commit()  # 변경 사항 확정
                 print(f"DEBUG: Execute Write Success - Query: {query}")
 
+    async def _execute_with_retry(self, query: str, params: Optional[Tuple] = None, fetch: str = "all") -> Any:
+        """1412 에러 발생 시 재시도하는 전용 메서드"""
+        import asyncio
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 기존 _execute 로직과 동일하지만 내부에서 호출
+                async with Database.get_connection() as conn:
+                    async with conn.cursor(aiomysql.DictCursor) as cursor:
+                        await cursor.execute(query, params or ())
+                        if fetch == "one": return await cursor.fetchone()
+                        return await cursor.fetchall()
+            except aiomysql.OperationalError as e:
+                if e.args[0] == 1412 and attempt < max_retries - 1:
+                    await asyncio.sleep(0.2)
+                    continue
+                raise e
+
     async def get_by_id(self, item_id: int) -> Optional[ModelType]:
         """ID로 단일 항목을 조회합니다."""
         query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"

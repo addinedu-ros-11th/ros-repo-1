@@ -380,21 +380,24 @@
         }
 
         /* 2. 방문객 예약 현황 */
+        let isFetchingVisitors = false; // 중복 요청 방지 플래그
+
         async function fetchVisitors() {
-            console.log("방문객 데이터 업데이트 시작...");
+            if (isFetchingVisitors) return; // 이미 데이터를 가져오는 중이면 무시
+            isFetchingVisitors = true;
+            
+            console.log("데이터 업데이트 시작...");
             
             try {
-                // 중복 fetch 제거: 딱 한 번만 호출합니다.
                 const res = await fetch('/api/v1/admin/visitors');
                 if (!res.ok) throw new Error("서버 응답 오류");
                 
                 const data = await res.json();
-                console.log("받아온 데이터:", data);
 
-                // 1. 승인 대기 목록 (신규 신청) 렌더링
-                const pendingTable = document.getElementById('pending-visitor-list');
+                // 1. 승인 대기 목록 (PENDING만 출력)
+                const pendingBody = document.getElementById('pending-visitor-list');
                 if (data.pending && data.pending.length > 0) {
-                    pendingTable.innerHTML = data.pending.map(v => `
+                    pendingBody.innerHTML = data.pending.map(v => `
                         <tr>
                             <td>${v.visitor}</td>
                             <td>${v.purpose}</td>
@@ -407,13 +410,13 @@
                         </tr>
                     `).join('');
                 } else {
-                    pendingTable.innerHTML = '<tr><td colspan="5">대기 중인 신청이 없습니다.</td></tr>';
+                    pendingBody.innerHTML = '<tr><td colspan="5">대기 중인 신청이 없습니다.</td></tr>';
                 }
 
-                // 2. 최종 예약 확정 현황 렌더링
-                const confirmedTable = document.getElementById('visitor-list');
+                // 2. 최종 예약 확정 현황 (APPROVED만 출력)
+                const confirmedBody = document.getElementById('visitor-list');
                 if (data.confirmed && data.confirmed.length > 0) {
-                    confirmedTable.innerHTML = data.confirmed.map(v => `
+                    confirmedBody.innerHTML = data.confirmed.map(v => `
                         <tr>
                             <td>${v.date}</td>
                             <td>${v.time}</td>
@@ -422,12 +425,13 @@
                         </tr>
                     `).join('');
                 } else {
-                    confirmedTable.innerHTML = '<tr><td colspan="4">확정된 예약이 없습니다.</td></tr>';
+                    confirmedBody.innerHTML = '<tr><td colspan="4">확정된 예약이 없습니다.</td></tr>';
                 }
 
-                console.log("업데이트 완료!");
             } catch (e) {
                 console.error("데이터 로드 실패:", e);
+            } finally {
+                isFetchingVisitors = false; // 요청이 끝났으므로 다시 클릭 가능하게 설정
             }
         }
 
@@ -439,23 +443,19 @@
                 const response = await fetch('/api/v1/admin/reservations/decision', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        id: resId,
-                        status: status // 'APPROVED' 또는 'REJECTED'
-                    })
+                    body: JSON.stringify({ id: resId, status: status })
                 });
 
                 if (response.ok) {
                     alert("처리가 완료되었습니다.");
-                    // [핵심] 반드시 await를 붙여서 DB 반영이 끝난 후 목록을 가져오게 합니다.
+                    // 버튼 연타를 방지하기 위해 isFetchingVisitors를 초기화하고 강제 호출
+                    isFetchingVisitors = false; 
                     await fetchVisitors(); 
                 } else {
-                    const errorData = await response.json();
-                    alert("처리에 실패했습니다: " + (errorData.detail || "알 수 없는 오류"));
+                    alert("처리에 실패했습니다.");
                 }
             } catch (error) {
-                console.error("오류 발생:", error);
-                alert("서버와 통신 중 오류가 발생했습니다.");
+                alert("통신 오류가 발생했습니다.");
             }
         }
 

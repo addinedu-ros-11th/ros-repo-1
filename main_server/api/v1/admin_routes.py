@@ -82,27 +82,37 @@ async def get_office_status():
 # 2. 방문객 예약 관리 (PENDING과 나머지를 백엔드에서 분리)
 # ---------------------------------------------------------
 @router.get("/visitors")
-async def get_visitor_management():
-    # 1. 리포지토리에서 각각의 목록을 가져옴
-    pending_raw = await container.reservation_repository.get_pending_list() # status='PENDING'만 조회
-    approved_raw = await container.reservation_repository.get_approved_list() # status='APPROVED'만 조회
-    
-    # 2. 프론트엔드 필드명에 맞게 매핑
-    def transform(res_list):
-        return [{
-            "id": r['id'],
-            "visitor": r['visitor_name'],
-            "purpose": r['purpose'],
-            "date": str(r['visit_date']),
-            "time": str(r['visit_time']) if r.get('visit_time') else "-",
-            "host": r['manager_name'],
-            "status": r['status']
-        } for r in res_list]
+async def get_visitors():
+    # DB에서 원본 데이터 가져오기
+    pending_raw = await container.reservation_repository.get_pending_list()
+    approved_raw = await container.reservation_repository.get_approved_list()
 
-    return {
-        "pending": transform(pending_raw),
-        "confirmed": transform(approved_raw)
-    }
+    # PENDING 상태인 것만 확실하게 필터링 (REJECTED 제외)
+    pending_data = [
+        {
+            "id": v.get("id"),
+            "visitor": v.get("visitor_name"),
+            "purpose": v.get("purpose"),
+            "date": str(v.get("visit_date")),
+            "host": v.get("manager_name"),
+            "status": v.get("status")
+        }
+        for v in pending_raw if v.get("status") == "PENDING" # 여기서 REJECTED를 한 번 더 거름
+    ]
+
+    confirmed_data = [
+        {
+            "id": v.get("id"),
+            "visitor": v.get("visitor_name"),
+            "purpose": v.get("purpose"),
+            "date": str(v.get("visit_date")),
+            "time": str(v.get("visit_time")),
+            "host": v.get("manager_name")
+        }
+        for v in approved_raw if v.get("status") == "APPROVED"
+    ]
+
+    return {"pending": pending_data, "confirmed": confirmed_data}
 
 @router.post("/reservations/decision")
 async def decide_reservation(request_data: Dict[str, Any]):

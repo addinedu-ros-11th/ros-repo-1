@@ -19,16 +19,17 @@ class MySQLReservationRepository(BaseRepository):
     def __init__(self):
         super().__init__(table_name="reservations", model=ReservationModel, pk_name="id")
 
+    # mysql_reservation_repository.py
     async def get_pending_list(self) -> List[Dict[str, Any]]:
-        """승인 대기 중인 목록 조회 (신규 신청)"""
         query = "SELECT * FROM reservations WHERE status = 'PENDING' ORDER BY created_at DESC"
-        return await self._execute(query, fetch="all")
+        # _execute 대신 _execute_with_retry 사용
+        return await self._execute_with_retry(query, fetch="all")
 
     async def get_approved_list(self) -> List[Dict[str, Any]]:
-        """최종 예약 확정 현황 조회"""
         query = "SELECT * FROM reservations WHERE status = 'APPROVED' ORDER BY visit_date ASC"
-        return await self._execute(query, fetch="all")
-
+        # _execute 대신 _execute_with_retry 사용
+        return await self._execute_with_retry(query, fetch="all")
+    
     async def update_status(self, res_id: int, status: str):
         """승인 또는 반려 처리"""
         query = "UPDATE reservations SET status = %s WHERE id = %s"
