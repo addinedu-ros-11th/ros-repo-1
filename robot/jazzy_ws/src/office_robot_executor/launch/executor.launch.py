@@ -24,6 +24,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
+            DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             Node(
                 package="office_robot_executor",
                 executable="office_robot_executor_node",
@@ -47,6 +48,7 @@ def generate_launch_description() -> LaunchDescription:
                         "enable_display": LaunchConfiguration("enable_display"),
                         "display_topic": LaunchConfiguration("display_topic"),
                         "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),
+                        "emit_command_received_event": LaunchConfiguration("emit_command_received_event"),
                     }
                 ],
             ),

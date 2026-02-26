@@ -46,6 +46,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
+        self.declare_parameter("emit_command_received_event", True)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -92,6 +93,9 @@ class OfficeRobotExecutor(Node):
         self.display_topic = self.get_parameter("display_topic").get_parameter_value().string_value
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
+        )
+        self.emit_command_received_event = (
+            self.get_parameter("emit_command_received_event").get_parameter_value().bool_value
         )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
@@ -143,7 +147,7 @@ class OfficeRobotExecutor(Node):
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
             f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
-            f"display_topic={self.display_topic})."
+            f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event})."
         )
         self._publish_display("대기", "idle")
 
@@ -162,6 +166,9 @@ class OfficeRobotExecutor(Node):
             return
 
         command_type = str(payload.get("type", "")).upper().strip()
+        actions = self._extract_actions(payload)
+        self._publish_command_received(payload, command_type, actions)
+
         if command_type in {"STOP", "PAUSE"}:
             self._set_safety_lock(True, source=f"command:{command_type}")
             return
@@ -172,7 +179,6 @@ class OfficeRobotExecutor(Node):
             self._cancel_active_sequence(reason=command_type)
             return
 
-        actions = self._extract_actions(payload)
         if not actions:
             self.get_logger().warn("Received command message without executable actions.")
             return
@@ -926,6 +932,26 @@ class OfficeRobotExecutor(Node):
             **extra,
         }
         self.event_pub.publish(String(data=json.dumps(data)))
+
+    def _publish_command_received(
+        self, payload: Dict[str, Any], command_type: str, actions: List[Dict[str, Any]]
+    ) -> None:
+        if not self.emit_command_received_event:
+            return
+
+        incoming_task_id = self._extract_task_id(payload)
+        normalized_type = command_type or ("ACTION_SEQUENCE" if actions else "UNKNOWN")
+        event_data: Dict[str, Any] = {
+            "command_type": normalized_type,
+            "action_count": len(actions),
+            "has_actions": bool(actions),
+            "source": "commands_topic",
+            "received_at": time.time(),
+        }
+        if incoming_task_id is not None:
+            event_data["task_id"] = incoming_task_id
+            event_data["sequence_id"] = incoming_task_id
+        self._publish_event("COMMAND_RECEIVED", event_data)
 
     def _publish_display(self, text: str, icon: str = "info") -> None:
         if not self.enable_display:

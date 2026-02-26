@@ -25,6 +25,7 @@ def generate_launch_description() -> LaunchDescription:
     enable_display = LaunchConfiguration("enable_display")
     display_topic = LaunchConfiguration("display_topic")
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
+    emit_command_received_event = LaunchConfiguration("emit_command_received_event")
     safety_stop_publish_hz = LaunchConfiguration("safety_stop_publish_hz")
     safety_lock_keepalive_hz = LaunchConfiguration("safety_lock_keepalive_hz")
     safety_stop_publish_count = LaunchConfiguration("safety_stop_publish_count")
@@ -53,6 +54,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
+            DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             DeclareLaunchArgument("safety_stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_keepalive_hz", default_value="2.0"),
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
@@ -105,6 +107,7 @@ def generate_launch_description() -> LaunchDescription:
                             "enable_display": enable_display,
                             "display_topic": display_topic,
                             "guide_display_period_sec": guide_display_period_sec,
+                            "emit_command_received_event": emit_command_received_event,
                         }.items(),
                     ),
                     IncludeLaunchDescription(
