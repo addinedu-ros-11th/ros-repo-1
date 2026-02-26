@@ -243,3 +243,20 @@ body {
     pointer-events: auto; /* 클릭 가능하게 */
     z-index: 10;
 }
+
+.btn-refresh {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    transition: background 0.3s;
+}
+
+.btn-refresh:hover {
+    background-color: #2980b9;
+}
+
+.btn-refresh:active {
+    transform: scale(0.95);
+}

@@ -32,4 +32,13 @@ class MySQLReservationRepository(BaseRepository):
     async def update_status(self, res_id: int, status: str):
         """승인 또는 반려 처리"""
         query = "UPDATE reservations SET status = %s WHERE id = %s"
-        await self._execute(query, (status, res_id), fetch="none")
+        
+        try:
+            # 새로 만든 전용 메서드만 호출하면 됩니다.
+            # 내부에서 커넥션 획득 -> 실행 -> 커밋 -> 닫기가 한 번에 일어납니다.
+            await self._execute_write(query, (status, res_id))
+            print(f"DEBUG: Status Update Requested - ID: {res_id}, Status: {status}")
+                    
+        except Exception as e:
+            print(f"DEBUG: DB Update Error: {e}")
+            raise e

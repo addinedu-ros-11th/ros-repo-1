@@ -40,6 +40,17 @@ class BaseRepository:
                     return await cursor.fetchall()
                 # fetch == 'none'의 경우, 아무것도 반환하지 않음 (e.g., INSERT, UPDATE, DELETE)
 
+    async def _execute_write(self, query: str, params: Optional[Tuple] = None) -> None:
+        """
+        데이터 변경(UPDATE, INSERT, DELETE) 전용 메서드.
+        실행 후 반드시 commit()을 수행합니다.
+        """
+        async with Database.get_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, params or ())
+                await conn.commit()  # 변경 사항 확정
+                print(f"DEBUG: Execute Write Success - Query: {query}")
+
     async def get_by_id(self, item_id: int) -> Optional[ModelType]:
         """ID로 단일 항목을 조회합니다."""
         query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"

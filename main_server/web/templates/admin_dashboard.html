@@ -62,6 +62,9 @@
         <div id="visitor-res" class="tab-content" style="display:none;">
             <h2>📅 방문객 예약 관리</h2>
             <div class="office-section" style="margin-bottom: 30px; border: 2px solid #3498db; padding: 15px; border-radius: 10px; background: #ebf5fb;">
+                <button type="button" class="btn-refresh" onclick="fetchVisitors()" style="padding: 10px 20px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    🔄 데이터 새로고침
+                </button>
                 <h3 style="color: #2980b9;">⏳ 승인 대기 목록 (신규 신청)</h3>
                 <table class="data-table">
                     <thead>
@@ -333,18 +336,21 @@
 
         /* 탭 전환 및 데이터 로드 트리거 */
         function showTab(tabId) {
+            // 탭 전환 로직
             document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.sidebar-menu li').forEach(l => l.classList.remove('active'));
             
-            document.getElementById(tabId).style.display = 'block';
-            document.getElementById('menu-' + tabId).classList.add('active');
+            const targetTab = document.getElementById(tabId);
+            if (targetTab) targetTab.style.display = 'block';
             
-            // [추가] 현재 선택한 탭 ID를 브라우저에 저장
+            const targetMenu = document.getElementById('menu-' + tabId);
+            if (targetMenu) targetMenu.classList.add('active');
+            
             localStorage.setItem('activeTab', tabId);
             
-            // 데이터 호출 로직
+            // 탭 이동 시 데이터 로드
             if(tabId === 'office-mgmt') fetchOfficeStatus();
-            if(tabId === 'visitor-res') fetchVisitors();
+            if(tabId === 'visitor-res') fetchVisitors(); // 여기서 호출
             if(tabId === 'sys-logs') fetchLogs();
         }
 
@@ -375,55 +381,74 @@
 
         /* 2. 방문객 예약 현황 */
         async function fetchVisitors() {
-            const res = await fetch('/api/v1/admin/visitors');
-            const data = await res.json();
+            console.log("방문객 데이터 업데이트 시작...");
+            
+            try {
+                // 중복 fetch 제거: 딱 한 번만 호출합니다.
+                const res = await fetch('/api/v1/admin/visitors');
+                if (!res.ok) throw new Error("서버 응답 오류");
+                
+                const data = await res.json();
+                console.log("받아온 데이터:", data);
 
-            // 1. 승인 대기 목록 (PENDING 상태만 표시)
-            document.getElementById('pending-visitor-list').innerHTML = data.pending.map(v => `
-                <tr>
-                    <td>${v.visitor}</td>
-                    <td>${v.purpose}</td>
-                    <td>${v.date}</td>
-                    <td>${v.host}</td>
-                    <td>
-                        <button class="btn-approve" onclick="updateStatus(${v.id}, 'APPROVED')">승인</button>
-                        <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">거절</button>
-                    </td>
-                </tr>
-            `).join('');
+                // 1. 승인 대기 목록 (신규 신청) 렌더링
+                const pendingTable = document.getElementById('pending-visitor-list');
+                if (data.pending && data.pending.length > 0) {
+                    pendingTable.innerHTML = data.pending.map(v => `
+                        <tr>
+                            <td>${v.visitor}</td>
+                            <td>${v.purpose}</td>
+                            <td>${v.date}</td>
+                            <td>${v.host}</td>
+                            <td>
+                                <button class="btn-approve" onclick="updateStatus(${v.id}, 'APPROVED')">승인</button>
+                                <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">반려</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    pendingTable.innerHTML = '<tr><td colspan="5">대기 중인 신청이 없습니다.</td></tr>';
+                }
 
-            // 2. 최종 예약 확정 현황 (APPROVED 상태만 표시) - 요구사항 3, 4 충족
-            document.getElementById('visitor-list').innerHTML = data.confirmed.map(v => `
-                <tr>
-                    <td>${v.date}</td>
-                    <td>${v.time}</td>
-                    <td>${v.host}</td>
-                    <td>${v.visitor}</td>
-                </tr>
-            `).join('');
+                // 2. 최종 예약 확정 현황 렌더링
+                const confirmedTable = document.getElementById('visitor-list');
+                if (data.confirmed && data.confirmed.length > 0) {
+                    confirmedTable.innerHTML = data.confirmed.map(v => `
+                        <tr>
+                            <td>${v.date}</td>
+                            <td>${v.time}</td>
+                            <td>${v.host}</td>
+                            <td>${v.visitor}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    confirmedTable.innerHTML = '<tr><td colspan="4">확정된 예약이 없습니다.</td></tr>';
+                }
+
+                console.log("업데이트 완료!");
+            } catch (e) {
+                console.error("데이터 로드 실패:", e);
+            }
         }
 
         // 상태 업데이트 함수
         async function updateStatus(resId, status) {
-            // 1. resId가 undefined인지 로그로 먼저 확인해보세요.
-            console.log("수정할 예약 ID:", resId); 
-            
             if (!confirm(`예약을 ${status === 'APPROVED' ? '승인' : '반려'}하시겠습니까?`)) return;
 
-            const response = await fetch('/api/v1/admin/reservations/decision', { // 이 주소가 이제 admin_routes.py와 연결됨
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        id: resId,
-                        status: status
-                    })
-                });
+            const response = await fetch('/api/v1/admin/reservations/decision', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: resId, // 리포지토리에서 int로 변환하므로 그대로 전달
+                    status: status // 'APPROVED' 또는 'REJECTED' 전달
+                })
+            });
 
             if (response.ok) {
-                alert("DB 수정 성공!");
-                location.reload(); // 일단 수정 확인을 위해 페이지 새로고침
+                alert("처리가 완료되었습니다.");
+                fetchVisitors(); // 페이지 새로고침 대신 목록만 새로고침 권장
             } else {
-                alert("DB 수정 실패");
+                alert("처리에 실패했습니다.");
             }
         }
 
