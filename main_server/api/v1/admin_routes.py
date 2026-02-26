@@ -105,24 +105,20 @@ async def get_visitor_management():
     }
 
 @router.post("/reservations/decision")
-async def decide_reservation(request: Dict[str, Any]):
-    """
-    관리자가 보낸 ID와 상태값으로 DB를 업데이트함
-    (사용자님 말씀대로 admin_routes에서 관리하는 것이 맞습니다)
-    """
-    res_id = request.get("id")      # 수정할 예약의 고유 번호
-    status = request.get("status")  # 'APPROVED' 또는 'REJECTED'
-
-    if not res_id or not status:
-        raise HTTPException(status_code=400, detail="ID 또는 상태값이 누락되었습니다.")
-
+async def decide_reservation(request_data: Dict[str, Any]):
     try:
-        # 리포지토리의 update_status 함수 호출 (UPDATE reservations SET status = ...)
+        # 1. ID를 반드시 정수(int)로 변환 (리포지토리 요구사항)
+        res_id = int(request_data.get("id"))
+        status = request_data.get("status")
+
+        # 2. 리포지토리 호출
         await container.reservation_repository.update_status(res_id, status)
-        return {"status": "success"}
+        
+        return {"status": "success", "updated_id": res_id}
     except Exception as e:
-        print(f"Update Error: {e}")
-        raise HTTPException(status_code=500, detail="DB 수정 중 오류 발생")
+        # 에러 발생 시 서버 터미널에서 확인 가능하도록 출력
+        print(f"!!! DB 업데이트 실패 원인: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------------------------------------------------
 # 3. 시스템 동작 로그 (가독성 좋게 포맷팅)
