@@ -41,6 +41,34 @@ async def process_command(request: Dict[str, Any]):
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
     
+    # ---------------------------------------------------------
+    # [TEST ONLY] go:(x,y,theta) 수동 명령 가로채기
+    # ---------------------------------------------------------
+    if message.startswith("go:"):
+        import re
+        # go:(5,5,0) 또는 go:(5.5, -1.2, 3.14) 형식 매칭
+        match = re.match(r"go:\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)", message.strip())
+        if match:
+            x, y, theta = map(float, match.groups())
+            manual_result = {
+                "task_type": "MANUAL_MOVE",
+                "fields": {
+                    "x": x, "y": y, "theta": theta,
+                    "requester_name": caller_id
+                }
+            }
+            task = await container.task_manager.create_task_from_ai(manual_result, caller_name=caller_id)
+            if not task:
+                return {"status": "retry", "message": "가용한 로봇이 없습니다."}
+            
+            return {
+                "status": "success",
+                "message": f"수동 이동 작업이 생성되었습니다: ({x}, {y})",
+                "task_id": task.id,
+                "ai_fields": manual_result["fields"]
+            }
+    # ---------------------------------------------------------
+
     if not caller_id:
         return {
             "status": "error", 

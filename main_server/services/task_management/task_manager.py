@@ -75,14 +75,18 @@ class TaskManager:
         task_items = prepared_data.get("task_items")
         initial_destination_name = prepared_data["initial_destination_name"]
 
-        # 2. 초기 목적지 좌표 조회 (로봇 배차용)
-        initial_location_data = await self.location_repo.find_by_name(initial_destination_name)
-
-        if not initial_location_data:
-            logger.error(f"초기 목적지 '{initial_destination_name}'를 찾을 수 없습니다.")
-            return None
-
-        initial_target_pose = (initial_location_data["coordinate_x"], initial_location_data["coordinate_y"])
+        # 2. 초기 목적지 좌표 결정 (로봇 배차용)
+        if initial_destination_name == "MANUAL_COORDINATE":
+            # 수동 이동 시나리오: fields에 포함된 좌표를 직접 사용
+            initial_target_pose = (fields.get("x", 0.0), fields.get("y", 0.0))
+            logger.info(f"Manual move detected. Using direct coordinates: {initial_target_pose}")
+        else:
+            # 일반 시나리오: 위치 이름을 기반으로 DB에서 좌표 조회
+            initial_location_data = await self.location_repo.find_by_name(initial_destination_name)
+            if not initial_location_data:
+                logger.error(f"초기 목적지 '{initial_destination_name}'를 찾을 수 없습니다.")
+                return None
+            initial_target_pose = (initial_location_data["coordinate_x"], initial_location_data["coordinate_y"])
 
         # 3. 최적 로봇 탐색
         optimal_robot = await self.fleet_manager.find_optimal_robot(initial_target_pose)

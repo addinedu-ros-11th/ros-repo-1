@@ -34,12 +34,35 @@ class ScenarioDataHandler:
                 return await self._prepare_snack_delivery(fields, scenario_info)
             elif task_type == "ITEM_DELIVERY":
                 return await self._prepare_item_delivery(fields, scenario_info)
+            elif task_type == "MANUAL_MOVE":
+                return await self._prepare_manual_move(fields, scenario_info)
             else:
                 logger.warning(f"Task type '{task_type}' handler not fully implemented yet.")
                 return None
         except Exception as e:
             logger.error(f"Failed to process AI result for {task_type}: {e}", exc_info=True)
             return None
+
+    async def _prepare_manual_move(self, fields: Dict[str, Any], scenario_info: Dict) -> Optional[Dict]:
+        """수동 좌표 이동 시나리오 데이터를 준비합니다."""
+        requester_name = fields.get("requester_name")
+        requester = await self.user_repo.find_by_name(requester_name) if requester_name else None
+        
+        task_data = {
+            "requester_id": requester['user_id'] if requester else None,
+            "task_type": "MANUAL_MOVE",
+            "priority": scenario_info["priority"],
+            "status": "PENDING",
+            "destination_id": None,
+            "target_location_name": "MANUAL_COORDINATE",
+            "details": fields # x, y, theta가 포함됨
+        }
+
+        return {
+            "task_data": task_data,
+            "task_items": [],
+            "initial_destination_name": "MANUAL_COORDINATE" # TaskManager에서 이 이름일 경우 좌표를 직접 쓰도록 유도
+        }
 
     async def _prepare_snack_delivery(self, fields: Dict[str, Any], scenario_info: Dict) -> Optional[Dict]:
         """간식 배달 시나리오 데이터를 준비합니다."""
