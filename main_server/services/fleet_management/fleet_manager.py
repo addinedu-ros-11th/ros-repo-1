@@ -52,7 +52,7 @@ class FleetManager:
             except Exception as e:
                 logger.error(f"[{robot_id}] 장애물 정보 릴레이 실패: {e}")
 
-        logger.info(f"[{robot_id}] 장애물 정보 릴레이 활성화 요청")
+        logger.debug(f"[{robot_id}] 장애물 정보 릴레이 활성화 요청")
         await self.ai_processing_service.start_obstacle_detection(robot_id, _relay_callback)
 
     async def disable_obstacle_relay(self, robot_id: str):
@@ -60,7 +60,7 @@ class FleetManager:
         if not self.ai_processing_service:
             return
             
-        logger.info(f"[{robot_id}] 장애물 정보 릴레이 중단 요청")
+        logger.debug(f"[{robot_id}] 장애물 정보 릴레이 중단 요청")
         await self.ai_processing_service.stop_obstacle_detection(robot_id)
 
     async def enable_employee_relay(self, robot_id: str):
@@ -79,7 +79,7 @@ class FleetManager:
             except Exception as e:
                 logger.error(f"[{robot_id}] 직원 인식 정보 릴레이 실패: {e}")
 
-        logger.info(f"[{robot_id}] 직원 인식 릴레이 활성화 요청")
+        logger.debug(f"[{robot_id}] 직원 인식 릴레이 활성화 요청")
         await self.ai_processing_service.start_employee_verification(robot_id, _relay_callback)
 
     async def disable_employee_relay(self, robot_id: str):
@@ -87,7 +87,7 @@ class FleetManager:
         if not self.ai_processing_service:
             return
 
-        logger.info(f"[{robot_id}] 직원 인식 릴레이 중단 요청")
+        logger.debug(f"[{robot_id}] 직원 인식 릴레이 중단 요청")
         await self.ai_processing_service.stop_employee_verification(robot_id)
 
     def update_forbidden_zones(self, zones: List[Dict]):
@@ -152,14 +152,21 @@ class FleetManager:
     async def update_robot_status(self, robot_id: Union[int, str], status: RobotStatus, location: tuple, battery: float) -> Optional[Robot]:
         """로봇으로부터 수신된 텔레메트리 정보를 DB에 갱신합니다."""
         
-        # robot_id가 이름(str)인 경우 ID(int)로 변환
+        # 1. 기존 로봇 정보를 가져와 현재 상태 확인 (상태 변경 감지용)
         if isinstance(robot_id, str):
             robot = await self.robot_repo.get_by_name(robot_id)
-            if not robot:
-                logger.warning(f"로봇 '{robot_id}'를 찾을 수 없어 상태 업데이트를 건너뜁니다.")
-                return None
-            robot_id = robot.id
+        else:
+            robot = await self.robot_repo.get_by_id(robot_id)
+
+        if not robot:
+            logger.warning(f"로봇 '{robot_id}'를 찾을 수 없어 상태 업데이트를 건너뜁니다.")
+            return None
+
+        # 실제 변경 여부 확인을 위해 이전 상태 저장
+        old_status = robot.status
+        robot_id = robot.id # ID 확정 (int)
             
+        # 2. DB 업데이트 수행
         update_data = {
             "status": status,
             "pose_x": location[0],
@@ -169,22 +176,21 @@ class FleetManager:
         updated_robot = await self.robot_repo.update(robot_id, update_data)
         
         if updated_robot:
-            # 로봇 상태에 따른 AI 추론 모드(장애물/직원) 자동 제어
-            
-            # 1. 장애물 감지 (이동 중일 때 활성화)
-            if status in [RobotStatus.MOVING, RobotStatus.GUIDING, RobotStatus.ASSIGNED]:
-                await self.enable_obstacle_relay(updated_robot.name)
-            else:
-                # IDLE, WAITING, CHARGING, ERROR, OFFLINE 등
-                await self.disable_obstacle_relay(updated_robot.name)
-            
-            # 2. 직원 인식 (베이스/충전소 대기 중일 때 활성화)
-            # WAITING은 작업 중 대기이므로 제외, IDLE/CHARGING일 때만 활성화
-            if status in [RobotStatus.IDLE, RobotStatus.CHARGING]:
-                await self.enable_employee_relay(updated_robot.name)
-            else:
-                # MOVING, GUIDING, ASSIGNED, WAITING, ERROR, OFFLINE 등
-                await self.disable_employee_relay(updated_robot.name)
+            # 3. 로봇 상태가 실제로 변경되었을 때만 AI 추론 모드(장애물/직원) 제어
+            if status != old_status:
+                logger.info(f"[{updated_robot.name}] 상태 변경 감지: {old_status} -> {status}. AI 스트림 제어를 업데이트합니다.")
+                
+                # 3-1. 장애물 감지 제어 (이동 중일 때 활성화)
+                if status in [RobotStatus.MOVING, RobotStatus.GUIDING, RobotStatus.ASSIGNED]:
+                    await self.enable_obstacle_relay(updated_robot.name)
+                else:
+                    await self.disable_obstacle_relay(updated_robot.name)
+                
+                # 3-2. 직원 인식 제어 (IDLE/충전 시 활성화)
+                if status in [RobotStatus.IDLE, RobotStatus.CHARGING]:
+                    await self.enable_employee_relay(updated_robot.name)
+                else:
+                    await self.disable_employee_relay(updated_robot.name)
 
             await self.connection_manager.broadcast(updated_robot.model_dump_json())
         return updated_robot

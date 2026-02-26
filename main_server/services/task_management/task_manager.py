@@ -10,7 +10,7 @@ from main_server.infrastructure.database.repositories.mysql_user_repository impo
 from main_server.services.ai_management.ai_processing import AIProcessingService
 from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.services.task_management.scenario_data_handler import ScenarioDataHandler
-from main_server.services.task_management.task_processors import GuideProcessor, ItemProcessor, SnackProcessor
+from main_server.services.task_management.task_processors import GuideProcessor, ItemProcessor, SnackProcessor, ManualMoveProcessor
 from main_server.web.connection_manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ class TaskManager:
             TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
+            TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
         }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any], caller_name: Optional[str] = None) -> Optional[Task]:
@@ -123,12 +124,17 @@ class TaskManager:
 
     async def handle_robot_event(self, task_id: int, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         """로봇으로부터 수신된 이벤트(도착 등)를 처리기에 전달합니다."""
+        logger.info(f"[TaskManager] 로봇 이벤트 수신: {event} (Task: {task_id}, Robot: {robot_id})")
         task = await self.task_repo.get_by_id(task_id)
-        if not task: return
+        if not task: 
+            logger.error(f"[TaskManager] 해당 태스크를 찾을 수 없습니다: ID {task_id}")
+            return
 
         processor = self.processors.get(task.task_type)
         if processor:
             await processor.handle_event(task, robot_id, event, data)
+        else:
+            logger.error(f"[TaskManager] 작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

@@ -52,64 +52,77 @@ class SnackProcessor(BaseTaskProcessor):
         # AI 결과와 DB 데이터를 기반으로 'snack_entrance' 사용
         pantry_entrance = await self.location_repo.find_by_name("snack_entrance")
         if pantry_entrance:
-            return [{
+            actions = [{
                 "action": "GOTO", 
-                "params": {"x": pantry_entrance["coordinate_x"], "y": pantry_entrance["coordinate_y"]},
+                "params": {
+                    "x": pantry_entrance["coordinate_x"], 
+                    "y": pantry_entrance["coordinate_y"],
+                    "theta": pantry_entrance.get("theta", 0.0)
+                },
                 "on_success": RobotEvent.ARRIVED_AT_PANTRY_ENTRANCE
             }]
+            logger.info(f"[SnackProcessor] 초기 액션 생성: {actions}")
+            return actions
         
-        logger.error("'snack_entrance' 위치를 찾을 수 없습니다.")
+        logger.error("[SnackProcessor] 'snack_entrance' 위치를 찾을 수 없습니다.")
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         robot = await self.fleet_manager.robot_repo.get_by_id(robot_id)
-        if not robot: return
+        if not robot: 
+            logger.error(f"[SnackProcessor] 로봇 ID {robot_id}를 찾을 수 없습니다.")
+            return
+
+        logger.info(f"[SnackProcessor] 이벤트 수신: {event} (Robot: {robot.name}, Task ID: {task.id})")
+        if data:
+            logger.info(f"[SnackProcessor] 이벤트 데이터: {data}")
 
         if event == RobotEvent.ARRIVED_AT_PANTRY_ENTRANCE:
             await self.broadcast_task_update("로봇이 간식 창고 입구에 도착했습니다.")
-            # AI 결과는 items 리스트로 제공됨 (ScenarioDataHandler 처리 결과)
             items = task.details.get("items", [])
-            item_name = "snack" # 기본값
-
-            if items:
-                # 첫 번째 아이템의 위치로 이동 (단순화)
-                item_name = items[0].get("item_name")
-                
-            # 창고 내 세부 위치 조회 (없으면 창고 입구에서 대기)
+            item_name = items[0].get("item_name") if items else "snack"
+            
+            logger.info(f"[SnackProcessor] 탕비실 입구 도착. 아이템 '{item_name}' 위치 탐색 시작.")
             loc = await self.location_repo.find_by_name(item_name)
             
             if loc:
-                self.fleet_manager.send_action_commands(robot.name, [{
+                logger.info(f"[SnackProcessor] 아이템 위치 확인: {loc['name']} ({loc['coordinate_x']}, {loc['coordinate_y']})")
+                commands = [{
                     "action": "GOTO", 
-                    "params": {"x": loc["coordinate_x"], "y": loc["coordinate_y"]},
+                    "params": {
+                        "x": loc["coordinate_x"], 
+                        "y": loc["coordinate_y"],
+                        "theta": loc.get("theta", 0.0)
+                    },
                     "on_success": RobotEvent.ARRIVED_AT_SNACK_POINT
-                }])
+                }]
+                self.fleet_manager.send_action_commands(robot.name, commands)
+                logger.info(f"[SnackProcessor] GOTO 명령 전송 완료: {commands}")
             else:
-                 # 위치 못 찾으면 바로 픽업 단계로 간주 (혹은 에러 처리)
-                 logger.warning(f"아이템 '{item_name}'의 위치를 찾을 수 없어 픽업 절차를 진행합니다.")
+                 logger.warning(f"[SnackProcessor] '{item_name}'의 위치를 찾을 수 없어 픽업 단계로 바로 건너뜁니다.")
                  await self.handle_event(task, robot_id, RobotEvent.ARRIVED_AT_SNACK_POINT)
         
         elif event == RobotEvent.ARRIVED_AT_SNACK_POINT:
-            # 간식 포인트 도착 시 QR 스캔 요청
-            logger.info(f"로봇 {robot.name} 간식 포인트 도착. QR 코드 스캔 요청.")
+            logger.info(f"[SnackProcessor] 간식 포인트 도착. QR 스캔 요청 전송.")
             await self.broadcast_task_update("간식 진열대에 도착했습니다. QR 코드를 스캔합니다.")
-            self.fleet_manager.send_action_commands(robot.name, [{
+            commands = [{
                 "action": "QR_SCAN", 
                 "params": {}, 
                 "on_success": RobotEvent.QR_SCANNED 
-            }])
+            }]
+            self.fleet_manager.send_action_commands(robot.name, commands)
+            logger.info(f"[SnackProcessor] QR_SCAN 명령 전송 완료.")
 
         elif event == RobotEvent.QR_SCANNED:
-            # QR 코드 검증 로직
             items = task.details.get("items", [])
             target_item_name = items[0].get("item_name") if items else "snack"
-            
             scanned_data = data.get("scanned_data") if data else None
             
+            logger.info(f"[SnackProcessor] QR 스캔 결과 수신: {scanned_data} (목표: {target_item_name})")
+            
             if not scanned_data:
-                logger.warning("QR 데이터가 없습니다. 재시도합니다.")
+                logger.warning("[SnackProcessor] QR 데이터가 비어 있습니다. 재시도 명령을 내립니다.")
                 await self.broadcast_task_update("QR 인식이 되지 않았습니다. 재시도합니다.")
-                # 재시도 로직 (다시 스캔 요청)
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "QR_SCAN", 
                     "params": {}, 
@@ -117,28 +130,30 @@ class SnackProcessor(BaseTaskProcessor):
                 }])
                 return
 
-            logger.info(f"QR Scanned: {scanned_data} vs Target: {target_item_name}")
-            
-            # 실제 운영 시 DB의 Product QR 정보와 비교해야 함. 
-            # 여기서는 편의상 아이템 이름이 포함되어 있는지 확인.
             if target_item_name in scanned_data:
-                logger.info("QR 검증 성공! 목적지로 이동합니다.")
+                logger.info("[SnackProcessor] QR 검증 성공. 목적지 이동 시작.")
                 await self.broadcast_task_update(f"물품({target_item_name}) 확인 완료. 배달을 시작합니다.")
                 await asyncio.sleep(1) 
                 
-                # 최종 목적지 (요청자 위치)로 이동
                 dest_name = task.target_location_name
                 dest = await self.location_repo.find_by_name(dest_name)
                 if dest:
-                    self.fleet_manager.send_action_commands(robot.name, [{
+                    logger.info(f"[SnackProcessor] 목적지 좌표 확인: {dest_name} ({dest['coordinate_x']}, {dest['coordinate_y']})")
+                    commands = [{
                         "action": "GOTO", 
-                        "params": {"x": dest["coordinate_x"], "y": dest["coordinate_y"]},
+                        "params": {
+                            "x": dest["coordinate_x"], 
+                            "y": dest["coordinate_y"],
+                            "theta": dest.get("theta", 0.0)
+                        },
                         "on_success": RobotEvent.ARRIVED_AT_DESTINATION
-                    }])
+                    }]
+                    self.fleet_manager.send_action_commands(robot.name, commands)
+                    logger.info(f"[SnackProcessor] GOTO 명령(목적지) 전송 완료.")
                 else:
-                    logger.error(f"목적지 '{dest_name}'를 찾을 수 없습니다.")
+                    logger.error(f"[SnackProcessor] 목적지 '{dest_name}'를 찾을 수 없습니다.")
             else:
-                logger.warning(f"QR 검증 실패. 기대값: {target_item_name}, 실제값: {scanned_data}")
+                logger.warning(f"[SnackProcessor] QR 검증 실패. 불일치: {scanned_data}")
                 await self.broadcast_task_update("잘못된 물품이 감지되었습니다.")
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "DISPLAY_TEXT", 
@@ -146,8 +161,7 @@ class SnackProcessor(BaseTaskProcessor):
                 }])
 
         elif event == RobotEvent.ARRIVED_AT_DESTINATION:
-            # 도착 알림 및 수령 확인 요청 전송
-            logger.info(f"로봇 {robot.name} 목적지 도착. 사용자 수령 확인 대기 중.")
+            logger.info(f"[SnackProcessor] 목적지 도착 완료. 수령 확인 요청 대기.")
             await self.broadcast_task_update("목적지에 도착했습니다. 간식을 수령해주세요.")
             message = {
                 "event": "user_action_required",
@@ -161,6 +175,7 @@ class SnackProcessor(BaseTaskProcessor):
             await self.connection_manager.broadcast(json.dumps(message))
 
         elif event == RobotEvent.DELIVERY_CONFIRMED:
+            logger.info(f"[SnackProcessor] 수령 확인 이벤트 수신. 태스크 종료 절차 진입.")
             await self._complete_task(task, robot_id)
 
 class GuideProcessor(BaseTaskProcessor):
@@ -169,11 +184,18 @@ class GuideProcessor(BaseTaskProcessor):
         dest_name = task.details.get("location", "meeting_room")
         loc = await self.location_repo.find_by_name(dest_name)
         if loc:
-            return [{
+            actions = [{
                 "action": "LEAD_GUEST", 
-                "params": {"x": loc["coordinate_x"], "y": loc["coordinate_y"]},
+                "params": {
+                    "x": loc["coordinate_x"], 
+                    "y": loc["coordinate_y"],
+                    "theta": loc.get("theta", 0.0)
+                },
                 "on_success": RobotEvent.ARRIVED_AT_DESTINATION
             }]
+            logger.info(f"[GuideProcessor] 초기 액션 생성: {actions}")
+            return actions
+        logger.error(f"[GuideProcessor] 목적지 '{dest_name}'를 찾을 수 없습니다.")
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
@@ -190,7 +212,11 @@ class GuideProcessor(BaseTaskProcessor):
             if base_loc:
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "GOTO", 
-                    "params": {"x": base_loc["coordinate_x"], "y": base_loc["coordinate_y"]},
+                    "params": {
+                        "x": base_loc["coordinate_x"], 
+                        "y": base_loc["coordinate_y"],
+                        "theta": base_loc.get("theta", 0.0)
+                    },
                     "on_success": RobotEvent.ARRIVED_AT_BASE
                 }])
             else:
@@ -206,18 +232,24 @@ class ItemProcessor(BaseTaskProcessor):
         sender_loc_name = task.details.get("source_location")
         
         if not sender_loc_name:
-            logger.warning("출발지 정보가 없어 기본 위치(office_1)를 탐색합니다.")
+            logger.warning("[ItemProcessor] 출발지 정보가 없어 기본 위치(office_1)를 탐색합니다.")
             sender_loc_name = "office_1" # Fallback
 
         loc = await self.location_repo.find_by_name(sender_loc_name)
         if loc:
-            return [{
+            actions = [{
                 "action": "GOTO", 
-                "params": {"x": loc["coordinate_x"], "y": loc["coordinate_y"]},
+                "params": {
+                    "x": loc["coordinate_x"], 
+                    "y": loc["coordinate_y"],
+                    "theta": loc.get("theta", 0.0)
+                },
                 "on_success": RobotEvent.ARRIVED_AT_SENDER
             }]
+            logger.info(f"[ItemProcessor] 초기 액션 생성: {actions}")
+            return actions
         
-        logger.error(f"출발지 '{sender_loc_name}'를 찾을 수 없습니다.")
+        logger.error(f"[ItemProcessor] 출발지 '{sender_loc_name}'를 찾을 수 없습니다.")
         return []
 
     async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
@@ -246,7 +278,11 @@ class ItemProcessor(BaseTaskProcessor):
             if loc:
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "GOTO", 
-                    "params": {"x": loc["coordinate_x"], "y": loc["coordinate_y"]},
+                    "params": {
+                        "x": loc["coordinate_x"], 
+                        "y": loc["coordinate_y"],
+                        "theta": loc.get("theta", 0.0)
+                    },
                     "on_success": RobotEvent.ARRIVED_AT_RECEIVER
                 }])
             else:
@@ -266,17 +302,31 @@ class ItemProcessor(BaseTaskProcessor):
             }
             await self.connection_manager.broadcast(json.dumps(message))
 
-        elif event == RobotEvent.DELIVERY_CONFIRMED:
-            # 복귀 (대기 구역)
-            base_loc = await self.location_repo.find_by_name("waiting_area")
-            if base_loc:
-                self.fleet_manager.send_action_commands(robot.name, [{
-                    "action": "GOTO", 
-                    "params": {"x": base_loc["coordinate_x"], "y": base_loc["coordinate_y"]},
-                    "on_success": RobotEvent.ARRIVED_AT_BASE
-                }])
-            else:
-                await self._complete_task(task, robot_id)
-
         elif event == RobotEvent.ARRIVED_AT_BASE:
+            await self._complete_task(task, robot_id)
+
+class ManualMoveProcessor(BaseTaskProcessor):
+    """수동 좌표 이동 시나리오 처리기 (테스트 및 디버깅용)"""
+    async def get_initial_actions(self, task: Task):
+        # task.details에 저장된 x, y, theta 좌표 사용
+        x = task.details.get("x")
+        y = task.details.get("y")
+        theta = task.details.get("theta", 0.0) # 기본값 0.0
+        
+        if x is not None and y is not None:
+            actions = [{
+                "action": "GOTO", 
+                "params": {"x": x, "y": y, "theta": theta},
+                "on_success": RobotEvent.ARRIVED_AT_DESTINATION
+            }]
+            logger.info(f"[ManualMoveProcessor] 초기 액션 생성: {actions}")
+            return actions
+        
+        logger.error(f"[ManualMoveProcessor] 수동 이동 좌표가 누락되었습니다: {task.details}")
+        return []
+
+    async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
+        if event == RobotEvent.ARRIVED_AT_DESTINATION:
+            logger.info(f"로봇 {robot_id} 수동 이동 목적지 도착.")
+            await self.broadcast_task_update("수동 이동 목적지에 도착했습니다.")
             await self._complete_task(task, robot_id)

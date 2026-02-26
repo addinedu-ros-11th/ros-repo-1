@@ -102,11 +102,23 @@ async def process_command(request: Dict[str, Any]):
     if not task:
         return {"status": "retry", "message": "가용한 로봇이 없습니다.", "ai_result": ai_result}
 
+    # 결과 메시지 및 필드 보정
+    response_message = f"작업이 접수되었습니다: {task_type}"
+    fields = ai_result.get("fields")
+    if fields is None:
+        fields = {}
+
+    if task_type == "SNACK_DELIVERY":
+        response_message = "간식 배달 요청이 접수되었습니다. 로봇이 탕비실에서 간식을 수령하여 요청하신 위치로 배달합니다."
+        # 프론트엔드에 목적지가 명확히 나오도록 설정
+        if not fields.get("dest_location") and not fields.get("location"):
+             fields["dest_location"] = "요청자 위치"
+
     return {
         "status": "success",
-        "message": f"작업이 접수되었습니다: {ai_result['task_type']}",
+        "message": response_message,
         "task_id": task.id,
-        "ai_fields": ai_result.get("fields")
+        "ai_fields": fields
     }
 
 # ---------------------------------------------------------
