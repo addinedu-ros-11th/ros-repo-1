@@ -24,6 +24,7 @@ office_robot_executor:
     nav2_retry_delay_sec: 1.0
     localization_required: true
     amcl_pose_topic: amcl_pose
+    odom_topic: /odom
     amcl_pose_max_age_sec: 3.0
     amcl_pose_stale_check_enabled: false
     amcl_covariance_xy_max: 0.8
@@ -44,4 +45,8 @@ office_robot_executor:
     display_topic: display
     guide_display_period_sec: 2.0
     emit_command_received_event: true
+    qr_scan_local_enabled: true
+    qr_scan_image_topic: /camera/image_raw/compressed
+    qr_scan_timeout_sec: 8.0
+    qr_scan_poll_period_sec: 0.2
     default_goto_success_event: ARRIVED_AT_DESTINATION

@@ -28,6 +28,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("nav2_retry_delay_sec", default_value="1.0"),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
+            DeclareLaunchArgument("odom_topic", default_value="/odom"),
             DeclareLaunchArgument("amcl_pose_max_age_sec", default_value="3.0"),
             DeclareLaunchArgument("amcl_pose_stale_check_enabled", default_value="false"),
             DeclareLaunchArgument("amcl_covariance_xy_max", default_value="0.8"),
@@ -55,6 +56,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
+            DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
+            DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
+            DeclareLaunchArgument("qr_scan_timeout_sec", default_value="8.0"),
+            DeclareLaunchArgument("qr_scan_poll_period_sec", default_value="0.2"),
             Node(
                 package="office_robot_executor",
                 executable="office_robot_executor_node",
@@ -82,6 +87,7 @@ def generate_launch_description() -> LaunchDescription:
                         "nav2_retry_delay_sec": LaunchConfiguration("nav2_retry_delay_sec"),
                         "localization_required": LaunchConfiguration("localization_required"),
                         "amcl_pose_topic": LaunchConfiguration("amcl_pose_topic"),
+                        "odom_topic": LaunchConfiguration("odom_topic"),
                         "amcl_pose_max_age_sec": LaunchConfiguration("amcl_pose_max_age_sec"),
                         "amcl_pose_stale_check_enabled": LaunchConfiguration(
                             "amcl_pose_stale_check_enabled"
@@ -124,6 +130,10 @@ def generate_launch_description() -> LaunchDescription:
                         "display_topic": LaunchConfiguration("display_topic"),
                         "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),
                         "emit_command_received_event": LaunchConfiguration("emit_command_received_event"),
+                        "qr_scan_local_enabled": LaunchConfiguration("qr_scan_local_enabled"),
+                        "qr_scan_image_topic": LaunchConfiguration("qr_scan_image_topic"),
+                        "qr_scan_timeout_sec": LaunchConfiguration("qr_scan_timeout_sec"),
+                        "qr_scan_poll_period_sec": LaunchConfiguration("qr_scan_poll_period_sec"),
                     }
                 ],
             ),
