@@ -70,6 +70,7 @@ class VisionServiceClient(IVisionService):
     async def start_vision_stream(self, callback: Any):
         """
         비전 추론 결과 스트림을 구독합니다.
+        robot_id 별로 구분된 결과가 전달됩니다.
         """
         print("Vision 스트림 구독 시작 (StreamVisionResults)...")
         try:
@@ -77,20 +78,47 @@ class VisionServiceClient(IVisionService):
                 data = {
                     "robot_id": result.robot_id,
                 }
-                
+
                 if result.HasField("object_detection"):
+                    det = result.object_detection
                     data["type"] = "object_detection"
                     data["content"] = {
-                        "object_name": result.object_detection.object_name,
-                        "confidence": result.object_detection.confidence
+                        "object_name": det.object_name,
+                        "confidence": det.confidence,
+                        "box": {
+                            "x": det.box.x,
+                            "y": det.box.y,
+                            "width": det.box.width,
+                            "height": det.box.height,
+                        },
                     }
                 elif result.HasField("face_recognition"):
+                    face = result.face_recognition
                     data["type"] = "face_recognition"
                     data["content"] = {
-                        "person_type": result.face_recognition.person_type,
-                        "confidence": result.face_recognition.confidence
+                        "person_type": face.person_type,
+                        "confidence": face.confidence,
                     }
-                
+                    if face.HasField("employee_id"):
+                        data["content"]["employee_id"] = face.employee_id
+                elif result.HasField("multi_objects"):
+                    data["type"] = "multi_objects"
+                    objects = []
+                    for obj in result.multi_objects.objects:
+                        objects.append({
+                            "object_name": obj.object_name,
+                            "confidence": obj.confidence,
+                            "box": {
+                                "x": obj.box.x,
+                                "y": obj.box.y,
+                                "width": obj.box.width,
+                                "height": obj.box.height,
+                            },
+                        })
+                    data["content"] = objects
+                else:
+                    continue  # 알 수 없는 결과 타입은 무시
+
                 await callback(data)
         except grpc.aio.AioRpcError as e:
             print(f"Vision 스트림 연결 오류: {e}")

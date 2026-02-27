@@ -279,6 +279,18 @@ class UDPVideoReceiver:
         with self._robot_lock:
             return self._robot_indices.get(robot_ip, -1)
 
+    def get_robot_id(self, robot_ip: str) -> str:
+        """
+        IP → 논리적 robot_id 변환.
+        메인서버가 사용하는 robot_id 형식과 일치시키기 위해
+        'robot_1', 'robot_2' 형태로 반환.
+        미등록 IP면 IP 그대로 반환.
+        """
+        idx = self.get_robot_index(robot_ip)
+        if idx >= 0:
+            return f"robot_{idx + 1}"
+        return robot_ip
+
     def _save_robots_info(self):
         """연결된 로봇 정보를 JSON 파일로 저장 (GUI에서 읽기 위함)"""
         try:
@@ -402,7 +414,8 @@ class VideoStreamProcessor:
                     self._check_test_mode()
                     continue
 
-                robot_id = frame_data["robot_id"]
+                robot_ip = frame_data["robot_id"]   # UDP 발신 IP
+                robot_id = self.receiver.get_robot_id(robot_ip)  # → "robot_1" 등
                 frame = frame_data["frame"]
                 ts = frame_data["timestamp"]
 
@@ -442,7 +455,7 @@ class VideoStreamProcessor:
                 # 테스트 모드: 바운딩 박스 그리고 미리보기 저장 + 결과 파일 쓰기
                 if test_mode:
                     annotated = self._draw_annotations(frame, test_results)
-                    robot_idx = self.receiver.get_robot_index(robot_id)
+                    robot_idx = self.receiver.get_robot_index(robot_ip)
                     self.receiver._save_preview_frame(annotated, robot_idx)
                     self._save_test_results(test_results)
 
