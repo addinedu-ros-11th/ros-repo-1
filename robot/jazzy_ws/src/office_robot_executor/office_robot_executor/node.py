@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -33,7 +34,7 @@ except Exception:  # pragma: no cover - runtime environment dependent
 class OfficeRobotExecutor(Node):
     """
     Action sequence executor.
-    Subscribes: commands (std_msgs/String), safety_lock (std_msgs/Bool), ai_link (std_msgs/Bool)
+    Subscribes: commands (std_msgs/String), safety_lock (std_msgs/Bool), ai_link (std_msgs/Bool), odom (nav_msgs/Odometry)
     Publishes: status/event/display (std_msgs/String), cmd_vel stop burst (geometry_msgs/Twist)
     """
 
@@ -66,6 +67,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("nav2_retry_delay_sec", 1.0)
         self.declare_parameter("localization_required", True)
         self.declare_parameter("amcl_pose_topic", "amcl_pose")
+        self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("amcl_pose_max_age_sec", 3.0)
         self.declare_parameter("amcl_pose_stale_check_enabled", False)
         self.declare_parameter("amcl_covariance_xy_max", 0.8)
@@ -160,6 +162,7 @@ class OfficeRobotExecutor(Node):
         self.amcl_pose_topic = (
             self.get_parameter("amcl_pose_topic").get_parameter_value().string_value
         )
+        self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.amcl_pose_max_age_sec = max(
             0.5, self.get_parameter("amcl_pose_max_age_sec").get_parameter_value().double_value
         )
@@ -292,6 +295,7 @@ class OfficeRobotExecutor(Node):
         self.amcl_pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, self.amcl_pose_topic, self._on_amcl_pose, 10
         )
+        self.odom_sub = self.create_subscription(Odometry, self.odom_topic, self._on_odom, 10)
 
         safety_qos = QoSProfile(
             depth=1,
@@ -449,6 +453,13 @@ class OfficeRobotExecutor(Node):
             self._last_amcl_cov_xy = max(float(covariance[0]), float(covariance[7]))
             self._last_amcl_cov_yaw = float(covariance[35])
 
+    def _on_odom(self, msg: Odometry) -> None:
+        x = float(msg.pose.pose.position.x)
+        y = float(msg.pose.pose.position.y)
+        if not math.isfinite(x) or not math.isfinite(y):
+            return
+        self.location = (x, y)
+
     def _set_safety_lock(self, enabled: bool, source: str) -> None:
         if self._safety_locked == enabled:
             return
@@ -558,9 +569,6 @@ class OfficeRobotExecutor(Node):
         on_success = str(action_msg.get("on_success", "")).strip() or None
 
         if action in {"GOTO", "LEAD_GUEST"}:
-            x = float(params.get("x", self.location[0]))
-            y = float(params.get("y", self.location[1]))
-            self.location = (x, y)
             self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
         elif action in {"DISPLAY_TEXT", "PAUSE", "QR_SCAN"}:
             self.current_status = "WAITING"

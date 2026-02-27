@@ -28,6 +28,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("nav2_retry_delay_sec", default_value="1.0"),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
+            DeclareLaunchArgument("odom_topic", default_value="/odom"),
             DeclareLaunchArgument("amcl_pose_max_age_sec", default_value="3.0"),
             DeclareLaunchArgument("amcl_pose_stale_check_enabled", default_value="false"),
             DeclareLaunchArgument("amcl_covariance_xy_max", default_value="0.8"),
@@ -82,6 +83,7 @@ def generate_launch_description() -> LaunchDescription:
                         "nav2_retry_delay_sec": LaunchConfiguration("nav2_retry_delay_sec"),
                         "localization_required": LaunchConfiguration("localization_required"),
                         "amcl_pose_topic": LaunchConfiguration("amcl_pose_topic"),
+                        "odom_topic": LaunchConfiguration("odom_topic"),
                         "amcl_pose_max_age_sec": LaunchConfiguration("amcl_pose_max_age_sec"),
                         "amcl_pose_stale_check_enabled": LaunchConfiguration(
                             "amcl_pose_stale_check_enabled"

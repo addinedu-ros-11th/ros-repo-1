@@ -24,6 +24,7 @@ office_robot_executor:
     nav2_retry_delay_sec: 1.0
     localization_required: true
     amcl_pose_topic: amcl_pose
+    odom_topic: /odom
     amcl_pose_max_age_sec: 3.0
     amcl_pose_stale_check_enabled: false
     amcl_covariance_xy_max: 0.8
