@@ -565,38 +565,53 @@
                 let listHtml = "";
 
                 robots.forEach(robot => {
-                    // --- 1. 지도상 마커 표시 ---
-                    const marker = document.createElement('div');
-                    marker.className = `robot-marker ${robot.status.toLowerCase()}`;
-                    
-                    // 백엔드가 이미 픽셀 좌표(raw_px, raw_py)를 계산해서 줌
-                    // (admin_routes.py에서 PathPlanner 정보를 썼기 때문에 정확함)
-                    // 화면 배율만 적용하면 됨
-                    const finalX = robot.px * scale;
-                    const finalY = robot.py * scale;
+                    // --- 1. 지도상 마커 표시 (OFFLINE 제외) ---
+                    if (robot.status !== 'OFFLINE') {
+                        const marker = document.createElement('div');
+                        marker.className = `robot-marker ${robot.status.toLowerCase()}`;
+                        
+                        // 백엔드가 이미 픽셀 좌표(raw_px, raw_py)를 계산해서 줌
+                        const finalX = robot.px * scale;
+                        const finalY = robot.py * scale;
 
-                    marker.style.left = `${finalX}px`;
-                    marker.style.top = `${finalY}px`;
-                    
-                    // 마커에 툴팁 추가
-                    marker.innerHTML = `
-                        <div class="robot-label">${robot.name}</div>
-                        <div class="robot-tooltip">
-                            🔋 ${Math.round(robot.battery)}% <br>
-                            Status: ${robot.status}
-                        </div>
-                    `;
-                    mapInner.appendChild(marker);
+                        marker.style.left = `${finalX}px`;
+                        marker.style.top = `${finalY}px`;
+                        
+                        // 마커에 툴팁 추가
+                        marker.innerHTML = `
+                            <div class="robot-label">${robot.name}</div>
+                            <div class="robot-tooltip">
+                                🔋 ${Math.round(robot.battery)}% <br>
+                                Status: ${robot.status}
+                            </div>
+                        `;
+                        mapInner.appendChild(marker);
+                    }
 
-                    // --- 2. 우측 패널 리스트 업데이트 ---
+                    // --- 2. 우측 패널 리스트 업데이트 (모든 상태 표시) ---
                     const batteryColor = robot.battery > 20 ? '#2ecc71' : '#e74c3c';
-                    const statusClass = robot.status === 'ERROR' ? 'error' : (robot.status === 'MOVING' ? 'moving' : 'idle');
                     
+                    let statusClass = 'idle';
+                    let statusColor = '#3498db'; // Default Blue
+
+                    if (robot.status === 'ERROR') {
+                        statusClass = 'error';
+                        statusColor = '#e74c3c'; // Red
+                    } else if (robot.status === 'OFFLINE') {
+                        statusClass = 'offline';
+                        statusColor = '#95a5a6'; // Gray
+                    } else if (robot.status === 'MOVING') {
+                        statusClass = 'moving';
+                    }
+                    
+                    // OFFLINE 뱃지용 인라인 스타일 (CSS 클래스가 없을 경우 대비)
+                    const badgeStyle = robot.status === 'OFFLINE' ? 'background-color: #95a5a6;' : '';
+
                     listHtml += `
-                        <div class="robot-card" style="border-left: 5px solid ${robot.status === 'ERROR' ? '#e74c3c' : '#3498db'}; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
+                        <div class="robot-card" style="border-left: 5px solid ${statusColor}; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <strong style="font-size: 1.1em;">${robot.name}</strong>
-                                <span class="status-badge ${statusClass}">${robot.status}</span>
+                                <span class="status-badge ${statusClass}" style="${badgeStyle}">${robot.status}</span>
                             </div>
                             <div style="margin-top: 5px; font-size: 0.9em; color: #555;">
                                 <div>Task ID: ${robot.current_task_id || '-'}</div>

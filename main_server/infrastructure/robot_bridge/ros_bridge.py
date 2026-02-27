@@ -2,6 +2,7 @@ import json
 import roslibpy
 import asyncio
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
 from main_server.config import config
@@ -187,6 +188,8 @@ class ROSBridge:
         self.log_repo = log_repo
         # DB에서 동적으로 로드하기 위해 초기화 시에는 빈 리스트
         self.managed_robots = []
+        self.last_heartbeat: Dict[str, float] = {}
+        self.last_known_status: Dict[str, str] = {} # [Optimization] 로컬 상태 캐시
 
     async def start(self):
         """ROS Bridge 연결 및 상태 수신 루프 실행"""
@@ -210,6 +213,10 @@ class ROSBridge:
             if robots:
                 self.managed_robots = [r.name for r in robots]
                 logger.info(f"관리 대상 로봇 {len(self.managed_robots)}대 로드 완료: {self.managed_robots}")
+                
+                # 초기 상태 캐싱
+                for r in robots:
+                    self.last_known_status[r.name] = r.status.value if hasattr(r.status, 'value') else r.status
             else:
                 logger.warning("관리 대상 로봇이 DB에 없습니다.")
         except Exception as e:
@@ -219,6 +226,9 @@ class ROSBridge:
         # 등록된 모든 로봇에 대해 구독 설정
         for robot_name in self.managed_robots:
             self.communicator.listen_for_robot_status(robot_name, status_handler)
+            
+        # 하트비트 모니터링 시작 (백그라운드)
+        asyncio.create_task(self._monitor_heartbeats())
         
         try:
             # 연결 유지 대기
@@ -227,11 +237,46 @@ class ROSBridge:
         finally:
             self.communicator.disconnect()
 
+    async def _monitor_heartbeats(self):
+        """주기적으로 로봇의 마지막 통신 시간을 확인하여 연결이 끊긴 로봇을 OFFLINE 처리합니다."""
+        logger.info("Heartbeat Monitor Started")
+        while True:
+            await asyncio.sleep(5) # 5초마다 검사
+            current_time = time.time()
+            
+            for robot_name in self.managed_robots:
+                last_seen = self.last_heartbeat.get(robot_name, 0)
+                
+                # 10초 이상 통신 없으면 OFFLINE 처리
+                if current_time - last_seen > 10:
+                    # [Optimization] 이미 OFFLINE으로 알고 있다면 DB 호출 생략
+                    if self.last_known_status.get(robot_name) == "OFFLINE":
+                        continue
+
+                    try:
+                        await self.fleet_manager.update_robot_status(
+                            robot_id=robot_name, 
+                            status="OFFLINE"
+                        )
+                        self.last_known_status[robot_name] = "OFFLINE" # 캐시 업데이트
+                        logger.warning(f"[{robot_name}] Connection timed out. Status set to OFFLINE.")
+                    except Exception as e:
+                        logger.error(f"[{robot_name}] OFFLINE 전환 실패: {e}")
+
     async def _handle_status_update(self, data: Dict[str, Any]):
         """로봇 상태를 업데이트하고, 이벤트가 있으면 TaskManager 또는 MutexZoneManager에 전달합니다."""
         robot_id = data.get("robot_id")
-        logger.debug(f"[{robot_id}] 로봇 상태 데이터 수신: {data}")
         status = data.get("status")
+
+        # [Heartbeat Update]
+        r_name = data.get("robot_name") or robot_id
+        if r_name:
+            self.last_heartbeat[str(r_name)] = time.time()
+            if status:
+                self.last_known_status[str(r_name)] = status # 캐시 업데이트
+
+        logger.debug(f"[{robot_id}] 로봇 상태 데이터 수신: {data}")
+        
         location = tuple(data.get("location", [0, 0]))
         battery = data.get("battery", 0.0)
         event = data.get("event")

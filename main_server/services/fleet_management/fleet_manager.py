@@ -171,7 +171,7 @@ class FleetManager:
         self.robot_communicator.send_action_sequence(robot_name, actions)
         logger.info(f"로봇 '{robot_name}'에게 {len(actions)}개의 액션 전송 완료.")
 
-    async def update_robot_status(self, robot_id: Union[int, str], status: RobotStatus, location: tuple, battery: float) -> Optional[Robot]:
+    async def update_robot_status(self, robot_id: Union[int, str], status: RobotStatus, location: Optional[tuple] = None, battery: Optional[float] = None) -> Optional[Robot]:
         """로봇으로부터 수신된 텔레메트리 정보를 DB에 갱신합니다."""
         
         # 1. 기존 로봇 정보를 가져와 현재 상태 확인 (상태 변경 감지용)
@@ -189,11 +189,23 @@ class FleetManager:
         robot_id = robot.id # ID 확정 (int)
             
         # 2. DB 업데이트 수행
+        # location이나 battery가 None이면 기존 값 유지
+        new_x = location[0] if location else robot.pose_x
+        new_y = location[1] if location else robot.pose_y
+        new_battery = battery if battery is not None else robot.battery_level
+
+        # [Optimization] 변경 사항이 없으면 DB 업데이트 건너뛰기
+        if (old_status == status and 
+            math.isclose(robot.pose_x, new_x, abs_tol=1e-9) and 
+            math.isclose(robot.pose_y, new_y, abs_tol=1e-9) and 
+            math.isclose(robot.battery_level, new_battery, abs_tol=1e-9)):
+            return robot
+
         update_data = {
             "status": status,
-            "pose_x": location[0],
-            "pose_y": location[1],
-            "battery_level": battery
+            "pose_x": new_x,
+            "pose_y": new_y,
+            "battery_level": new_battery
         }
         updated_robot = await self.robot_repo.update(robot_id, update_data)
         
