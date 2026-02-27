@@ -4,16 +4,30 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Bool, String
+from rclpy.time import Time
+from std_msgs.msg import Bool, Float32, String
+
+try:
+    from std_srvs.srv import Empty
+except Exception:  # pragma: no cover - runtime environment dependent
+    Empty = None
 
 try:
     from nav2_msgs.action import NavigateToPose
 except Exception:  # pragma: no cover - runtime environment dependent
     NavigateToPose = None
+
+try:
+    from tf2_ros import Buffer, TransformException, TransformListener
+except Exception:  # pragma: no cover - runtime environment dependent
+    Buffer = None
+    TransformListener = None
+    TransformException = Exception
 
 
 class OfficeRobotExecutor(Node):
@@ -31,12 +45,13 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("mock_mode", False)
         self.declare_parameter("use_nav2", True)
         self.declare_parameter("execution_delay_sec", 1.5)
-        self.declare_parameter("initial_battery", 100.0)
+        self.declare_parameter("initial_battery", 0.0)
+        self.declare_parameter("battery_topic", "/battery/present")
         self.declare_parameter("nav2_action_name", "navigate_to_pose")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("goal_timeout_sec", 60.0)
         self.declare_parameter("goal_response_timeout_sec", 8.0)
-        self.declare_parameter("stop_cmd_vel_topic", "cmd_vel")
+        self.declare_parameter("stop_cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("safety_lock_topic", "safety_lock")
@@ -47,10 +62,33 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("nav2_abort_as_success_enabled", False)
         self.declare_parameter("nav2_abort_success_distance_tolerance", 0.35)
         self.declare_parameter("nav2_abort_success_error_codes", "103,106,208")
+        self.declare_parameter("nav2_retry_attempts", 1)
+        self.declare_parameter("nav2_retry_delay_sec", 1.0)
+        self.declare_parameter("localization_required", True)
+        self.declare_parameter("amcl_pose_topic", "amcl_pose")
+        self.declare_parameter("amcl_pose_max_age_sec", 3.0)
+        self.declare_parameter("amcl_pose_stale_check_enabled", False)
+        self.declare_parameter("amcl_covariance_xy_max", 0.8)
+        self.declare_parameter("amcl_covariance_yaw_max", 6.0)
+        self.declare_parameter("localization_allow_degraded_covariance", True)
+        self.declare_parameter("nav2_require_map_odom_tf", True)
+        self.declare_parameter("nav2_tf_lookup_timeout_sec", 0.05)
+        self.declare_parameter("localization_recovery_enabled", True)
+        self.declare_parameter("localization_recovery_max_cycles", 2)
+        self.declare_parameter("localization_recovery_cooldown_sec", 8.0)
+        self.declare_parameter("localization_recovery_spin_duration_sec", 4.0)
+        self.declare_parameter("localization_recovery_spin_angular_speed", 0.8)
+        self.declare_parameter(
+            "global_localization_service_name", "reinitialize_global_localization"
+        )
+        self.declare_parameter("global_localization_wait_sec", 0.5)
+        self.declare_parameter("amcl_nomotion_update_service_name", "request_nomotion_update")
+        self.declare_parameter("amcl_nomotion_wait_sec", 0.3)
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
+        self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -85,6 +123,7 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("safety_lock_topic").get_parameter_value().string_value
         )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
+        self.battery_topic = self.get_parameter("battery_topic").get_parameter_value().string_value
         self.include_ai_link_in_status = (
             self.get_parameter("include_ai_link_in_status").get_parameter_value().bool_value
         )
@@ -109,6 +148,94 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .string_value
         )
+        self.nav2_retry_attempts = max(
+            0, self.get_parameter("nav2_retry_attempts").get_parameter_value().integer_value
+        )
+        self.nav2_retry_delay_sec = max(
+            0.2, self.get_parameter("nav2_retry_delay_sec").get_parameter_value().double_value
+        )
+        self.localization_required = (
+            self.get_parameter("localization_required").get_parameter_value().bool_value
+        )
+        self.amcl_pose_topic = (
+            self.get_parameter("amcl_pose_topic").get_parameter_value().string_value
+        )
+        self.amcl_pose_max_age_sec = max(
+            0.5, self.get_parameter("amcl_pose_max_age_sec").get_parameter_value().double_value
+        )
+        self.amcl_pose_stale_check_enabled = (
+            self.get_parameter("amcl_pose_stale_check_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.amcl_covariance_xy_max = max(
+            0.01, self.get_parameter("amcl_covariance_xy_max").get_parameter_value().double_value
+        )
+        self.amcl_covariance_yaw_max = max(
+            0.01, self.get_parameter("amcl_covariance_yaw_max").get_parameter_value().double_value
+        )
+        self.localization_allow_degraded_covariance = (
+            self.get_parameter("localization_allow_degraded_covariance")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.nav2_require_map_odom_tf = (
+            self.get_parameter("nav2_require_map_odom_tf").get_parameter_value().bool_value
+        )
+        self.nav2_tf_lookup_timeout_sec = max(
+            0.01,
+            self.get_parameter("nav2_tf_lookup_timeout_sec").get_parameter_value().double_value,
+        )
+        self.localization_recovery_enabled = (
+            self.get_parameter("localization_recovery_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.localization_recovery_max_cycles = max(
+            0,
+            self.get_parameter("localization_recovery_max_cycles")
+            .get_parameter_value()
+            .integer_value,
+        )
+        self.localization_recovery_cooldown_sec = max(
+            0.0,
+            self.get_parameter("localization_recovery_cooldown_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.localization_recovery_spin_duration_sec = max(
+            0.0,
+            self.get_parameter("localization_recovery_spin_duration_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.localization_recovery_spin_angular_speed = float(
+            self.get_parameter("localization_recovery_spin_angular_speed")
+            .get_parameter_value()
+            .double_value
+        )
+        self.global_localization_service_name = (
+            self.get_parameter("global_localization_service_name")
+            .get_parameter_value()
+            .string_value
+        )
+        self.global_localization_wait_sec = max(
+            0.1,
+            self.get_parameter("global_localization_wait_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.amcl_nomotion_update_service_name = (
+            self.get_parameter("amcl_nomotion_update_service_name")
+            .get_parameter_value()
+            .string_value
+        )
+        self.amcl_nomotion_wait_sec = max(
+            0.1,
+            self.get_parameter("amcl_nomotion_wait_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self.enable_display = (
             self.get_parameter("enable_display").get_parameter_value().bool_value
         )
@@ -118,6 +245,12 @@ class OfficeRobotExecutor(Node):
         )
         self.emit_command_received_event = (
             self.get_parameter("emit_command_received_event").get_parameter_value().bool_value
+        )
+        self.default_goto_success_event = (
+            self.get_parameter("default_goto_success_event")
+            .get_parameter_value()
+            .string_value
+            .strip()
         )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
@@ -139,12 +272,26 @@ class OfficeRobotExecutor(Node):
         self._guide_display_toggle = False
         self._safety_locked = False
         self._ai_link_alive: Optional[bool] = None
+        self._battery_received = False
+        self._nav_retry_timer = None
+        self._nav_retry_attempt_count = 0
+        self._last_amcl_pose_mono = 0.0
+        self._last_amcl_cov_xy: Optional[float] = None
+        self._last_amcl_cov_yaw: Optional[float] = None
+        self._localization_recovery_timer = None
+        self._localization_recovery_active = False
+        self._localization_recovery_until_mono = 0.0
+        self._localization_recovery_cycle_count = 0
+        self._last_localization_recovery_mono = 0.0
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
         self.display_pub = self.create_publisher(String, self.display_topic, 10)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
+        self.amcl_pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, self.amcl_pose_topic, self._on_amcl_pose, 10
+        )
 
         safety_qos = QoSProfile(
             depth=1,
@@ -157,6 +304,9 @@ class OfficeRobotExecutor(Node):
         self.ai_link_sub = self.create_subscription(
             Bool, self.ai_link_topic, self._on_ai_link, safety_qos
         )
+        self.battery_sub = self.create_subscription(
+            Float32, self.battery_topic, self._on_battery, 10
+        )
 
         self.nav_client = None
         if self.use_nav2 and not self.mock_mode:
@@ -164,13 +314,39 @@ class OfficeRobotExecutor(Node):
                 self.get_logger().error("nav2_msgs not available; real GOTO execution disabled.")
             else:
                 self.nav_client = ActionClient(self, NavigateToPose, self.nav2_action_name)
+        self.tf_buffer = None
+        self.tf_listener = None
+        if Buffer is not None and TransformListener is not None:
+            self.tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
+            self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
+        elif self.nav2_require_map_odom_tf:
+            self.get_logger().warn("tf2_ros unavailable; map->odom readiness check will be skipped.")
+        self.global_localization_client = None
+        self.amcl_nomotion_client = None
+        if self.localization_recovery_enabled:
+            if Empty is None:
+                self.get_logger().warn(
+                    "std_srvs/Empty unavailable; global localization reset will be skipped."
+                )
+            else:
+                self.global_localization_client = self.create_client(
+                    Empty, self.global_localization_service_name
+                )
+                self.amcl_nomotion_client = self.create_client(
+                    Empty, self.amcl_nomotion_update_service_name
+                )
 
         self.status_timer = self.create_timer(5.0, self._publish_heartbeat)
 
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
             f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
-            f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event})."
+            f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event}, "
+            f"nav_retry_attempts={self.nav2_retry_attempts}, localization_required={self.localization_required}, "
+            f"amcl_pose_topic={self.amcl_pose_topic}, amcl_stale_check={self.amcl_pose_stale_check_enabled}, "
+            f"allow_degraded_cov={self.localization_allow_degraded_covariance}, "
+            f"recovery_enabled={self.localization_recovery_enabled}, "
+            f"recovery_cycles={self.localization_recovery_max_cycles})."
         )
         self._publish_display("대기", "idle")
 
@@ -257,6 +433,22 @@ class OfficeRobotExecutor(Node):
             f"AI link state updated: {'alive' if self._ai_link_alive else 'dead'}."
         )
 
+    def _on_battery(self, msg: Float32) -> None:
+        value = float(msg.data)
+        if math.isnan(value) or math.isinf(value):
+            return
+        clamped = max(0.0, min(100.0, value))
+        if (not self._battery_received) or abs(clamped - self.battery) >= 0.1:
+            self.battery = clamped
+            self._battery_received = True
+
+    def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        self._last_amcl_pose_mono = time.monotonic()
+        covariance = list(msg.pose.covariance)
+        if len(covariance) >= 36:
+            self._last_amcl_cov_xy = max(float(covariance[0]), float(covariance[7]))
+            self._last_amcl_cov_yaw = float(covariance[35])
+
     def _set_safety_lock(self, enabled: bool, source: str) -> None:
         if self._safety_locked == enabled:
             return
@@ -269,6 +461,8 @@ class OfficeRobotExecutor(Node):
     def _enter_safety_lock(self, source: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         self._stop_guide_display()
+        self._stop_nav_retry()
+        self._stop_localization_recovery("safety_lock")
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -307,6 +501,8 @@ class OfficeRobotExecutor(Node):
         self._publish_display("일시정지", "pause")
 
     def _exit_safety_lock(self, source: str) -> None:
+        self._stop_nav_retry()
+        self._stop_localization_recovery("safety_resume")
         self._action_queue = []
         self._current_action = None
         self._clear_nav_goal_context()
@@ -327,6 +523,8 @@ class OfficeRobotExecutor(Node):
         self._current_task_id = None
 
     def _run_next_action(self) -> None:
+        self._stop_nav_retry()
+        self._stop_localization_recovery("next_action")
         self._current_action = None
         if not self._action_queue:
             if self._safety_locked:
@@ -352,6 +550,9 @@ class OfficeRobotExecutor(Node):
 
         action_msg = self._action_queue.pop(0)
         self._current_action = action_msg
+        self._nav_retry_attempt_count = 0
+        self._localization_recovery_cycle_count = 0
+        self._last_localization_recovery_mono = 0.0
         action = str(action_msg.get("action", action_msg.get("type", ""))).upper().strip()
         params = action_msg.get("params", {}) or {}
         on_success = str(action_msg.get("on_success", "")).strip() or None
@@ -451,10 +652,15 @@ class OfficeRobotExecutor(Node):
         )
 
     def _finish_action_once(self, on_success: Optional[str]) -> None:
+        self._stop_nav_retry()
+        self._stop_localization_recovery("action_finished")
         current_action = self._current_action or {}
         action_name = str(
             current_action.get("action", current_action.get("type", ""))
         ).upper().strip()
+        success_event = on_success
+        if not success_event and action_name == "GOTO" and self.default_goto_success_event:
+            success_event = self.default_goto_success_event
         event_extra: Dict[str, Any] = {}
         if action_name == "QR_SCAN":
             params = current_action.get("params", {}) or {}
@@ -469,11 +675,11 @@ class OfficeRobotExecutor(Node):
         if action_name == "LEAD_GUEST":
             self._stop_guide_display()
         self._current_action = None
-        if on_success:
+        if success_event:
             payload = self._task_id_payload(event_extra)
-            self._publish_event(on_success, payload)
-            self._publish_status(self.current_status, payload, event=on_success)
-            if on_success in {"ARRIVED_AT_DESTINATION", "ARRIVED_AT_BASE"}:
+            self._publish_event(success_event, payload)
+            self._publish_status(self.current_status, payload, event=success_event)
+            if success_event in {"ARRIVED_AT_DESTINATION", "ARRIVED_AT_BASE"}:
                 self._publish_display("도착완료", "arrived")
         self._run_next_action()
 
@@ -528,7 +734,35 @@ class OfficeRobotExecutor(Node):
         if self.nav_client is None:
             self.get_logger().error("Nav2 client unavailable.")
             return False
+        localization_ready, localization_reason = self._is_localization_ready()
+        if not localization_ready:
+            if (
+                self.localization_allow_degraded_covariance
+                and self._is_covariance_only_block(localization_reason)
+            ):
+                self.get_logger().warn(
+                    "Localization covariance above threshold but proceeding in degraded mode "
+                    f"(reason={localization_reason}, task_id={self._current_task_id})."
+                )
+            else:
+                if self._schedule_nav_retry(f"localization_not_ready:{localization_reason}"):
+                    return True
+                self.get_logger().error(
+                    f"Localization not ready (reason={localization_reason}, task_id={self._current_task_id})."
+                )
+                return False
+        if self._localization_recovery_cycle_count > 0:
+            self.get_logger().info(
+                f"Localization converged after recovery cycles={self._localization_recovery_cycle_count} "
+                f"(task_id={self._current_task_id})."
+            )
+            self._localization_recovery_cycle_count = 0
+            self._last_localization_recovery_mono = 0.0
+        # Recovery spin publishes /cmd_vel; stop it before handing control to Nav2.
+        self._stop_localization_recovery("nav_goal_start")
         if not self.nav_client.wait_for_server(timeout_sec=2.0):
+            if self._schedule_nav_retry("action_server_not_ready"):
+                return True
             self.get_logger().error(
                 f"Nav2 action server not ready (action={self.nav2_action_name}, task_id={self._current_task_id})."
             )
@@ -578,6 +812,262 @@ class OfficeRobotExecutor(Node):
         )
         send_future.add_done_callback(self._on_nav_goal_response)
         return True
+
+    def _schedule_nav_retry(self, reason: str) -> bool:
+        if self._safety_locked or self._current_action is None:
+            return False
+
+        action_name = str(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        ).upper().strip()
+        if action_name not in {"GOTO", "LEAD_GUEST"}:
+            return False
+        if self._nav_retry_attempt_count >= self.nav2_retry_attempts:
+            return False
+
+        self._nav_retry_attempt_count += 1
+        attempt = self._nav_retry_attempt_count
+        self._stop_timeout_watchdog()
+        self._clear_nav_goal_context()
+        self._stop_nav_retry()
+        self._trigger_localization_recovery(reason)
+
+        delay_sec = max(0.2, float(self.nav2_retry_delay_sec))
+        self.get_logger().warn(
+            f"Scheduling Nav2 retry (reason={reason}, attempt={attempt}/{self.nav2_retry_attempts}, "
+            f"task_id={self._current_task_id}, delay_sec={delay_sec:.1f})."
+        )
+
+        def _retry_once() -> None:
+            self._stop_nav_retry()
+            if self._safety_locked or self._current_action is None:
+                return
+            retry_action = str(
+                self._current_action.get("action", self._current_action.get("type", ""))
+            ).upper().strip()
+            if retry_action not in {"GOTO", "LEAD_GUEST"}:
+                return
+            retry_params = self._current_action.get("params", {}) or {}
+            if not isinstance(retry_params, dict):
+                self._fail_current_action(
+                    "invalid_retry_params",
+                    {"status_code": 400, "status_text": "invalid retry params"},
+                )
+                return
+            if not self._execute_nav2_goal(retry_params):
+                self._fail_current_action(
+                    "nav2_goal_start_failed",
+                    {"status_code": 500, "status_text": "nav2 goal start failed"},
+                )
+
+        self._nav_retry_timer = self.create_timer(delay_sec, _retry_once)
+        return True
+
+    def _stop_nav_retry(self) -> None:
+        if self._nav_retry_timer is None:
+            return
+        self._nav_retry_timer.cancel()
+        self._nav_retry_timer = None
+
+    def _trigger_localization_recovery(self, reason: str) -> None:
+        if not self.localization_recovery_enabled:
+            return
+        if not reason.startswith("localization_not_ready:"):
+            return
+        if self._localization_recovery_active:
+            return
+        if self._localization_recovery_cycle_count >= self.localization_recovery_max_cycles:
+            return
+
+        now = time.monotonic()
+        if (
+            self.localization_recovery_cooldown_sec > 0.0
+            and self._last_localization_recovery_mono > 0.0
+            and (now - self._last_localization_recovery_mono) < self.localization_recovery_cooldown_sec
+        ):
+            return
+
+        self._localization_recovery_cycle_count += 1
+        cycle = self._localization_recovery_cycle_count
+        self._last_localization_recovery_mono = now
+
+        reason_detail = reason.split(":", 1)[1] if ":" in reason else reason
+        use_global_relocalization = not self._is_covariance_only_block(reason_detail)
+        if reason_detail.startswith("amcl_pose_missing"):
+            self._call_nomotion_update(cycle, reason)
+            use_global_relocalization = cycle > 1
+        elif reason_detail.startswith("amcl_pose_stale"):
+            self._call_nomotion_update(cycle, reason)
+            use_global_relocalization = False
+
+        if use_global_relocalization:
+            self._call_global_localization(cycle, reason)
+        self._start_localization_spin(cycle, reason)
+
+    @staticmethod
+    def _is_covariance_only_block(reason: str) -> bool:
+        return reason.startswith("amcl_cov_xy_high") or reason.startswith("amcl_cov_yaw_high")
+
+    def _call_nomotion_update(self, cycle: int, reason: str) -> None:
+        if self.amcl_nomotion_client is None:
+            return
+        try:
+            if not self.amcl_nomotion_client.wait_for_service(timeout_sec=self.amcl_nomotion_wait_sec):
+                return
+            future = self.amcl_nomotion_client.call_async(Empty.Request())
+            future.add_done_callback(lambda f: self._on_nomotion_update_response(f, cycle, reason))
+            self.get_logger().info(
+                f"Localization recovery cycle={cycle}: requested AMCL nomotion update "
+                f"(service={self.amcl_nomotion_update_service_name}, reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: nomotion update request failed ({exc})."
+            )
+
+    def _on_nomotion_update_response(self, future: Any, cycle: int, reason: str) -> None:
+        try:
+            _ = future.result()
+            self.get_logger().info(
+                f"Localization recovery cycle={cycle}: AMCL nomotion update completed (reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: AMCL nomotion update response error ({exc})."
+            )
+
+    def _call_global_localization(self, cycle: int, reason: str) -> None:
+        if self.global_localization_client is None:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: global localization client unavailable "
+                f"(reason={reason})."
+            )
+            return
+
+        try:
+            if not self.global_localization_client.wait_for_service(
+                timeout_sec=self.global_localization_wait_sec
+            ):
+                self.get_logger().warn(
+                    f"Localization recovery cycle={cycle}: global localization service not ready "
+                    f"(service={self.global_localization_service_name})."
+                )
+                return
+            future = self.global_localization_client.call_async(Empty.Request())
+            future.add_done_callback(
+                lambda f: self._on_global_localization_response(f, cycle, reason)
+            )
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: requested global relocalization "
+                f"(service={self.global_localization_service_name}, reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: global relocalization request failed ({exc})."
+            )
+
+    def _on_global_localization_response(self, future: Any, cycle: int, reason: str) -> None:
+        try:
+            _ = future.result()
+            self.get_logger().info(
+                f"Localization recovery cycle={cycle}: global relocalization completed (reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: global relocalization response error ({exc})."
+            )
+
+    def _start_localization_spin(self, cycle: int, reason: str) -> None:
+        if self.localization_recovery_spin_duration_sec <= 0.0:
+            return
+        if abs(self.localization_recovery_spin_angular_speed) < 1e-3:
+            return
+        if self._safety_locked:
+            return
+
+        self._stop_localization_recovery(None)
+        self._localization_recovery_active = True
+        self._localization_recovery_until_mono = (
+            time.monotonic() + self.localization_recovery_spin_duration_sec
+        )
+
+        self.get_logger().warn(
+            f"Localization recovery cycle={cycle}: spinning for {self.localization_recovery_spin_duration_sec:.1f}s "
+            f"(angular_z={self.localization_recovery_spin_angular_speed:.2f}, reason={reason})."
+        )
+
+        self._localization_recovery_timer = self.create_timer(
+            0.1, lambda: self._on_localization_spin_timer(cycle, reason)
+        )
+
+    def _on_localization_spin_timer(self, cycle: int, reason: str) -> None:
+        if not self._localization_recovery_active:
+            return
+        if self._safety_locked or self._current_action is None:
+            self._stop_localization_recovery("interrupted")
+            return
+        if time.monotonic() >= self._localization_recovery_until_mono:
+            self._stop_localization_recovery("completed")
+            return
+
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.angular.z = float(self.localization_recovery_spin_angular_speed)
+        self.stop_pub.publish(twist)
+
+    def _stop_localization_recovery(self, reason: Optional[str]) -> None:
+        was_active = self._localization_recovery_active
+        self._localization_recovery_active = False
+        self._localization_recovery_until_mono = 0.0
+        if self._localization_recovery_timer is not None:
+            self._localization_recovery_timer.cancel()
+            self._localization_recovery_timer = None
+        if not was_active:
+            return
+
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.angular.z = 0.0
+        self.stop_pub.publish(twist)
+        if reason:
+            self.get_logger().info(f"Localization recovery spin stopped ({reason}).")
+
+    def _is_localization_ready(self) -> Tuple[bool, str]:
+        if not self.localization_required:
+            return True, "disabled"
+
+        if self._last_amcl_pose_mono <= 0.0:
+            return False, "amcl_pose_missing"
+
+        if self.amcl_pose_stale_check_enabled:
+            pose_age = time.monotonic() - self._last_amcl_pose_mono
+            if pose_age > self.amcl_pose_max_age_sec:
+                return False, f"amcl_pose_stale:{pose_age:.2f}s"
+
+        if (
+            self._last_amcl_cov_xy is not None
+            and self._last_amcl_cov_xy > self.amcl_covariance_xy_max
+        ):
+            return False, f"amcl_cov_xy_high:{self._last_amcl_cov_xy:.3f}"
+
+        if (
+            self._last_amcl_cov_yaw is not None
+            and self._last_amcl_cov_yaw > self.amcl_covariance_yaw_max
+        ):
+            return False, f"amcl_cov_yaw_high:{self._last_amcl_cov_yaw:.3f}"
+
+        if self.nav2_require_map_odom_tf and self.tf_buffer is not None:
+            try:
+                self.tf_buffer.lookup_transform(
+                    "map",
+                    "odom",
+                    Time(),
+                    timeout=Duration(seconds=self.nav2_tf_lookup_timeout_sec),
+                )
+            except TransformException:
+                return False, "map_odom_tf_missing"
+
+        return True, "ready"
 
     def _on_nav_goal_feedback(self, feedback_msg: Any) -> None:
         feedback = getattr(feedback_msg, "feedback", None)
@@ -634,6 +1124,8 @@ class OfficeRobotExecutor(Node):
             self._goal_response_started_at = None
             self._cancel_requested = False
             self._cancel_reason = None
+            if self._schedule_nav_retry("goal_rejected"):
+                return
             self.get_logger().warn(
                 f"Nav2 goal rejected (task_id={self._current_task_id}, action={self.nav2_action_name})."
             )
@@ -765,6 +1257,8 @@ class OfficeRobotExecutor(Node):
     def _cancel_active_sequence(self, reason: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         self._stop_guide_display()
+        self._stop_nav_retry()
+        self._stop_localization_recovery("sequence_cancel")
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -1025,6 +1519,8 @@ class OfficeRobotExecutor(Node):
     def _fail_current_action(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         self._stop_timeout_watchdog()
         self._stop_guide_display()
+        self._stop_nav_retry()
+        self._stop_localization_recovery("action_failed")
         self._action_queue = []
         self._current_action = None
         self._current_goal_handle = None
