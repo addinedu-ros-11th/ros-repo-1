@@ -35,6 +35,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("nav2_action_name", "navigate_to_pose")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("goal_timeout_sec", 60.0)
+        self.declare_parameter("goal_response_timeout_sec", 8.0)
         self.declare_parameter("stop_cmd_vel_topic", "cmd_vel")
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
@@ -43,6 +44,9 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("include_ai_link_in_status", True)
         self.declare_parameter("nav2_success_status_code", 4)
         self.declare_parameter("nav2_feedback_log_period_sec", 1.5)
+        self.declare_parameter("nav2_abort_as_success_enabled", False)
+        self.declare_parameter("nav2_abort_success_distance_tolerance", 0.35)
+        self.declare_parameter("nav2_abort_success_error_codes", "103,106,208")
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
@@ -64,6 +68,9 @@ class OfficeRobotExecutor(Node):
         self.frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
         self.goal_timeout_sec = (
             self.get_parameter("goal_timeout_sec").get_parameter_value().double_value
+        )
+        self.goal_response_timeout_sec = (
+            self.get_parameter("goal_response_timeout_sec").get_parameter_value().double_value
         )
         self.stop_cmd_vel_topic = (
             self.get_parameter("stop_cmd_vel_topic").get_parameter_value().string_value
@@ -87,6 +94,21 @@ class OfficeRobotExecutor(Node):
         self.nav2_feedback_log_period_sec = (
             self.get_parameter("nav2_feedback_log_period_sec").get_parameter_value().double_value
         )
+        self.nav2_abort_as_success_enabled = (
+            self.get_parameter("nav2_abort_as_success_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.nav2_abort_success_distance_tolerance = (
+            self.get_parameter("nav2_abort_success_distance_tolerance")
+            .get_parameter_value()
+            .double_value
+        )
+        self.nav2_abort_success_error_codes = self._parse_int_set(
+            self.get_parameter("nav2_abort_success_error_codes")
+            .get_parameter_value()
+            .string_value
+        )
         self.enable_display = (
             self.get_parameter("enable_display").get_parameter_value().bool_value
         )
@@ -106,6 +128,7 @@ class OfficeRobotExecutor(Node):
         self._current_action: Optional[Dict[str, Any]] = None
         self._current_goal_handle = None
         self._goal_started_at: Optional[float] = None
+        self._goal_response_started_at: Optional[float] = None
         self._timeout_timer = None
         self._goal_target: Optional[Dict[str, Any]] = None
         self._last_nav_feedback: Optional[Dict[str, Any]] = None
@@ -152,6 +175,7 @@ class OfficeRobotExecutor(Node):
         self._publish_display("대기", "idle")
 
     def _publish_heartbeat(self) -> None:
+        self._check_goal_response_watchdog()
         self._publish_status(self.current_status, {"note": "heartbeat"})
 
     def _on_commands(self, msg: String) -> None:
@@ -543,6 +567,7 @@ class OfficeRobotExecutor(Node):
         self._cancel_requested = False
         self._cancel_reason = None
         self._goal_started_at = time.time()
+        self._goal_response_started_at = self._goal_started_at
         self.get_logger().info(
             f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
             f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), send_ts={send_ts:.3f})"
@@ -593,6 +618,7 @@ class OfficeRobotExecutor(Node):
         try:
             goal_handle = future.result()
         except Exception as exc:
+            self._goal_response_started_at = None
             self._cancel_requested = False
             self._cancel_reason = None
             self.get_logger().error(
@@ -605,6 +631,7 @@ class OfficeRobotExecutor(Node):
             return
 
         if not goal_handle.accepted:
+            self._goal_response_started_at = None
             self._cancel_requested = False
             self._cancel_reason = None
             self.get_logger().warn(
@@ -613,6 +640,7 @@ class OfficeRobotExecutor(Node):
             self._fail_current_action("goal_rejected", {"failure_detail": "goal_rejected"})
             return
 
+        self._goal_response_started_at = None
         self._current_goal_handle = goal_handle
         self.get_logger().info(
             f"Nav2 goal accepted (task_id={self._current_task_id}, action={self.nav2_action_name})."
@@ -665,6 +693,25 @@ class OfficeRobotExecutor(Node):
             return
 
         detail = self._build_nav2_result_detail(status_code, result)
+        fallback = self._build_abort_success_detail(status_code, detail, feedback_snapshot)
+        if fallback is not None:
+            on_success = None
+            if self._current_action is not None:
+                on_success = str(self._current_action.get("on_success", "")).strip() or None
+            self.get_logger().warn(
+                f"Nav2 goal aborted but treated as success (task_id={self._current_task_id}, "
+                f"status={detail.get('status_text', status_code)}, "
+                f"error_code={detail.get('error_code')}, "
+                f"distance_remaining={fallback.get('distance_remaining')}, "
+                f"distance_to_goal={fallback.get('distance_to_goal')}, "
+                f"tolerance={self.nav2_abort_success_distance_tolerance})."
+            )
+            self._publish_event("NAV2_ABORT_TREATED_AS_SUCCESS", self._task_id_payload(fallback))
+            self._finish_action_once(on_success)
+            self._cancel_requested = False
+            self._cancel_reason = None
+            return
+
         self.get_logger().error(
             f"Nav2 goal failed (task_id={self._current_task_id}, status={detail.get('status_text', status_code)}, "
             f"error_code={detail.get('error_code')}, error_msg={detail.get('error_msg')}, "
@@ -687,6 +734,7 @@ class OfficeRobotExecutor(Node):
         self._goal_started_at = None
 
     def _check_goal_timeout(self) -> None:
+        self._check_goal_response_watchdog()
         if self._goal_started_at is None:
             return
         if (time.time() - self._goal_started_at) <= self.goal_timeout_sec:
@@ -801,10 +849,43 @@ class OfficeRobotExecutor(Node):
             return 0.0
         return max(0.0, time.time() - self._goal_started_at)
 
+    def _check_goal_response_watchdog(self) -> None:
+        if self._goal_response_started_at is None:
+            return
+        if self._current_goal_handle is not None:
+            self._goal_response_started_at = None
+            return
+        if self._current_action is None:
+            self._goal_response_started_at = None
+            return
+
+        action_name = str(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        ).upper().strip()
+        if action_name not in {"GOTO", "LEAD_GUEST"}:
+            self._goal_response_started_at = None
+            return
+
+        elapsed = time.time() - self._goal_response_started_at
+        if elapsed <= self.goal_response_timeout_sec:
+            return
+
+        self._goal_response_started_at = None
+        self.get_logger().error(
+            f"Nav2 goal response timeout (task_id={self._current_task_id}, "
+            f"waited_sec={elapsed:.3f}, action={self.nav2_action_name}, target={self._goal_target})"
+        )
+        self._publish_zero_cmd_vel_burst()
+        self._fail_current_action(
+            "goal_response_timeout",
+            {"status_code": 504, "status_text": "goal response timeout"},
+        )
+
     def _clear_nav_goal_context(self) -> None:
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
+        self._goal_response_started_at = None
 
     def _start_guide_display(self) -> None:
         self._stop_guide_display()
@@ -871,6 +952,75 @@ class OfficeRobotExecutor(Node):
         if hasattr(result_data, "error_msg"):
             detail["error_msg"] = str(getattr(result_data, "error_msg"))
         return detail
+
+    @staticmethod
+    def _parse_int_set(csv: str) -> set[int]:
+        values: set[int] = set()
+        for token in str(csv or "").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                values.add(int(token))
+            except ValueError:
+                continue
+        return values
+
+    def _build_abort_success_detail(
+        self,
+        status_code: int,
+        detail: Dict[str, Any],
+        feedback_snapshot: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.nav2_abort_as_success_enabled:
+            return None
+        if status_code != 6:
+            return None
+
+        error_code = detail.get("error_code")
+        if self.nav2_abort_success_error_codes and error_code not in self.nav2_abort_success_error_codes:
+            return None
+
+        if not feedback_snapshot:
+            return None
+
+        distance_remaining = feedback_snapshot.get("distance_remaining")
+        distance_to_goal = None
+        if (
+            self._goal_target is not None
+            and "x" in self._goal_target
+            and "y" in self._goal_target
+            and "current_x" in feedback_snapshot
+            and "current_y" in feedback_snapshot
+        ):
+            dx = float(self._goal_target["x"]) - float(feedback_snapshot["current_x"])
+            dy = float(self._goal_target["y"]) - float(feedback_snapshot["current_y"])
+            distance_to_goal = math.hypot(dx, dy)
+
+        tolerance = max(0.0, float(self.nav2_abort_success_distance_tolerance))
+        close_enough = False
+        if isinstance(distance_remaining, (int, float)) and float(distance_remaining) <= tolerance:
+            close_enough = True
+        if isinstance(distance_to_goal, (int, float)) and float(distance_to_goal) <= tolerance:
+            close_enough = True
+        if not close_enough:
+            return None
+
+        fallback: Dict[str, Any] = {
+            "status_code": status_code,
+            "status_text": self._goal_status_text(status_code),
+            "treated_as_success": True,
+            "success_tolerance": tolerance,
+        }
+        if isinstance(distance_remaining, (int, float)):
+            fallback["distance_remaining"] = float(distance_remaining)
+        if isinstance(distance_to_goal, (int, float)):
+            fallback["distance_to_goal"] = float(distance_to_goal)
+        if error_code is not None:
+            fallback["error_code"] = int(error_code)
+        if "error_msg" in detail:
+            fallback["error_msg"] = detail.get("error_msg")
+        return fallback
 
     def _fail_current_action(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         self._stop_timeout_watchdog()

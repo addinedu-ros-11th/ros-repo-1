@@ -8,12 +8,16 @@ office_robot_executor:
     nav2_action_name: navigate_to_pose
     frame_id: map
     goal_timeout_sec: 60.0
+    goal_response_timeout_sec: 8.0
     stop_cmd_vel_topic: cmd_vel
     stop_publish_count: 10
     stop_publish_hz: 20.0
     safety_lock_topic: safety_lock
     ai_link_topic: ai_link
     include_ai_link_in_status: true
+    nav2_abort_as_success_enabled: true
+    nav2_abort_success_distance_tolerance: 0.35
+    nav2_abort_success_error_codes: "103,106,208"
     enable_display: true
     display_topic: display
     guide_display_period_sec: 2.0

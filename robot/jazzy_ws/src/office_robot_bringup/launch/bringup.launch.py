@@ -16,6 +16,7 @@ def generate_launch_description() -> LaunchDescription:
     nav2_action_name = LaunchConfiguration("nav2_action_name")
     frame_id = LaunchConfiguration("frame_id")
     goal_timeout_sec = LaunchConfiguration("goal_timeout_sec")
+    goal_response_timeout_sec = LaunchConfiguration("goal_response_timeout_sec")
     stop_cmd_vel_topic = LaunchConfiguration("stop_cmd_vel_topic")
     stop_publish_count = LaunchConfiguration("stop_publish_count")
     stop_publish_hz = LaunchConfiguration("stop_publish_hz")
@@ -45,6 +46,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("nav2_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("frame_id", default_value="map"),
             DeclareLaunchArgument("goal_timeout_sec", default_value="60.0"),
+            DeclareLaunchArgument("goal_response_timeout_sec", default_value="8.0"),
             DeclareLaunchArgument("stop_cmd_vel_topic", default_value="cmd_vel"),
             DeclareLaunchArgument("stop_publish_count", default_value="10"),
             DeclareLaunchArgument("stop_publish_hz", default_value="20.0"),
@@ -98,6 +100,7 @@ def generate_launch_description() -> LaunchDescription:
                             "nav2_action_name": nav2_action_name,
                             "frame_id": frame_id,
                             "goal_timeout_sec": goal_timeout_sec,
+                            "goal_response_timeout_sec": goal_response_timeout_sec,
                             "stop_cmd_vel_topic": stop_cmd_vel_topic,
                             "stop_publish_count": stop_publish_count,
                             "stop_publish_hz": stop_publish_hz,

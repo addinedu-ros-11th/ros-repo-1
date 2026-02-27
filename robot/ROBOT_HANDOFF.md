@@ -37,6 +37,7 @@
 - `enable_rosbridge`
 - `use_nav2`
 - `nav2_action_name`
+- `goal_response_timeout_sec` (default `8.0`)
 - `mock_mode` (default `false`)
 
 ## Standard Run
