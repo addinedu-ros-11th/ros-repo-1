@@ -414,7 +414,7 @@ class VideoStreamProcessor:
                     self._check_test_mode()
                     continue
 
-                robot_ip = frame_data["robot_id"]   # UDP 발신 IP
+                robot_ip = frame_data["robot_id"]  # UDP 발신 IP
                 robot_id = self.receiver.get_robot_id(robot_ip)  # → "robot_1" 등
                 frame = frame_data["frame"]
                 ts = frame_data["timestamp"]
