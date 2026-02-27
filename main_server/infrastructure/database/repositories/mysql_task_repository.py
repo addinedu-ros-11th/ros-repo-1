@@ -1,5 +1,6 @@
 import json
 import logging
+import aiomysql
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -19,19 +20,31 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
 
     async def get_by_id(self, task_id: int) -> Optional[Task]:
         """ID로 단일 항목을 조회하고 JSON 필드를 처리합니다."""
+        logger.debug(f"[MySQLTaskRepository] get_by_id 호출: task_id={task_id}")
         query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"
         result = await self._execute(query, (task_id,), fetch="one")
+        
         if not result:
+            logger.warning(f"[MySQLTaskRepository] ID {task_id}에 해당하는 작업을 DB에서 찾을 수 없습니다.")
             return None
             
+        logger.debug(f"[MySQLTaskRepository] DB 조회 결과 성공: {result}")
+
         # DB의 JSON 문자열을 dict로 변환 (Pydantic 모델 생성 전)
         if "details" in result and isinstance(result["details"], str):
             try:
                 result["details"] = json.loads(result["details"])
             except json.JSONDecodeError:
+                logger.warning(f"[MySQLTaskRepository] Task {task_id}의 details JSON 파싱 실패")
                 result["details"] = {}
                 
-        return self.model(**result)
+        try:
+            task_obj = self.model(**result)
+            return task_obj
+        except Exception as e:
+            logger.error(f"[MySQLTaskRepository] Task 모델 변환 실패 (ID: {task_id}): {e}")
+            logger.error(f"원인 데이터: {result}")
+            return None
 
     async def get_all_by_status(self, status: TaskStatus) -> List[Task]:
         query = f"SELECT * FROM {self.table_name} WHERE status = %s ORDER BY created_at ASC"
@@ -64,7 +77,7 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
     async def create(self, data: Dict[str, Any], items: Optional[List[Dict[str, Any]]] = None) -> Optional[Task]:
         """
         새로운 작업을 생성하고, 연관된 아이템(Task_Items)이 있다면 함께 저장합니다.
-        트랜잭션을 사용하여 원자성을 보장합니다.
+        트랜잭션을 사용하여 원자성을 보장하며, 생성 직후 동일 연결에서 데이터를 조회합니다.
         """
         # Enum 객체 처리 (SR-011, SR-012 호환성 보장)
         for key in ["task_type", "status"]:
@@ -75,9 +88,6 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
         if 'details' in data and isinstance(data['details'], dict):
             data['details'] = json.dumps(data['details'])
         
-        # 실제 DB 컬럼에 해당하는 필드만 추출
-        # Task.model_fields는 alias를 포함하므로, 실제 DB 컬럼명으로 변환하거나 직접 지정이 필요할 수 있음
-        # 여기서는 data에 들어있는 키 중 DB schema(Tasks table)에 있는 것들을 주로 사용
         db_fields = {
             "requester_id", "receiver_id", "assigned_robot_id", "task_type", 
             "priority", "status", "destination_id", "target_location_name", 
@@ -86,7 +96,7 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
         task_db_data = {k: v for k, v in data.items() if k in db_fields}
         
         async with Database.get_connection() as conn:
-            async with conn.cursor() as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
                 try:
                     # 1. Task 생성
                     columns = ", ".join(task_db_data.keys())
@@ -102,13 +112,30 @@ class MySQLTaskRepository(BaseRepository, ITaskRepository):
                             await cursor.execute(item_query, (task_id, item['product_id'], item['quantity']))
                     
                     await conn.commit()
-                    logger.info(f"Task {task_id} created successfully with {len(items) if items else 0} items.")
+                    logger.info(f"[MySQLTaskRepository] Task {task_id} committed successfully.")
+
+                    # 3. 동일 연결에서 즉시 재조회 (가시성 문제 해결)
+                    select_query = f"SELECT * FROM {self.table_name} WHERE {self.pk_name} = %s"
+                    await cursor.execute(select_query, (task_id,))
+                    result = await cursor.fetchone()
+                    
+                    if not result:
+                        logger.error(f"[MySQLTaskRepository] 생성 직후 ID {task_id} 조회 실패 (동일 연결)")
+                        return None
+
+                    # JSON 복구 및 모델 생성
+                    if "details" in result and isinstance(result["details"], str):
+                        try:
+                            result["details"] = json.loads(result["details"])
+                        except:
+                            result["details"] = {}
+                    
+                    return self.model(**result)
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to create task (Step: {'Items' if 'task_id' in locals() else 'Task'}): {e}", exc_info=True)
                     return None
-
-        return await self.get_by_id(task_id)
 
     async def update(self, task_id: int, update_data: Dict[str, Any]) -> Optional[Task]:
         if 'details' in update_data and isinstance(update_data['details'], dict):

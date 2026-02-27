@@ -2,6 +2,7 @@ import math
 import logging
 from typing import List, Optional, Dict, Any, Union
 
+from main_server.config import config
 from main_server.domains.robots.schemas import Robot, RobotStatus
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
 from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridgeCommunicator
@@ -25,9 +26,9 @@ class FleetManager:
         self.robot_communicator = robot_communicator
         self.connection_manager = connection_manager
         self.ai_processing_service = ai_processing_service
-        self.path_planner = PathPlannerService('./main_server/domains/map/mymap.yaml')
+        self.path_planner = PathPlannerService(config.MAP_YAML_PATH)
         self.forbidden_zones: List[Dict] = []
-        logger.info("FleetManager 초기화 완료.")
+        logger.info(f"FleetManager 초기화 완료. (Map: {config.MAP_YAML_PATH})")
 
     async def enable_obstacle_relay(self, robot_id: str):
         """
@@ -103,13 +104,18 @@ class FleetManager:
     async def find_optimal_robot(self, target_pose: tuple) -> Optional[Robot]:
         """목적지에 가장 적합한 로봇을 검색합니다."""
         idle_robots = await self.robot_repo.find_by_status(RobotStatus.IDLE)
+        if not idle_robots: 
+            logger.warning("현재 IDLE 상태인 로봇이 없습니다.")
+            return None
         # 배터리 충분하고 위치 정보가 유효한 로봇만 필터링
         available_robots = [
             r for r in idle_robots 
             if r.battery_level > 20 and r.pose_x is not None and r.pose_y is not None
         ]
         
-        if not available_robots: return None
+        if not available_robots: 
+            logger.warning("배터리 잔량이 충분한 상태의 로봇이 없습니다.")
+            return None
         robot_distances = []
 
         for robot in available_robots:

@@ -47,14 +47,20 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
         """로봇 정보를 업데이트하고 업데이트된 객체를 반환합니다."""
         # Pydantic 모델의 기본값이 아닌 명시적으로 설정된 값만 포함
         update_values = {k: v for k, v in update_data.items() if v is not None}
-        if not update_values:
-            return await self.get_by_id(robot_id) # 업데이트할 내용이 없으면 현재 상태 반환
-
+        
+        # 하트비트 시간 명시적 추가 (실시간 통신 확인용)
+        update_values["last_heartbeat"] = "NOW()" 
+        
         # DB 컬럼명으로 매핑 (pose_x -> current_x, pose_y -> current_y)
         if "pose_x" in update_values:
             update_values["current_x"] = update_values.pop("pose_x")
         if "pose_y" in update_values:
             update_values["current_y"] = update_values.pop("pose_y")
+
+        # BaseRepository.update는 placeholder %s를 사용하므로 SQL 함수 NOW()를 직접 넣으려면 쿼리를 직접 작성하거나
+        # datetime.now()를 사용해야 합니다. 여기서는 datetime.now()를 사용하도록 수정합니다.
+        from datetime import datetime
+        update_values["last_heartbeat"] = datetime.now()
 
         await super().update(robot_id, update_values)
         

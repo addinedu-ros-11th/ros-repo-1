@@ -21,15 +21,23 @@ class PathPlannerService:
 
     def load_map_config(self, yaml_path: str):
             """YAML 파일에서 해상도와 원점 정보를 읽고 PGM 이미지를 로드합니다."""
+            import os
             with open(yaml_path, 'r') as f:
-                config = yaml.safe_load(f)
+                config_data = yaml.safe_load(f)
             
-            self.resolution = config['resolution']  # 예: 0.05 (5cm)
-            self.origin = config['origin']          # [x, y, yaw]
-            pgm_filename = config['image']
+            self.resolution = config_data['resolution']  # 예: 0.05 (5cm)
+            self.origin = config_data['origin']          # [x, y, yaw]
+            pgm_filename = config_data['image']
             
-            # PGM 파일 읽기 (절대경로 처리가 필요할 수 있음)
-            map_image = Image.open(pgm_filename)
+            # PGM 파일 경로를 YAML 파일 위치 기준으로 절대 경로화
+            if not os.path.isabs(pgm_filename):
+                yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
+                pgm_path = os.path.join(yaml_dir, pgm_filename)
+            else:
+                pgm_path = pgm_filename
+                
+            logger.info(f"Loading map image from: {pgm_path}")
+            map_image = Image.open(pgm_path)
             # 0(검정, 장애물) ~ 255(흰색, 자유공간)
             raw_data = np.array(map_image)
             self.height, self.width = raw_data.shape

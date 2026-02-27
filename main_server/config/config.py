@@ -45,3 +45,8 @@ APP_VERSION = "3.0.0"
 STATIC_FILES_DIR = "main_server/web/static"
 ADMIN_DASHBOARD_PATH = "/web/admin"
 EMPLOYEE_APP_PATH = "/web/employee"
+
+# Map configuration
+MAP_DIR = "main_server/domains/map"
+DEFAULT_MAP_NAME = "mymap.yaml"
+MAP_YAML_PATH = os.path.join(MAP_DIR, DEFAULT_MAP_NAME)

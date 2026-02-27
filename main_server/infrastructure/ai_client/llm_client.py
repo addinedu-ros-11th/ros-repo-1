@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Any, Dict
 
 import grpc
@@ -21,7 +22,35 @@ class LLMServiceClient:
     ):
         self.channel = grpc.aio.insecure_channel(f"{host}:{port}")
         self.stub = ai_llm_pb2_grpc.LLMServiceStub(self.channel)
-        print(f"LLM gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
+        logger.info(f"LLM gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
+        # 연결 상태 모니터링 태스크 시작
+        self._monitor_task = asyncio.create_task(self._monitor_connectivity())
+
+    async def _monitor_connectivity(self):
+        """gRPC 채널의 연결 상태를 모니터링하고 로그를 남깁니다."""
+        last_state = None
+        while True:
+            state = self.channel.get_state(try_to_connect=True)
+            if state != last_state:
+                if state == grpc.ChannelConnectivity.READY:
+                    logger.info(f"LLM gRPC 서버에 연결되었습니다. (State: {state})")
+                elif state == grpc.ChannelConnectivity.TRANSIENT_FAILURE:
+                    logger.warning(f"LLM gRPC 서버 연결 실패 - 재시도 중... (State: {state})")
+                elif state == grpc.ChannelConnectivity.IDLE:
+                    logger.info(f"LLM gRPC 서버 연결이 유휴 상태입니다. (State: {state})")
+                elif state == grpc.ChannelConnectivity.CONNECTING:
+                    logger.info(f"LLM gRPC 서버에 연결 시도 중... (State: {state})")
+                
+                last_state = state
+            
+            # 상태가 변경될 때까지 대기
+            try:
+                await self.channel.wait_for_state_change(last_state)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"LLM gRPC 상태 모니터링 오류: {e}")
+                await asyncio.sleep(5)
 
     async def parse_natural_language(self, req_id: str, message: str) -> Dict[str, Any]:
         """

@@ -1,3 +1,5 @@
+import logging
+import asyncio
 import grpc
 from typing import Dict, Any, Optional
 from main_server.config import config
@@ -6,6 +8,8 @@ from main_server.config import config
 from main_server.infrastructure.grpc import ai_vision_pb2
 from main_server.infrastructure.grpc import ai_vision_pb2_grpc
 from main_server.domains.ai.interfaces import IVisionService
+
+logger = logging.getLogger(__name__)
 
 
 class VisionServiceClient(IVisionService):
@@ -18,7 +22,35 @@ class VisionServiceClient(IVisionService):
     ):
         self.channel = grpc.aio.insecure_channel(f"{host}:{port}")
         self.stub = ai_vision_pb2_grpc.VisionServiceStub(self.channel)
-        print(f"Vision gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
+        logger.info(f"Vision gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
+        # 연결 상태 모니터링 태스크 시작
+        self._monitor_task = asyncio.create_task(self._monitor_connectivity())
+
+    async def _monitor_connectivity(self):
+        """gRPC 채널의 연결 상태를 모니터링하고 로그를 남깁니다."""
+        last_state = None
+        while True:
+            state = self.channel.get_state(try_to_connect=True)
+            if state != last_state:
+                if state == grpc.ChannelConnectivity.READY:
+                    logger.info(f"Vision gRPC 서버에 연결되었습니다. (State: {state})")
+                elif state == grpc.ChannelConnectivity.TRANSIENT_FAILURE:
+                    logger.warning(f"Vision gRPC 서버 연결 실패 - 재시도 중... (State: {state})")
+                elif state == grpc.ChannelConnectivity.IDLE:
+                    logger.info(f"Vision gRPC 서버 연결이 유휴 상태입니다. (State: {state})")
+                elif state == grpc.ChannelConnectivity.CONNECTING:
+                    logger.info(f"Vision gRPC 서버에 연결 시도 중... (State: {state})")
+                
+                last_state = state
+            
+            # 상태가 변경될 때까지 대기
+            try:
+                await self.channel.wait_for_state_change(last_state)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Vision gRPC 상태 모니터링 오류: {e}")
+                await asyncio.sleep(5)
 
     async def request_object_detection(
         self, image_id: str, image_data: Optional[bytes] = None
@@ -72,7 +104,7 @@ class VisionServiceClient(IVisionService):
             response = await self.stub.UpdateInferenceState(request)
             return {"success": response.success, "message": response.message}
         except Exception as e:
-            print(f"Error in UpdateInferenceState: {e}")
+            logger.error(f"Error in UpdateInferenceState: {e}")
             return {"success": False, "message": str(e)}
 
     async def start_vision_stream(self, callback: Any):
@@ -80,7 +112,7 @@ class VisionServiceClient(IVisionService):
         비전 추론 결과 스트림을 구독합니다.
         robot_id 별로 구분된 결과가 전달됩니다.
         """
-        print("Vision 스트림 구독 시작 (StreamVisionResults)...")
+        logger.info("Vision 스트림 구독 시작 (StreamVisionResults)...")
         try:
             async for result in self.stub.StreamVisionResults(ai_vision_pb2.Empty()):
                 data = {
@@ -119,7 +151,7 @@ class VisionServiceClient(IVisionService):
 
                 await callback(data)
         except grpc.aio.AioRpcError as e:
-            print(f"Vision 스트림 연결 오류: {e}")
+            logger.error(f"Vision 스트림 연결 오류: {e}")
 
     async def close(self):
         """gRPC 채널을 닫습니다."""

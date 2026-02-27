@@ -209,7 +209,9 @@ CREATE TABLE `Robots` (
 LOCK TABLES `Robots` WRITE;
 /*!40000 ALTER TABLE `Robots` DISABLE KEYS */;
 INSERT INTO `Robots` (`name`, `status`, `battery_level`, `current_x`, `current_y`, `current_task_id`, `last_heartbeat`) VALUES
-('robot_01', 'IDLE', 100.0, 0.1, 0.1, NULL, NOW());
+('robot_1', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
+INSERT INTO `Robots` (`name`, `status`, `battery_level`, `current_x`, `current_y`, `current_task_id`, `last_heartbeat`) VALUES
+('robot_2', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
 /*!40000 ALTER TABLE `Robots` ENABLE KEYS */;
 UNLOCK TABLES;
 
