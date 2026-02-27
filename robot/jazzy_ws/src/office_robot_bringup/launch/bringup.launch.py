@@ -14,6 +14,8 @@ def generate_launch_description() -> LaunchDescription:
     robot_id = LaunchConfiguration("robot_id")
     use_nav2 = LaunchConfiguration("use_nav2")
     nav2_action_name = LaunchConfiguration("nav2_action_name")
+    initial_battery = LaunchConfiguration("initial_battery")
+    battery_topic = LaunchConfiguration("battery_topic")
     frame_id = LaunchConfiguration("frame_id")
     goal_timeout_sec = LaunchConfiguration("goal_timeout_sec")
     goal_response_timeout_sec = LaunchConfiguration("goal_response_timeout_sec")
@@ -71,6 +73,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("mock_mode", default_value="false"),
             DeclareLaunchArgument("use_nav2", default_value="true"),
             DeclareLaunchArgument("execution_delay_sec", default_value="1.5"),
+            DeclareLaunchArgument("initial_battery", default_value="0.0"),
+            DeclareLaunchArgument("battery_topic", default_value="/battery/present"),
             DeclareLaunchArgument("nav2_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("frame_id", default_value="map"),
             DeclareLaunchArgument("goal_timeout_sec", default_value="60.0"),
@@ -155,6 +159,8 @@ def generate_launch_description() -> LaunchDescription:
                             "mock_mode": LaunchConfiguration("mock_mode"),
                             "use_nav2": use_nav2,
                             "execution_delay_sec": LaunchConfiguration("execution_delay_sec"),
+                            "initial_battery": initial_battery,
+                            "battery_topic": battery_topic,
                             "nav2_action_name": nav2_action_name,
                             "frame_id": frame_id,
                             "goal_timeout_sec": goal_timeout_sec,

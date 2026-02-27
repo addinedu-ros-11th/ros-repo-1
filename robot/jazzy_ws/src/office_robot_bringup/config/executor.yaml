@@ -5,6 +5,8 @@ office_robot_executor:
     mock_mode: false
     use_nav2: true
     execution_delay_sec: 1.5
+    initial_battery: 0.0
+    battery_topic: /battery/present
     nav2_action_name: navigate_to_pose
     frame_id: map
     goal_timeout_sec: 60.0
@@ -42,3 +44,4 @@ office_robot_executor:
     display_topic: display
     guide_display_period_sec: 2.0
     emit_command_received_event: true
+    default_goto_success_event: ARRIVED_AT_DESTINATION

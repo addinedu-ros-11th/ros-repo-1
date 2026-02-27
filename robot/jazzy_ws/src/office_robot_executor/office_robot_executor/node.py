@@ -10,7 +10,7 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float32, String
 
 try:
     from std_srvs.srv import Empty
@@ -45,7 +45,8 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("mock_mode", False)
         self.declare_parameter("use_nav2", True)
         self.declare_parameter("execution_delay_sec", 1.5)
-        self.declare_parameter("initial_battery", 100.0)
+        self.declare_parameter("initial_battery", 0.0)
+        self.declare_parameter("battery_topic", "/battery/present")
         self.declare_parameter("nav2_action_name", "navigate_to_pose")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("goal_timeout_sec", 60.0)
@@ -87,6 +88,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
+        self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -121,6 +123,7 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("safety_lock_topic").get_parameter_value().string_value
         )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
+        self.battery_topic = self.get_parameter("battery_topic").get_parameter_value().string_value
         self.include_ai_link_in_status = (
             self.get_parameter("include_ai_link_in_status").get_parameter_value().bool_value
         )
@@ -243,6 +246,12 @@ class OfficeRobotExecutor(Node):
         self.emit_command_received_event = (
             self.get_parameter("emit_command_received_event").get_parameter_value().bool_value
         )
+        self.default_goto_success_event = (
+            self.get_parameter("default_goto_success_event")
+            .get_parameter_value()
+            .string_value
+            .strip()
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -263,6 +272,7 @@ class OfficeRobotExecutor(Node):
         self._guide_display_toggle = False
         self._safety_locked = False
         self._ai_link_alive: Optional[bool] = None
+        self._battery_received = False
         self._nav_retry_timer = None
         self._nav_retry_attempt_count = 0
         self._last_amcl_pose_mono = 0.0
@@ -293,6 +303,9 @@ class OfficeRobotExecutor(Node):
         )
         self.ai_link_sub = self.create_subscription(
             Bool, self.ai_link_topic, self._on_ai_link, safety_qos
+        )
+        self.battery_sub = self.create_subscription(
+            Float32, self.battery_topic, self._on_battery, 10
         )
 
         self.nav_client = None
@@ -419,6 +432,15 @@ class OfficeRobotExecutor(Node):
         self.get_logger().info(
             f"AI link state updated: {'alive' if self._ai_link_alive else 'dead'}."
         )
+
+    def _on_battery(self, msg: Float32) -> None:
+        value = float(msg.data)
+        if math.isnan(value) or math.isinf(value):
+            return
+        clamped = max(0.0, min(100.0, value))
+        if (not self._battery_received) or abs(clamped - self.battery) >= 0.1:
+            self.battery = clamped
+            self._battery_received = True
 
     def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
         self._last_amcl_pose_mono = time.monotonic()
@@ -636,6 +658,9 @@ class OfficeRobotExecutor(Node):
         action_name = str(
             current_action.get("action", current_action.get("type", ""))
         ).upper().strip()
+        success_event = on_success
+        if not success_event and action_name == "GOTO" and self.default_goto_success_event:
+            success_event = self.default_goto_success_event
         event_extra: Dict[str, Any] = {}
         if action_name == "QR_SCAN":
             params = current_action.get("params", {}) or {}
@@ -650,11 +675,11 @@ class OfficeRobotExecutor(Node):
         if action_name == "LEAD_GUEST":
             self._stop_guide_display()
         self._current_action = None
-        if on_success:
+        if success_event:
             payload = self._task_id_payload(event_extra)
-            self._publish_event(on_success, payload)
-            self._publish_status(self.current_status, payload, event=on_success)
-            if on_success in {"ARRIVED_AT_DESTINATION", "ARRIVED_AT_BASE"}:
+            self._publish_event(success_event, payload)
+            self._publish_status(self.current_status, payload, event=success_event)
+            if success_event in {"ARRIVED_AT_DESTINATION", "ARRIVED_AT_BASE"}:
                 self._publish_display("도착완료", "arrived")
         self._run_next_action()
 
