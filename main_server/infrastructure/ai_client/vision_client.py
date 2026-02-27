@@ -7,22 +7,28 @@ from main_server.infrastructure.grpc import ai_vision_pb2
 from main_server.infrastructure.grpc import ai_vision_pb2_grpc
 from main_server.domains.ai.interfaces import IVisionService
 
+
 class VisionServiceClient(IVisionService):
     """
     gRPC를 통해 원격 Vision 서버(YOLOv8n)와 통신하는 클라이언트 서비스.
     """
-    def __init__(self, host: str = config.VISION_GRPC_HOST, port: int = config.VISION_GRPC_PORT):
-        self.channel = grpc.aio.insecure_channel(f'{host}:{port}')
+
+    def __init__(
+        self, host: str = config.VISION_GRPC_HOST, port: int = config.VISION_GRPC_PORT
+    ):
+        self.channel = grpc.aio.insecure_channel(f"{host}:{port}")
         self.stub = ai_vision_pb2_grpc.VisionServiceStub(self.channel)
         print(f"Vision gRPC Client 초기화 완료 (Connecting to {host}:{port}).")
 
-    async def request_object_detection(self, image_id: str, image_data: Optional[bytes] = None) -> Dict[str, Any]:
+    async def request_object_detection(
+        self, image_id: str, image_data: Optional[bytes] = None
+    ) -> Dict[str, Any]:
         """
         주어진 이미지 ID 또는 데이터로 객체 인식을 요청합니다.
         """
         request = ai_vision_pb2.ImageRequest(image_id=image_id)
         response = await self.stub.DetectObjects(request)
-        
+
         return {
             "object_name": response.object_name,
             "confidence": response.confidence,
@@ -30,36 +36,38 @@ class VisionServiceClient(IVisionService):
                 "x": response.box.x,
                 "y": response.box.y,
                 "width": response.box.width,
-                "height": response.box.height
-            }
+                "height": response.box.height,
+            },
         }
 
-    async def request_face_recognition(self, image_id: str, image_data: Optional[bytes] = None) -> Dict[str, Any]:
+    async def request_face_recognition(
+        self, image_id: str, image_data: Optional[bytes] = None
+    ) -> Dict[str, Any]:
         """
         주어진 이미지 ID 또는 데이터로 얼굴 인식을 요청합니다.
         """
         request = ai_vision_pb2.ImageRequest(image_id=image_id)
         response = await self.stub.RecognizeFaces(request)
-        
+
         result = {
             "person_type": response.person_type,
-            "confidence": response.confidence
+            "confidence": response.confidence,
         }
         if response.HasField("employee_id"):
             result["employee_id"] = response.employee_id
-            
+
         return result
 
-    async def update_inference_state(self, robot_id: str, model_type: str, is_active: bool) -> Dict[str, Any]:
+    async def update_inference_state(
+        self, robot_id: str, model_type: str, is_active: bool
+    ) -> Dict[str, Any]:
         """
         AI 서버에게 특정 로봇에 대한 추론 시작/중지를 명령합니다.
         """
         try:
             # 컴파일된 ai_vision_pb2의 실제 메시지 클래스 사용
             request = ai_vision_pb2.InferenceStateRequest(
-                robot_id=robot_id,
-                model_type=model_type,
-                is_active=is_active
+                robot_id=robot_id, model_type=model_type, is_active=is_active
             )
             response = await self.stub.UpdateInferenceState(request)
             return {"success": response.success, "message": response.message}
@@ -85,12 +93,6 @@ class VisionServiceClient(IVisionService):
                     data["content"] = {
                         "object_name": det.object_name,
                         "confidence": det.confidence,
-                        "box": {
-                            "x": det.box.x,
-                            "y": det.box.y,
-                            "width": det.box.width,
-                            "height": det.box.height,
-                        },
                     }
                 elif result.HasField("face_recognition"):
                     face = result.face_recognition
@@ -105,16 +107,12 @@ class VisionServiceClient(IVisionService):
                     data["type"] = "multi_objects"
                     objects = []
                     for obj in result.multi_objects.objects:
-                        objects.append({
-                            "object_name": obj.object_name,
-                            "confidence": obj.confidence,
-                            "box": {
-                                "x": obj.box.x,
-                                "y": obj.box.y,
-                                "width": obj.box.width,
-                                "height": obj.box.height,
-                            },
-                        })
+                        objects.append(
+                            {
+                                "object_name": obj.object_name,
+                                "confidence": obj.confidence,
+                            }
+                        )
                     data["content"] = objects
                 else:
                     continue  # 알 수 없는 결과 타입은 무시
