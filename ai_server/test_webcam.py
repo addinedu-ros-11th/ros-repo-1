@@ -1,6 +1,6 @@
 """
 웹캠을 사용한 YOLO 모델 실시간 테스트 스크립트
-obstacle.pt와 product.pt 모델을 동시에 테스트합니다.
+obstacle.pt 모델 하나만 사용합니다.
 """
 
 import cv2
@@ -16,17 +16,15 @@ except ImportError:
     sys.exit(1)
 
 
-class DualModelWebcamTest:
-    """두 개의 YOLO 모델을 사용한 웹캠 테스트"""
+class SingleModelWebcamTest:
+    """단일 YOLO 모델을 사용한 웹캠 테스트"""
 
-    def __init__(self, obstacle_model_path: str, product_model_path: str):
+    def __init__(self, obstacle_model_path: str):
         """
         Args:
             obstacle_model_path: 장애물 감지 모델 경로
-            product_model_path: 제품/간식 감지 모델 경로
         """
         self.obstacle_model_path = Path(obstacle_model_path)
-        self.product_model_path = Path(product_model_path)
 
         # 모델 로드
         print("🔄 모델 로딩 중...")
@@ -35,13 +33,6 @@ class DualModelWebcamTest:
             print(f"✅ 장애물 모델 로드 완료: {self.obstacle_model_path.name}")
         except Exception as e:
             print(f"❌ 장애물 모델 로드 실패: {e}")
-            sys.exit(1)
-
-        try:
-            self.product_model = YOLO(str(self.product_model_path))
-            print(f"✅ 제품 모델 로드 완료: {self.product_model_path.name}")
-        except Exception as e:
-            print(f"❌ 제품 모델 로드 실패: {e}")
             sys.exit(1)
 
         # 웹캠 초기화
@@ -54,7 +45,7 @@ class DualModelWebcamTest:
 
         # 색상 설정 (BGR)
         self.obstacle_color = (0, 0, 255)  # 빨강 - 장애물
-        self.product_color = (0, 255, 0)  # 초록 - 제품/간식
+        # 제품 모델 없음, color 설정 생략
 
     def draw_detections(self, frame, results, color, label_prefix):
         """
@@ -114,7 +105,6 @@ class DualModelWebcamTest:
         print("\n" + "=" * 60)
         print("🎥 웹캠 테스트 시작")
         print("=" * 60)
-        print(f"📦 제품/간식 모델: {self.product_model_path.name} (초록)")
         print(f"⚠️  장애물 모델: {self.obstacle_model_path.name} (빨강)")
         print(f"🎯 신뢰도 임계값: {confidence_threshold}")
         print("\n조작법:")
@@ -134,11 +124,8 @@ class DualModelWebcamTest:
 
                 frame_count += 1
 
-                # 두 모델로 추론 실행
+                # 모델로 추론 실행
                 obstacle_results = self.obstacle_model(
-                    frame, conf=confidence_threshold, verbose=False
-                )
-                product_results = self.product_model(
                     frame, conf=confidence_threshold, verbose=False
                 )
 
@@ -146,18 +133,13 @@ class DualModelWebcamTest:
                 frame = self.draw_detections(
                     frame, obstacle_results, self.obstacle_color, "장애물"
                 )
-                frame = self.draw_detections(
-                    frame, product_results, self.product_color, "제품"
-                )
 
                 # 감지된 객체 수 표시
                 obstacle_count = sum(len(r.boxes) for r in obstacle_results)
-                product_count = sum(len(r.boxes) for r in product_results)
 
                 # 정보 오버레이
                 info_text = [
                     f"Frame: {frame_count}",
-                    f"Products: {product_count}",
                     f"Obstacles: {obstacle_count}",
                 ]
 
@@ -198,6 +180,17 @@ class DualModelWebcamTest:
 
 def main():
     """메인 함수"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="YOLO webcam single-model test")
+    parser.add_argument(
+        "--model", default="ai_server/models/obstacle.pt", help="obstacle 모델 경로"
+    )
+    parser.add_argument("--conf", type=float, default=0.5, help="신뢰도 임계값")
+    args = parser.parse_args()
+
+    tester = SingleModelWebcamTest(args.model)
+    tester.run(confidence_threshold=args.conf)
     # 모델 경로 설정
     base_path = Path(__file__).parent / "models"
     obstacle_model = base_path / "obstacle.pt"
