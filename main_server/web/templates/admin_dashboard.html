@@ -21,15 +21,27 @@
     <div class="main-content">
         <div id="robot-mgmt" class="tab-content">
             <h1>🤖 로봇 실시간 관제</h1>
-            <div class="map-control-wrapper">
-                <button id="setup-btn" class="btn-zone-setup" onclick="toggleZoneSetup()">🚫 금지구역 설정: OFF</button>
-                <div id="map-container" 
-                    onmousedown="handleMapMouseDown(event)" 
-                    onmousemove="handleMapMouseMove(event)" 
-                    onmouseup="handleMapMouseUp(event)"
-                    onmouseleave="resetDragState()"> <div id="map-inner"></div>
+            <div class="monitor-container" style="display: flex; gap: 20px;">
+                <div class="map-section">
+                    <div class="map-control-wrapper">
+                        <button id="setup-btn" class="btn-zone-setup" onclick="toggleZoneSetup()">🚫 금지구역 설정: OFF</button>
+                        <div id="map-container" 
+                            onmousedown="handleMapMouseDown(event)" 
+                            onmousemove="handleMapMouseMove(event)" 
+                            onmouseup="handleMapMouseUp(event)"
+                            onmouseleave="resetDragState()"> <div id="map-inner"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="robot-status-panel" style="flex: 1; background: white; padding: 20px; border-radius: 10px; border: 1px solid #ddd; height: fit-content;">
+                    <h3>📊 로봇 상태</h3>
+                    <div id="robot-list-container">
+                        <!-- 로봇 상태 카드들이 여기 추가됨 -->
+                        <div class="loading-msg">데이터 수신 중...</div>
+                    </div>
                 </div>
             </div>
+
             <div class="zone-management">
                 <h3>📋 설정된 금지구역 리스트</h3>
                 <table class="zone-table">
@@ -116,6 +128,27 @@
         let isDragging = false;
         let startX, startY;
         let currentZoneRect = null;
+        
+        // 맵 메타데이터 전역 변수
+        let MAP_META = {
+            resolution: 0.05,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            width: 0,
+            height: 0
+        };
+
+        async function fetchMapMetadata() {
+            try {
+                const res = await fetch('/api/v1/admin/map/metadata');
+                if (res.ok) {
+                    MAP_META = await res.json();
+                    console.log("맵 메타데이터 로드 완료:", MAP_META);
+                }
+            } catch (e) {
+                console.error("메타데이터 로드 실패:", e);
+            }
+        }
 
         // 우클릭 방지 함수
         function preventRightClick(e) {
@@ -208,10 +241,17 @@
             
             if (!zoneName) return; // 취소 시 이미 박스는 위에서 지워졌으므로 남지 않음
 
+            // [수정] 화면 좌표 -> 실제 좌표(meter) 변환 후 저장
+            const p1 = screenToRealWorld(startX, startY);
+            const p2 = screenToRealWorld(endX, endY);
+
+            // 항상 좌상단(min), 우하단(max)으로 정렬하여 저장
             const payload = {
                 name: zoneName,
-                x1: startX, y1: startY,
-                x2: endX, y2: endY,
+                x1: Math.min(p1.x, p2.x), 
+                y1: Math.min(p1.y, p2.y),
+                x2: Math.max(p1.x, p2.x), 
+                y2: Math.max(p1.y, p2.y),
                 type: "forbidden"
             };
             
@@ -249,27 +289,48 @@
                 }
 
                 zones.forEach(zone => {
+                    // 데이터 유효성 검사 (좌표가 없으면 건너뛰기)
+                    if (zone.x1 === undefined || zone.y1 === undefined || 
+                        zone.x2 === undefined || zone.y2 === undefined) {
+                        console.warn(`유효하지 않은 금지구역 데이터 (ID: ${zone.zone_id})`);
+                        return;
+                    }
+
                     // --- 지도에 박스 그리기 ---
+                    // [수정] DB에 저장된 실제 좌표(meter)를 화면 좌표(px)로 변환
+                    // zone.x1, y1 등은 이제 미터 단위임
+                    const p1 = realWorldToScreen(zone.x1, zone.y1);
+                    const p2 = realWorldToScreen(zone.x2, zone.y2);
+
                     const zoneDiv = document.createElement('div');
                     zoneDiv.className = 'no-go-zone';
                     
-                    const width = Math.abs(zone.x2 - zone.x1);
-                    const height = Math.abs(zone.y2 - zone.y1);
+                    const left = Math.min(p1.x, p2.x);
+                    const top = Math.min(p1.y, p2.y);
+                    const width = Math.abs(p2.x - p1.x);
+                    const height = Math.abs(p2.y - p1.y);
                     
-                    zoneDiv.style.left = `${Math.min(zone.x1, zone.x2)}px`;
-                    zoneDiv.style.top = `${Math.min(zone.y1, zone.y2)}px`;
+                    zoneDiv.style.left = `${left}px`;
+                    zoneDiv.style.top = `${top}px`;
                     zoneDiv.style.width = `${width}px`;
                     zoneDiv.style.height = `${height}px`;
-                    zoneDiv.innerHTML = `<span>${zone.name}</span>`; // 이름 표시
+                    zoneDiv.innerHTML = `<span>${zone.name || 'Unnamed'}</span>`; 
 
                     document.getElementById('map-container').appendChild(zoneDiv);
 
                     // --- 테이블에 리스트 추가 ---
                     const tr = document.createElement('tr');
+                    
+                    // 좌표값 안전하게 출력
+                    const x1 = typeof zone.x1 === 'number' ? zone.x1.toFixed(2) : 'N/A';
+                    const y1 = typeof zone.y1 === 'number' ? zone.y1.toFixed(2) : 'N/A';
+                    const x2 = typeof zone.x2 === 'number' ? zone.x2.toFixed(2) : 'N/A';
+                    const y2 = typeof zone.y2 === 'number' ? zone.y2.toFixed(2) : 'N/A';
+
                     tr.innerHTML = `
                         <td>${zone.zone_id}</td>
-                        <td><strong>${zone.name}</strong></td>
-                        <td>(${Math.round(zone.x1)}, ${Math.round(zone.y1)}) ~ (${Math.round(zone.x2)}, ${Math.round(zone.y2)})</td>
+                        <td><strong>${zone.name || 'Unnamed'}</strong></td>
+                        <td>(${x1}, ${y1}) ~ (${x2}, ${y2})</td>
                         <td><button class="btn-delete" onclick="deleteZone(${zone.zone_id})">삭제</button></td>
                     `;
                     tbody.appendChild(tr);
@@ -490,29 +551,73 @@
                 
                 const mapInner = document.getElementById('map-inner');
                 const mapImg = document.getElementById('real-map-img'); 
+                const listContainer = document.getElementById('robot-list-container');
                 
                 if (!mapImg || mapImg.naturalWidth === 0) return;
 
-                // 화면상 지도 너비(1000px) / 원본 너비(167px) 비율 계산
+                // 화면상 지도 너비(1000px) / 원본 너비 비율 계산
                 const scale = mapImg.clientWidth / mapImg.naturalWidth;
 
                 // 기존 로봇 마커 삭제
                 document.querySelectorAll('.robot-marker').forEach(el => el.remove());
 
+                // 로봇 리스트 HTML 생성
+                let listHtml = "";
+
                 robots.forEach(robot => {
+                    // --- 1. 지도상 마커 표시 ---
                     const marker = document.createElement('div');
                     marker.className = `robot-marker ${robot.status.toLowerCase()}`;
                     
-                    // 최종 화면 좌표 = 원본 픽셀 * 배율
+                    // 백엔드가 이미 픽셀 좌표(raw_px, raw_py)를 계산해서 줌
+                    // (admin_routes.py에서 PathPlanner 정보를 썼기 때문에 정확함)
+                    // 화면 배율만 적용하면 됨
                     const finalX = robot.px * scale;
                     const finalY = robot.py * scale;
 
                     marker.style.left = `${finalX}px`;
                     marker.style.top = `${finalY}px`;
                     
-                    marker.innerHTML = `<div class="robot-label">${robot.name}</div>`;
+                    // 마커에 툴팁 추가
+                    marker.innerHTML = `
+                        <div class="robot-label">${robot.name}</div>
+                        <div class="robot-tooltip">
+                            🔋 ${Math.round(robot.battery)}% <br>
+                            Status: ${robot.status}
+                        </div>
+                    `;
                     mapInner.appendChild(marker);
+
+                    // --- 2. 우측 패널 리스트 업데이트 ---
+                    const batteryColor = robot.battery > 20 ? '#2ecc71' : '#e74c3c';
+                    const statusClass = robot.status === 'ERROR' ? 'error' : (robot.status === 'MOVING' ? 'moving' : 'idle');
+                    
+                    listHtml += `
+                        <div class="robot-card" style="border-left: 5px solid ${robot.status === 'ERROR' ? '#e74c3c' : '#3498db'}; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <strong style="font-size: 1.1em;">${robot.name}</strong>
+                                <span class="status-badge ${statusClass}">${robot.status}</span>
+                            </div>
+                            <div style="margin-top: 5px; font-size: 0.9em; color: #555;">
+                                <div>Task ID: ${robot.current_task_id || '-'}</div>
+                                <div style="display:flex; align-items:center; gap: 5px; margin-top: 3px;">
+                                    <span>🔋</span>
+                                    <div style="flex:1; background:#ddd; height:8px; border-radius:4px; overflow:hidden;">
+                                        <div style="width:${robot.battery}%; background:${batteryColor}; height:100%;"></div>
+                                    </div>
+                                    <span>${Math.round(robot.battery)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
                 });
+
+                if (robots.length === 0) {
+                    listContainer.innerHTML = "<div class='empty-msg'>연결된 로봇이 없습니다.</div>";
+                } else {
+                    listContainer.innerHTML = listHtml;
+                }
+
             } catch (e) {
                 console.error("관제 데이터 로드 실패:", e);
             }
@@ -521,21 +626,57 @@
         // 1초마다 실행
         setInterval(updateRobotMarkers, 1000);
 
-        // 금지구역 저장 시 좌표 변환 함수 예시
+        // 실제 좌표(meter) -> 화면 픽셀(px) 변환
+        function realWorldToScreen(realX, realY) {
+            const mapImg = document.getElementById('real-map-img');
+            // 이미지가 아직 로드되지 않았으면 0,0 반환
+            if (!mapImg || mapImg.naturalWidth === 0) return { x: 0, y: 0 };
+
+            const scale = mapImg.clientWidth / mapImg.naturalWidth; // 확대 배율
+            
+            const RESOLUTION = MAP_META.resolution || 0.05;
+            const ORIGIN_X = MAP_META.origin_x || 0.0;
+            const ORIGIN_Y = MAP_META.origin_y || 0.0;
+            const IMG_H = MAP_META.height || 0; 
+
+            // 1. 실제 미터 -> 원본 이미지 픽셀
+            // realX = (rawPx * RESOLUTION) + ORIGIN_X
+            // => rawPx = (realX - ORIGIN_X) / RESOLUTION
+            const rawPx = (realX - ORIGIN_X) / RESOLUTION;
+            
+            // realY = ((IMG_H - rawPy) * RESOLUTION) + ORIGIN_Y
+            // => (realY - ORIGIN_Y) / RESOLUTION = IMG_H - rawPy
+            // => rawPy = IMG_H - ((realY - ORIGIN_Y) / RESOLUTION)
+            const rawPy = IMG_H - ((realY - ORIGIN_Y) / RESOLUTION);
+
+            // 2. 원본 이미지 픽셀 -> 화면 픽셀
+            const screenX = rawPx * scale;
+            const screenY = rawPy * scale;
+
+            return { x: screenX, y: screenY };
+        }
+
+        // 금지구역 저장 시 좌표 변환 함수
         function screenToRealWorld(screenX, screenY) {
             const mapImg = document.getElementById('real-map-img');
             const scale = mapImg.clientWidth / mapImg.naturalWidth; // 확대 배율
             
-            const RESOLUTION = 0.020;
-            const ORIGIN_X = -2.283;
-            const ORIGIN_Y = -2.550;
-            const IMG_H = 255;
+            // 전역 변수 MAP_META 사용
+            // 없을 경우 기본값(Fallback) 사용
+            const RESOLUTION = MAP_META.resolution || 0.05;
+            const ORIGIN_X = MAP_META.origin_x || 0.0;
+            const ORIGIN_Y = MAP_META.origin_y || 0.0;
+            const IMG_H = MAP_META.height || 0; // 이미지 높이 (픽셀)
 
             // 1. 화면 픽셀 -> 원본 이미지 픽셀
             const rawPx = screenX / scale;
             const rawPy = screenY / scale;
 
             // 2. 원본 이미지 픽셀 -> 실제 미터 좌표 (역산)
+            // py = height - ((y - origin_y) / resolution)
+            // => (height - py) = (y - origin_y) / resolution
+            // => y = (height - py) * resolution + origin_y
+            
             const realX = (rawPx * RESOLUTION) + ORIGIN_X;
             const realY = ((IMG_H - rawPy) * RESOLUTION) + ORIGIN_Y;
 
@@ -556,6 +697,7 @@
             
             // window.onload에 추가
             console.log("페이지 로드 완료 - 지도 불러오기 시작"); // 확인용 로그
+            fetchMapMetadata(); // 메타데이터 로드
             refreshMap();
         };
     </script>

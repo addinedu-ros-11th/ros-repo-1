@@ -146,9 +146,6 @@ CREATE TABLE `Map_Zones` (
 
 LOCK TABLES `Map_Zones` WRITE;
 /*!40000 ALTER TABLE `Map_Zones` DISABLE KEYS */;
-INSERT INTO `Map_Zones` (`name`, `polygon_data`, `type`, `active`) VALUES
-('Restricted Area A', '[[0,0], [1,0], [1,1], [0,1]]', 'RESTRICTED', 1),
-('Slow Zone B', '[[3,3], [4,3], [4,4], [3,4]]', 'SLOW_ZONE', 1);
 /*!40000 ALTER TABLE `Map_Zones` ENABLE KEYS */;
 UNLOCK TABLES;
 

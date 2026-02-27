@@ -111,6 +111,39 @@ class ROSBridgeCommunicator(IRobotCommunicator):
         }
         topic.publish(roslibpy.Message({"data": json.dumps(message)}))
 
+    def set_forbidden_zones(self, robot_name: str, zones: List[Dict[str, Any]]) -> bool:
+        """
+        로봇의 금지 구역 설정 서비스(Service)를 호출합니다.
+        Service: /{robot_name}/set_forbidden_zones
+        Type: office_robot_msgs/SetForbiddenZones (가정)
+        Request: { "json_data": <zones_json_string> }
+        """
+        if not self.client.is_connected:
+            logger.warning("ROS Bridge 미연결 상태. 서비스 호출 불가.")
+            return False
+
+        service_name = f"/{robot_name}/set_forbidden_zones"
+        service = roslibpy.Service(self.client, service_name, 'office_robot_msgs/SetForbiddenZones')
+        
+        try:
+            # JSON 문자열로 변환하여 요청
+            request = roslibpy.ServiceRequest({'json_data': json.dumps(zones)})
+            # 동기 호출 (timeout 2초)
+            response = service.call(request, timeout=2.0)
+            
+            success = response.get('success', False)
+            msg = response.get('message', '')
+            
+            if success:
+                logger.info(f"[{robot_name}] 금지 구역 설정 성공: {msg}")
+            else:
+                logger.warning(f"[{robot_name}] 금지 구역 설정 실패: {msg}")
+                
+            return success
+        except Exception as e:
+            logger.error(f"[{robot_name}] 금지 구역 서비스 호출 중 오류: {e}")
+            return False
+
     def listen_for_status(self, callback: Any):
         """
         [Deprecated] 하위 호환성을 위해 유지하거나 모든 로봇의 상태를 통합 처리할 때 사용 가능.

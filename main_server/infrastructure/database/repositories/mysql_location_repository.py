@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from main_server.infrastructure.database.connection import Database
@@ -79,13 +80,37 @@ class MySQLLocationRepository(BaseRepository):
         """금지구역을 Map_Zones 테이블에 저장"""
         async with Database.get_connection() as conn:
             async with conn.cursor() as cur:
+                # data['polygon']은 [[x1,y1], [x2,y2], ...] 형태여야 함
+                # 만약 프론트엔드에서 x1,y1,x2,y2로 준다면 사각형 폴리곤으로 변환
+                if 'x1' in data and 'y1' in data:
+                    x1, y1 = data['x1'], data['y1']
+                    x2, y2 = data['x2'], data['y2']
+                    # UI에서 Rect로 그릴 경우 4개 점으로 변환 (픽셀 좌표계)
+                    # FleetManager나 로봇이 이해하기 쉬운 형태로 저장
+                    polygon = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+                    
+                    # 동시에 width, height, left, top 같은 메타데이터도 저장하고 싶다면
+                    # polygon_data에 함께 넣거나 별도 컬럼이 필요하지만,
+                    # 현재 스키마는 polygon_data(Text)만 있으므로 여기에 다 넣거나 표준 포맷 사용
+                    polygon_json = json.dumps(polygon)
+                    
+                    # 추가: PathPlanner가 width/height/left/top을 쓰므로 이를 맞추기 위해
+                    # 별도 메타데이터 필드가 없다면 polygon_data를 확장해서 저장하는 방법 고려.
+                    # 하지만 지금은 DB 스키마가 단순하므로 polygon_data에 리스트만 저장하고
+                    # 조회 시 변환하거나, 아예 data 자체를 통째로 JSON으로 저장하는 것이 나을 수 있음.
+                    # 여기서는 data 전체(메타 포함)를 저장하는 것으로 변경하여 유연성 확보.
+                    polygon_json = json.dumps(data) 
+                else:
+                    polygon_json = json.dumps(data.get('polygon', []))
+
                 sql = """
-                    INSERT INTO Map_Zones (name, type, x1, y1, x2, y2, active)
-                    VALUES (%s, %s, %s, %s, %s, %s, 1)
+                    INSERT INTO Map_Zones (name, type, polygon_data, active)
+                    VALUES (%s, %s, %s, 1)
                 """
                 await cur.execute(sql, (
-                    data['name'], data.get('type', 'forbidden'),
-                    data['x1'], data['y1'], data['x2'], data['y2']
+                    data.get('name', 'Forbidden Zone'), 
+                    data.get('type', 'RESTRICTED'),
+                    polygon_json
                 ))
                 await conn.commit()
 
@@ -93,9 +118,41 @@ class MySQLLocationRepository(BaseRepository):
         """모든 금지구역 리스트 조회"""
         async with Database.get_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                sql = "SELECT * FROM Map_Zones WHERE active = 1"
+                sql = "SELECT zone_id, name, polygon_data FROM Map_Zones WHERE active = 1"
                 await cur.execute(sql)
-                return await cur.fetchall()
+                rows = await cur.fetchall()
+                
+                zones = []
+                for row in rows:
+                    p_data = row.get('polygon_data')
+                    if p_data:
+                        try:
+                            # DB에 저장된 JSON 문자열 파싱
+                            data = json.loads(p_data)
+                            
+                            # 기본 데이터 구성 (DB 컬럼 우선)
+                            zone_obj = {
+                                'id': row['zone_id'],
+                                'zone_id': row['zone_id'], # 프론트엔드 호환성
+                                'name': row['name']
+                            }
+                            
+                            # JSON 데이터 병합 (좌표 등)
+                            if isinstance(data, dict):
+                                zone_obj.update(data)
+                                # ID와 Name은 DB 컬럼 값으로 강제 덮어쓰기 (무결성 보장)
+                                zone_obj['id'] = row['zone_id']
+                                zone_obj['zone_id'] = row['zone_id']
+                                zone_obj['name'] = row['name']
+                                zones.append(zone_obj)
+                            else:
+                                # 리스트 형태라면 polygon 필드에 할당
+                                zone_obj['polygon'] = data
+                                zones.append(zone_obj)
+                                
+                        except json.JSONDecodeError:
+                            logger.error(f"존 ID {row['zone_id']} JSON 파싱 실패")
+                return zones
             
     async def delete_forbidden_zone(self, zone_id: int) -> bool:
         """금지구역 ID를 기반으로 DB에서 삭제"""

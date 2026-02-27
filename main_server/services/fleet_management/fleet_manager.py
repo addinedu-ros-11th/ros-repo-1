@@ -91,11 +91,27 @@ class FleetManager:
         logger.debug(f"[{robot_id}] 직원 인식 릴레이 중단 요청")
         await self.ai_processing_service.stop_employee_verification(robot_id)
 
-    def update_forbidden_zones(self, zones: List[Dict]):
-        """금지 구역 목록을 저장하고 경로 계획기에 반영합니다."""
+    async def update_forbidden_zones(self, zones: List[Dict]):
+        """
+        금지 구역 목록을 저장하고 경로 계획기 및 로봇들에게 반영합니다.
+        (Service Call 방식)
+        """
         self.forbidden_zones = zones
+        
+        # 1. 서버 측 PathPlanner 업데이트 (배차용)
         self.path_planner.update_forbidden_zones(zones)
-        logger.info(f"FleetManager: 금지 구역 {len(zones)}개 업데이트 완료.")
+        
+        # 2. 모든 로봇에게 금지 구역 설정 전파 (내비게이션용)
+        try:
+            robots = await self.robot_repo.get_all()
+            for robot in robots:
+                if robot.status != RobotStatus.OFFLINE:
+                    # 서비스 호출 (동기 방식이지만 짧은 타임아웃)
+                    self.robot_communicator.set_forbidden_zones(robot.name, zones)
+            
+            logger.info(f"FleetManager: 금지 구역 {len(zones)}개 업데이트 및 {len(robots)}대 로봇 전파 완료.")
+        except Exception as e:
+            logger.error(f"금지 구역 전파 중 오류: {e}")
 
     def get_forbidden_zones(self) -> List[Dict]:
         """현재 설정된 금지 구역 목록을 반환합니다."""

@@ -9,6 +9,7 @@ from fastapi import Response
 import os
 import numpy as np
 
+from main_server.config import config
 from main_server.container import container
 # 기존 리포지토리 및 신규 리포지토리 임포트
 from main_server.infrastructure.database.repositories.mysql_robot_repository import MySQLRobotRepository
@@ -34,23 +35,27 @@ router = APIRouter(
 # ---------------------------------------------------------
 # 0. 지도
 # ---------------------------------------------------------
-MAP_DIR = "./main_server/domains/map/"
 
 @router.get("/map/image")
 async def get_map_image():
-    # 파일명은 hawkes1.png로 고정해서 테스트
-    test_file_path = os.path.join(MAP_DIR, "map.png") 
+    # config에서 설정된 YAML 파일 이름을 기반으로 PNG 파일을 찾습니다.
+    # (PGM은 브라우저에서 직접 표시할 수 없으므로 같은 이름의 PNG가 있다고 가정)
+    yaml_filename = os.path.basename(config.MAP_YAML_PATH)
+    base_name = os.path.splitext(yaml_filename)[0] # 'office_map' or 'mymap'
     
-    # 서버 로그에서 실제 경로를 확인해보기 위한 출력 (터미널 확인용)
-    print(f"Checking file at: {test_file_path}")
+    # 1순위: YAML과 이름이 같은 PNG (office_map.png 등)
+    # 2순위: 기본 map.png
+    image_path = os.path.join(config.MAP_DIR, f"{base_name}.png")
+    
+    if not os.path.exists(image_path):
+        image_path = os.path.join(config.MAP_DIR, "map.png")
 
-    if not os.path.exists(test_file_path):
-        raise HTTPException(status_code=404, detail=f"File not found at {test_file_path}")
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail=f"Map image not found in {config.MAP_DIR}")
 
-    with open(test_file_path, "rb") as f:
+    with open(image_path, "rb") as f:
         content = f.read()
         
-    # 확장자에 따라 media_type 자동 지정
     return Response(content=content, media_type="image/png")
 
 # ---------------------------------------------------------
@@ -141,19 +146,34 @@ async def get_system_logs():
     return logs
 
 # ---------------------------------------------------------
-# 4. 로봇 실시간 관제 (1초마다 호출용)
+# 4. 지도 메타데이터 및 로봇 실시간 관제
 # ---------------------------------------------------------
+
+@router.get("/map/metadata")
+async def get_map_metadata():
+    """맵 메타데이터 (해상도, 원점 등) 반환"""
+    # FleetManager의 PathPlanner에서 로드된 정보를 사용
+    planner = container.fleet_manager.path_planner
+    return {
+        "resolution": planner.resolution,
+        "origin_x": planner.origin[0],
+        "origin_y": planner.origin[1],
+        "width": planner.width,
+        "height": planner.height
+    }
+
 @router.get("/robots/telemetry")
 async def get_robots_telemetry():
     """기존 리포지토리를 사용하여 로봇 위치 정보 반환"""
     # 1. 모든 로봇 정보 가져오기 (이미 robot_repo가 주입되어 있음)
     robots = await container.robot_repo.get_all()
     
-    # 2. 새로운 mymap.yaml 기반 설정값 (정밀지도 버전)
-    RESOLUTION = 0.020
-    ORIGIN_X = -2.283
-    ORIGIN_Y = -2.550
-    IMG_H = 255  # 원본 pgm 세로 픽셀
+    # PathPlanner에서 메타데이터 가져오기
+    planner = container.fleet_manager.path_planner
+    RESOLUTION = planner.resolution
+    ORIGIN_X = planner.origin[0]
+    ORIGIN_Y = planner.origin[1]
+    IMG_H = planner.height
 
     processed_robots = []
     for r in robots:
@@ -168,7 +188,8 @@ async def get_robots_telemetry():
             "status": r.status.value if hasattr(r.status, 'value') else r.status,
             "battery": r.battery_level,
             "px": raw_px,  # 원본 픽셀 좌표
-            "py": raw_py
+            "py": raw_py,
+            "current_task_id": r.current_task_id
         })
     
     return processed_robots
@@ -179,12 +200,14 @@ async def get_robots_telemetry():
 @router.post("/zones")
 async def add_zone(zone_data: Dict[str, Any]):
     try:
-        # 1. DB 저장
+        # 1. DB 저장 (리포지토리 구현에 따라 create_forbidden_zone이 없을 수도 있으니 주의)
+        # 만약 없다면 location_repo에 추가 필요. 일단 있다고 가정하고 진행.
         await container.location_repo.create_forbidden_zone(zone_data)
         
         # 2. FleetManager 동기화 (전체 리스트를 다시 가져와서 업데이트)
+        # location_repo.get_all_forbidden_zones()가 DB에서 목록을 반환한다고 가정
         all_zones = await container.location_repo.get_all_forbidden_zones()
-        container.fleet_manager.update_forbidden_zones(all_zones)
+        await container.fleet_manager.update_forbidden_zones(all_zones)
         
         return {"status": "success"}
     except Exception as e:
@@ -200,12 +223,13 @@ async def get_zones():
 async def delete_zone(zone_id: int):
     try:
         # 1. DB 삭제
+        # location_repo.delete_forbidden_zone(zone_id)가 있다고 가정
         success = await container.location_repo.delete_forbidden_zone(zone_id)
         
         if success:
             # 2. FleetManager 동기화 (삭제 후 남은 리스트를 다시 전달)
             all_zones = await container.location_repo.get_all_forbidden_zones()
-            container.fleet_manager.update_forbidden_zones(all_zones)
+            await container.fleet_manager.update_forbidden_zones(all_zones)
             return {"status": "success"}
         else:
             raise HTTPException(status_code=404, detail="구역을 찾을 수 없습니다.")
