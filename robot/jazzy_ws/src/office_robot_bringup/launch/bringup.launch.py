@@ -56,6 +56,10 @@ def generate_launch_description() -> LaunchDescription:
     display_topic = LaunchConfiguration("display_topic")
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
     emit_command_received_event = LaunchConfiguration("emit_command_received_event")
+    qr_scan_local_enabled = LaunchConfiguration("qr_scan_local_enabled")
+    qr_scan_image_topic = LaunchConfiguration("qr_scan_image_topic")
+    qr_scan_timeout_sec = LaunchConfiguration("qr_scan_timeout_sec")
+    qr_scan_poll_period_sec = LaunchConfiguration("qr_scan_poll_period_sec")
     safety_stop_publish_hz = LaunchConfiguration("safety_stop_publish_hz")
     safety_lock_keepalive_hz = LaunchConfiguration("safety_lock_keepalive_hz")
     safety_stop_publish_count = LaunchConfiguration("safety_stop_publish_count")
@@ -117,6 +121,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
+            DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
+            DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
+            DeclareLaunchArgument("qr_scan_timeout_sec", default_value="8.0"),
+            DeclareLaunchArgument("qr_scan_poll_period_sec", default_value="0.2"),
             DeclareLaunchArgument("safety_stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_keepalive_hz", default_value="2.0"),
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
@@ -198,6 +206,10 @@ def generate_launch_description() -> LaunchDescription:
                             "display_topic": display_topic,
                             "guide_display_period_sec": guide_display_period_sec,
                             "emit_command_received_event": emit_command_received_event,
+                            "qr_scan_local_enabled": qr_scan_local_enabled,
+                            "qr_scan_image_topic": qr_scan_image_topic,
+                            "qr_scan_timeout_sec": qr_scan_timeout_sec,
+                            "qr_scan_poll_period_sec": qr_scan_poll_period_sec,
                         }.items(),
                     ),
                     IncludeLaunchDescription(

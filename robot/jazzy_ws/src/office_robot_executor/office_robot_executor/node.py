@@ -11,12 +11,20 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Bool, Float32, String
 
 try:
     from std_srvs.srv import Empty
 except Exception:  # pragma: no cover - runtime environment dependent
     Empty = None
+
+try:  # pragma: no cover - runtime environment dependent
+    import cv2
+    import numpy as np
+except Exception:  # pragma: no cover - runtime environment dependent
+    cv2 = None
+    np = None
 
 try:
     from nav2_msgs.action import NavigateToPose
@@ -34,7 +42,7 @@ except Exception:  # pragma: no cover - runtime environment dependent
 class OfficeRobotExecutor(Node):
     """
     Action sequence executor.
-    Subscribes: commands (std_msgs/String), safety_lock (std_msgs/Bool), ai_link (std_msgs/Bool), odom (nav_msgs/Odometry)
+    Subscribes: commands (std_msgs/String), safety_lock (std_msgs/Bool), ai_link (std_msgs/Bool), odom (nav_msgs/Odometry), camera (sensor_msgs/CompressedImage)
     Publishes: status/event/display (std_msgs/String), cmd_vel stop burst (geometry_msgs/Twist)
     """
 
@@ -91,6 +99,10 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
         self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
+        self.declare_parameter("qr_scan_local_enabled", True)
+        self.declare_parameter("qr_scan_image_topic", "/camera/image_raw/compressed")
+        self.declare_parameter("qr_scan_timeout_sec", 8.0)
+        self.declare_parameter("qr_scan_poll_period_sec", 0.2)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -255,6 +267,19 @@ class OfficeRobotExecutor(Node):
             .string_value
             .strip()
         )
+        self.qr_scan_local_enabled = (
+            self.get_parameter("qr_scan_local_enabled").get_parameter_value().bool_value
+        )
+        self.qr_scan_image_topic = (
+            self.get_parameter("qr_scan_image_topic").get_parameter_value().string_value
+        )
+        self.qr_scan_timeout_sec = max(
+            1.0, self.get_parameter("qr_scan_timeout_sec").get_parameter_value().double_value
+        )
+        self.qr_scan_poll_period_sec = max(
+            0.05,
+            self.get_parameter("qr_scan_poll_period_sec").get_parameter_value().double_value,
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -286,6 +311,13 @@ class OfficeRobotExecutor(Node):
         self._localization_recovery_until_mono = 0.0
         self._localization_recovery_cycle_count = 0
         self._last_localization_recovery_mono = 0.0
+        self._latest_qr_image: Optional[bytes] = None
+        self._qr_scan_timer = None
+        self._qr_scan_deadline_mono = 0.0
+        self._qr_scan_on_success: Optional[str] = None
+        self._qr_detector = (
+            cv2.QRCodeDetector() if (self.qr_scan_local_enabled and cv2 is not None and np is not None) else None
+        )
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
         self.status_pub = self.create_publisher(String, "status", 10)
@@ -311,6 +343,16 @@ class OfficeRobotExecutor(Node):
         self.battery_sub = self.create_subscription(
             Float32, self.battery_topic, self._on_battery, 10
         )
+        self.qr_image_sub = None
+        if self.qr_scan_local_enabled:
+            self.qr_image_sub = self.create_subscription(
+                CompressedImage, self.qr_scan_image_topic, self._on_qr_image, 10
+            )
+            if self._qr_detector is None:
+                self.get_logger().warn(
+                    "Local QR scan is enabled, but cv2/numpy is unavailable. "
+                    "QR_SCAN will wait and fallback without decoding."
+                )
 
         self.nav_client = None
         if self.use_nav2 and not self.mock_mode:
@@ -446,6 +488,11 @@ class OfficeRobotExecutor(Node):
             self.battery = clamped
             self._battery_received = True
 
+    def _on_qr_image(self, msg: CompressedImage) -> None:
+        if not msg.data:
+            return
+        self._latest_qr_image = bytes(msg.data)
+
     def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
         self._last_amcl_pose_mono = time.monotonic()
         covariance = list(msg.pose.covariance)
@@ -472,6 +519,7 @@ class OfficeRobotExecutor(Node):
     def _enter_safety_lock(self, source: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         self._stop_guide_display()
+        self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("safety_lock")
         if self._action_timer is not None:
@@ -534,6 +582,7 @@ class OfficeRobotExecutor(Node):
         self._current_task_id = None
 
     def _run_next_action(self) -> None:
+        self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("next_action")
         self._current_action = None
@@ -623,6 +672,19 @@ class OfficeRobotExecutor(Node):
             self._cancel_active_sequence(reason=action)
             return
         if action == "QR_SCAN":
+            current_params = self._current_action.get("params", {}) if self._current_action else {}
+            scanned_data = None
+            if isinstance(current_params, dict):
+                scanned_data = current_params.get("scanned_data")
+            if isinstance(scanned_data, str) and scanned_data.strip():
+                # Keep compatibility: if upstream already resolved QR payload, pass through.
+                self._action_timer = self.create_timer(
+                    self.execution_delay_sec, lambda: self._finish_action_once(on_success)
+                )
+                return
+            if self._start_local_qr_scan(on_success):
+                return
+            # Fallback: keep previous behavior even if local decoder is unavailable.
             self._action_timer = self.create_timer(
                 self.execution_delay_sec, lambda: self._finish_action_once(on_success)
             )
@@ -660,6 +722,7 @@ class OfficeRobotExecutor(Node):
         )
 
     def _finish_action_once(self, on_success: Optional[str]) -> None:
+        self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_finished")
         current_action = self._current_action or {}
@@ -1408,6 +1471,78 @@ class OfficeRobotExecutor(Node):
             self._guide_display_timer.cancel()
             self._guide_display_timer = None
 
+    def _start_local_qr_scan(self, on_success: Optional[str]) -> bool:
+        if not self.qr_scan_local_enabled:
+            return False
+        if self._qr_detector is None:
+            return False
+        self._stop_local_qr_scan()
+        self._qr_scan_deadline_mono = time.monotonic() + self.qr_scan_timeout_sec
+        self._qr_scan_on_success = on_success
+        self._qr_scan_timer = self.create_timer(
+            self.qr_scan_poll_period_sec, self._poll_local_qr_scan
+        )
+        self.get_logger().info(
+            f"QR_SCAN started (topic={self.qr_scan_image_topic}, timeout_sec={self.qr_scan_timeout_sec:.1f})."
+        )
+        return True
+
+    def _poll_local_qr_scan(self) -> None:
+        if self._current_action is None:
+            self._stop_local_qr_scan()
+            return
+        action_name = str(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        ).upper().strip()
+        if action_name != "QR_SCAN":
+            self._stop_local_qr_scan()
+            return
+
+        now = time.monotonic()
+        if now >= self._qr_scan_deadline_mono:
+            self._stop_local_qr_scan()
+            self._fail_current_action(
+                "qr_scan_timeout",
+                {"status_code": 408, "status_text": "qr scan timeout"},
+            )
+            return
+
+        if self._latest_qr_image is None or self._qr_detector is None or cv2 is None or np is None:
+            return
+
+        try:
+            frame = cv2.imdecode(np.frombuffer(self._latest_qr_image, dtype=np.uint8), cv2.IMREAD_COLOR)
+        except Exception:
+            return
+        if frame is None:
+            return
+
+        try:
+            decoded, _, _ = self._qr_detector.detectAndDecode(frame)
+        except Exception:
+            decoded = ""
+        scanned = str(decoded).strip() if decoded is not None else ""
+        if not scanned:
+            return
+
+        params = self._current_action.get("params", {}) if self._current_action else {}
+        if not isinstance(params, dict):
+            params = {}
+        params["scanned_data"] = scanned
+        self._current_action["params"] = params
+
+        self.get_logger().info(f"QR_SCAN decoded: {scanned}")
+        on_success = self._qr_scan_on_success
+        self._stop_local_qr_scan()
+        self._finish_action_once(on_success)
+
+    def _stop_local_qr_scan(self) -> None:
+        if self._qr_scan_timer is not None:
+            self._qr_scan_timer.cancel()
+            self._qr_scan_timer = None
+        self._qr_scan_deadline_mono = 0.0
+        self._qr_scan_on_success = None
+
     def _on_nav_cancel_response(self, future: Any, source: str) -> None:
         try:
             response = future.result()
@@ -1527,6 +1662,7 @@ class OfficeRobotExecutor(Node):
     def _fail_current_action(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         self._stop_timeout_watchdog()
         self._stop_guide_display()
+        self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_failed")
         self._action_queue = []
@@ -1656,6 +1792,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        node._stop_local_qr_scan()
         node.destroy_node()
         rclpy.shutdown()
 
