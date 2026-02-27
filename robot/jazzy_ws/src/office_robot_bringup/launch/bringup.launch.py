@@ -23,6 +23,32 @@ def generate_launch_description() -> LaunchDescription:
     safety_lock_topic = LaunchConfiguration("safety_lock_topic")
     ai_link_topic = LaunchConfiguration("ai_link_topic")
     include_ai_link_in_status = LaunchConfiguration("include_ai_link_in_status")
+    nav2_retry_attempts = LaunchConfiguration("nav2_retry_attempts")
+    nav2_retry_delay_sec = LaunchConfiguration("nav2_retry_delay_sec")
+    localization_required = LaunchConfiguration("localization_required")
+    amcl_pose_topic = LaunchConfiguration("amcl_pose_topic")
+    amcl_pose_max_age_sec = LaunchConfiguration("amcl_pose_max_age_sec")
+    amcl_pose_stale_check_enabled = LaunchConfiguration("amcl_pose_stale_check_enabled")
+    amcl_covariance_xy_max = LaunchConfiguration("amcl_covariance_xy_max")
+    amcl_covariance_yaw_max = LaunchConfiguration("amcl_covariance_yaw_max")
+    localization_allow_degraded_covariance = LaunchConfiguration(
+        "localization_allow_degraded_covariance"
+    )
+    nav2_require_map_odom_tf = LaunchConfiguration("nav2_require_map_odom_tf")
+    nav2_tf_lookup_timeout_sec = LaunchConfiguration("nav2_tf_lookup_timeout_sec")
+    localization_recovery_enabled = LaunchConfiguration("localization_recovery_enabled")
+    localization_recovery_max_cycles = LaunchConfiguration("localization_recovery_max_cycles")
+    localization_recovery_cooldown_sec = LaunchConfiguration("localization_recovery_cooldown_sec")
+    localization_recovery_spin_duration_sec = LaunchConfiguration(
+        "localization_recovery_spin_duration_sec"
+    )
+    localization_recovery_spin_angular_speed = LaunchConfiguration(
+        "localization_recovery_spin_angular_speed"
+    )
+    global_localization_service_name = LaunchConfiguration("global_localization_service_name")
+    global_localization_wait_sec = LaunchConfiguration("global_localization_wait_sec")
+    amcl_nomotion_update_service_name = LaunchConfiguration("amcl_nomotion_update_service_name")
+    amcl_nomotion_wait_sec = LaunchConfiguration("amcl_nomotion_wait_sec")
     enable_display = LaunchConfiguration("enable_display")
     display_topic = LaunchConfiguration("display_topic")
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
@@ -30,6 +56,8 @@ def generate_launch_description() -> LaunchDescription:
     safety_stop_publish_hz = LaunchConfiguration("safety_stop_publish_hz")
     safety_lock_keepalive_hz = LaunchConfiguration("safety_lock_keepalive_hz")
     safety_stop_publish_count = LaunchConfiguration("safety_stop_publish_count")
+    obstacle_enabled = LaunchConfiguration("obstacle_enabled")
+    obstacle_topic = LaunchConfiguration("obstacle_topic")
     safety_params_file = PathJoinSubstitution(
         [FindPackageShare("office_robot_bringup"), "config", "safety.yaml"]
     )
@@ -47,12 +75,38 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("frame_id", default_value="map"),
             DeclareLaunchArgument("goal_timeout_sec", default_value="60.0"),
             DeclareLaunchArgument("goal_response_timeout_sec", default_value="8.0"),
-            DeclareLaunchArgument("stop_cmd_vel_topic", default_value="cmd_vel"),
+            DeclareLaunchArgument("stop_cmd_vel_topic", default_value="/cmd_vel"),
             DeclareLaunchArgument("stop_publish_count", default_value="10"),
             DeclareLaunchArgument("stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_topic", default_value="safety_lock"),
             DeclareLaunchArgument("ai_link_topic", default_value="ai_link"),
             DeclareLaunchArgument("include_ai_link_in_status", default_value="true"),
+            DeclareLaunchArgument("nav2_retry_attempts", default_value="8"),
+            DeclareLaunchArgument("nav2_retry_delay_sec", default_value="1.0"),
+            DeclareLaunchArgument("localization_required", default_value="true"),
+            DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
+            DeclareLaunchArgument("amcl_pose_max_age_sec", default_value="3.0"),
+            DeclareLaunchArgument("amcl_pose_stale_check_enabled", default_value="false"),
+            DeclareLaunchArgument("amcl_covariance_xy_max", default_value="0.8"),
+            DeclareLaunchArgument("amcl_covariance_yaw_max", default_value="6.0"),
+            DeclareLaunchArgument(
+                "localization_allow_degraded_covariance", default_value="true"
+            ),
+            DeclareLaunchArgument("nav2_require_map_odom_tf", default_value="true"),
+            DeclareLaunchArgument("nav2_tf_lookup_timeout_sec", default_value="0.05"),
+            DeclareLaunchArgument("localization_recovery_enabled", default_value="true"),
+            DeclareLaunchArgument("localization_recovery_max_cycles", default_value="2"),
+            DeclareLaunchArgument("localization_recovery_cooldown_sec", default_value="8.0"),
+            DeclareLaunchArgument("localization_recovery_spin_duration_sec", default_value="4.0"),
+            DeclareLaunchArgument("localization_recovery_spin_angular_speed", default_value="0.8"),
+            DeclareLaunchArgument(
+                "global_localization_service_name", default_value="reinitialize_global_localization"
+            ),
+            DeclareLaunchArgument("global_localization_wait_sec", default_value="0.5"),
+            DeclareLaunchArgument(
+                "amcl_nomotion_update_service_name", default_value="request_nomotion_update"
+            ),
+            DeclareLaunchArgument("amcl_nomotion_wait_sec", default_value="0.3"),
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
@@ -60,6 +114,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("safety_stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_keepalive_hz", default_value="2.0"),
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
+            DeclareLaunchArgument("obstacle_enabled", default_value="false"),
+            DeclareLaunchArgument("obstacle_topic", default_value="obstacles"),
             GroupAction(
                 [
                     PushRosNamespace(robot_ns),
@@ -78,6 +134,8 @@ def generate_launch_description() -> LaunchDescription:
                                 "stop_publish_hz": safety_stop_publish_hz,
                                 "lock_keepalive_hz": safety_lock_keepalive_hz,
                                 "stop_publish_count": safety_stop_publish_count,
+                                "obstacle_enabled": obstacle_enabled,
+                                "obstacle_topic": obstacle_topic,
                             },
                         ],
                     ),
@@ -107,6 +165,26 @@ def generate_launch_description() -> LaunchDescription:
                             "safety_lock_topic": safety_lock_topic,
                             "ai_link_topic": ai_link_topic,
                             "include_ai_link_in_status": include_ai_link_in_status,
+                            "nav2_retry_attempts": nav2_retry_attempts,
+                            "nav2_retry_delay_sec": nav2_retry_delay_sec,
+                            "localization_required": localization_required,
+                            "amcl_pose_topic": amcl_pose_topic,
+                            "amcl_pose_max_age_sec": amcl_pose_max_age_sec,
+                            "amcl_pose_stale_check_enabled": amcl_pose_stale_check_enabled,
+                            "amcl_covariance_xy_max": amcl_covariance_xy_max,
+                            "amcl_covariance_yaw_max": amcl_covariance_yaw_max,
+                            "localization_allow_degraded_covariance": localization_allow_degraded_covariance,
+                            "nav2_require_map_odom_tf": nav2_require_map_odom_tf,
+                            "nav2_tf_lookup_timeout_sec": nav2_tf_lookup_timeout_sec,
+                            "localization_recovery_enabled": localization_recovery_enabled,
+                            "localization_recovery_max_cycles": localization_recovery_max_cycles,
+                            "localization_recovery_cooldown_sec": localization_recovery_cooldown_sec,
+                            "localization_recovery_spin_duration_sec": localization_recovery_spin_duration_sec,
+                            "localization_recovery_spin_angular_speed": localization_recovery_spin_angular_speed,
+                            "global_localization_service_name": global_localization_service_name,
+                            "global_localization_wait_sec": global_localization_wait_sec,
+                            "amcl_nomotion_update_service_name": amcl_nomotion_update_service_name,
+                            "amcl_nomotion_wait_sec": amcl_nomotion_wait_sec,
                             "enable_display": enable_display,
                             "display_topic": display_topic,
                             "guide_display_period_sec": guide_display_period_sec,
