@@ -39,15 +39,15 @@ CREATE TABLE `Locations` (
 LOCK TABLES `Locations` WRITE;
 /*!40000 ALTER TABLE `Locations` DISABLE KEYS */;
 INSERT INTO `Locations` (`name`, `type`, `coordinate_x`, `coordinate_y`, `theta`, `is_restricted`) VALUES
-('office_1', 'OFFICE', 0.5, -0.3, 0.0, 0),
-('office_2', 'OFFICE', 1.0, -0.3, 0.0, 0),
-('office_3', 'OFFICE', 1.5, -0.3, 0.0, 0),
-('snack_entrance', 'WAREHOUSE', 1.8, -1.0, 0.0, 0),
-('small_meeting_room', 'MEETING_ROOM', 0.5, -1.5, 0.0, 0),
-('large_meeting_room', 'MEETING_ROOM', 1.5, -1.5, 0.0, 0),
-('charger_1', 'CHARGER', 0.1, -2.2, 0.0, 0),
-('charger_2', 'CHARGER', 1.8, -2.2, 0.0, 0),
-('waiting_area', 'WAITING_AREA', 0.0, 0.0, 0.0, 0);
+('office_1', 'OFFICE', 0.13753145723911378, 0.4527178802857102, -1.696124, 0),
+('office_2', 'OFFICE', -0.3973106828564403, -0.4375097858687159, 1.528184, 0),
+('office_3', 'OFFICE', 0.33753704388510386, -0.465798005108, 1.464256, 0),
+('snack_warehouse', 'WAREHOUSE', 1.0285432137360198, -0.4104631049556024, 1.470032, 0),
+('small_meeting_room', 'MEETING_ROOM', -0.8221793400346948, -0.8271059302996762, 3.124056, 0),
+('large_meeting_room', 'MEETING_ROOM', -0.7002709412285874, 0.4828758256541526, -1.611872, 0),
+('charger_1', 'CHARGER', 0.9664428251996614, 0.7814675899777394, -1.518132, 0),
+('charger_2', 'CHARGER', 0.7977241447875981, 0.8169558052279039, -1.600458, 0),
+('snack_waiting_area', 'WAITING_AREA', 0.7370498809361397, -0.3666066808708967, -1.665882, 0);
 /*!40000 ALTER TABLE `Locations` ENABLE KEYS */;
 UNLOCK TABLES;
 
