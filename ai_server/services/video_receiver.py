@@ -31,22 +31,37 @@ class UDPVideoReceiver:
     """
 
     def __init__(
-        self, host: str = "0.0.0.0", port: int = 54321, buffer_size: int = 65536
+        self,
+        host: str = "0.0.0.0",
+        port: int = 54321,
+        buffer_size: int = 65536,
+        max_robots: int = 2,
     ):
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
         self.socket = None
         self.is_running = False
-        self.frame_queue: Queue = Queue(maxsize=30)
+        self.frame_queue: Queue = Queue(maxsize=60)  # 2대분 여유
         self.receive_thread = None
 
-        # 최신 프레임 미리보기용 (GUI 연동)
-        self._preview_frame_path = Path("/tmp/ai_server_latest_frame.jpg")
-        self._preview_interval = 0.1  # 100ms 간격으로 저장
-        self._last_preview_time = 0.0
+        # 멀티 로봇 지원
+        self._max_robots = max_robots
+        self._robot_indices: Dict[str, int] = {}  # IP → robot index (0, 1, ...)
+        self._robot_last_seen: Dict[str, float] = {}  # IP → last seen timestamp
+        self._robot_lock = threading.Lock()
+        self._robots_info_path = Path("/tmp/ai_server_robots.json")
 
-        logger.info(f"UDP Video Receiver 초기화: {host}:{port}")
+        # 로봇별 미리보기 프레임 (GUI 연동)
+        self._preview_frame_paths: Dict[int, Path] = {
+            i: Path(f"/tmp/ai_server_robot_{i}_frame.jpg") for i in range(max_robots)
+        }
+        self._preview_interval = 0.1  # 100ms 간격으로 저장
+        self._last_preview_times: Dict[int, float] = {i: 0.0 for i in range(max_robots)}
+
+        logger.info(
+            f"UDP Video Receiver 초기화: {host}:{port} (최대 {max_robots}대 로봇)"
+        )
 
     def start(self):
         if self.is_running:
@@ -79,20 +94,29 @@ class UDPVideoReceiver:
             self.socket = None
         if self.receive_thread:
             self.receive_thread.join(timeout=2)
-        # 미리보기 파일 정리
+        # 미리보기 파일 정리 (모든 로봇)
+        for preview_path in self._preview_frame_paths.values():
+            try:
+                preview_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         try:
-            self._preview_frame_path.unlink(missing_ok=True)
+            self._robots_info_path.unlink(missing_ok=True)
         except Exception:
             pass
         logger.info("UDP Video Receiver 중지")
 
     def _receive_loop(self):
         """
-        UDP 패킷 수신 루프.
+        UDP 패킷 수신 루프 (멀티 로봇 지원).
         패킷 헤더: [frame_id:u32LE][packet_id:u32LE][total_packets:u32LE][data]
         (로봇 bridge_node가 little-endian '<III'로 패킹)
+
+        frame_buffer 키를 (source_ip, frame_id) 튜플로 사용하여
+        여러 로봇의 프레임이 섞이지 않도록 보장.
         """
-        frame_buffer: Dict[int, Dict[int, bytes]] = {}
+        # (source_ip, frame_id) → {packet_id: bytes}
+        frame_buffer: Dict[tuple, Dict[int, bytes]] = {}
         recv_packet_count = 0
         assembled_frame_count = 0
         decoded_frame_count = 0
@@ -101,6 +125,7 @@ class UDPVideoReceiver:
         while self.is_running:
             try:
                 data, addr = self.socket.recvfrom(self.buffer_size)
+                source_ip = addr[0]
                 recv_packet_count += 1
 
                 if len(data) < 12:
@@ -110,24 +135,31 @@ class UDPVideoReceiver:
                 frame_id, packet_id, total_packets = struct.unpack_from("<III", data, 0)
                 packet_data = data[12:]
 
+                # 로봇 등록 (최초 패킷 수신 시 자동 등록)
+                robot_idx = self._get_robot_index(source_ip)
+                if robot_idx < 0:
+                    continue  # 최대 로봇 수 초과
+
                 # 첫 패킷 수신 시 로그
                 if recv_packet_count == 1:
                     logger.info(
-                        f"UDP 첫 패킷 수신: from={addr}, "
+                        f"UDP 첫 패킷 수신: from={addr}, robot_idx={robot_idx}, "
                         f"frame_id={frame_id}, packet_id={packet_id}, "
                         f"total_packets={total_packets}, data_len={len(packet_data)}"
                     )
 
-                if frame_id not in frame_buffer:
-                    frame_buffer[frame_id] = {}
+                # (source_ip, frame_id) 기준으로 패킷 버퍼링 — 로봇 간 frame_id 충돌 방지
+                buf_key = (source_ip, frame_id)
+                if buf_key not in frame_buffer:
+                    frame_buffer[buf_key] = {}
 
-                frame_buffer[frame_id][packet_id] = packet_data
+                frame_buffer[buf_key][packet_id] = packet_data
 
                 # 모든 패킷 도착 → 프레임 조립
-                if len(frame_buffer[frame_id]) == total_packets:
+                if len(frame_buffer[buf_key]) == total_packets:
                     assembled_frame_count += 1
                     frame_data = b"".join(
-                        [frame_buffer[frame_id][i] for i in range(total_packets)]
+                        [frame_buffer[buf_key][i] for i in range(total_packets)]
                     )
 
                     frame = self._decode_frame(frame_data)
@@ -144,24 +176,27 @@ class UDPVideoReceiver:
                             {
                                 "frame": frame,
                                 "frame_id": frame_id,
-                                "robot_id": addr[0],
+                                "robot_id": source_ip,
+                                "robot_idx": robot_idx,
                                 "timestamp": time.time(),
                             }
                         )
 
-                        # GUI 미리보기용 프레임 저장 (throttled)
+                        # GUI 미리보기용 프레임 저장 (로봇별, throttled)
                         now = time.time()
-                        if (now - self._last_preview_time) >= self._preview_interval:
-                            self._save_preview_frame(frame)
-                            self._last_preview_time = now
+                        if (
+                            now - self._last_preview_times[robot_idx]
+                        ) >= self._preview_interval:
+                            self._save_preview_frame(frame, robot_idx)
+                            self._last_preview_times[robot_idx] = now
                     else:
                         logger.warning(
-                            f"프레임 디코딩 실패: frame_id={frame_id}, "
-                            f"size={len(frame_data)}B, "
+                            f"프레임 디코딩 실패: robot={source_ip}, "
+                            f"frame_id={frame_id}, size={len(frame_data)}B, "
                             f"header=0x{frame_data[:4].hex() if len(frame_data) >= 4 else 'N/A'}"
                         )
 
-                    del frame_buffer[frame_id]
+                    del frame_buffer[buf_key]
 
                 # 주기적 수신 통계 로그 (10초마다)
                 now = time.time()
@@ -170,7 +205,8 @@ class UDPVideoReceiver:
                         f"UDP 수신 통계: packets={recv_packet_count}, "
                         f"assembled={assembled_frame_count}, "
                         f"decoded={decoded_frame_count}, "
-                        f"pending_frames={len(frame_buffer)}"
+                        f"pending_frames={len(frame_buffer)}, "
+                        f"connected_robots={len(self._robot_indices)}"
                     )
                     recv_packet_count = 0
                     assembled_frame_count = 0
@@ -179,9 +215,9 @@ class UDPVideoReceiver:
 
                 # 오래된 불완전 프레임 정리
                 if len(frame_buffer) > 100:
-                    old_frames = sorted(frame_buffer.keys())[:50]
-                    for old_id in old_frames:
-                        del frame_buffer[old_id]
+                    old_keys = sorted(frame_buffer.keys(), key=lambda k: k[1])[:50]
+                    for old_key in old_keys:
+                        del frame_buffer[old_key]
 
             except Exception as e:
                 if self.is_running:
@@ -201,21 +237,67 @@ class UDPVideoReceiver:
         except Empty:
             return None
 
-    def _save_preview_frame(self, frame: np.ndarray):
-        """최신 프레임을 GUI 미리보기용 JPEG로 저장 (atomic write)"""
+    def _save_preview_frame(self, frame: np.ndarray, robot_idx: int = 0):
+        """최신 프레임을 GUI 미리보기용 JPEG로 저장 (로봇별, atomic write)"""
+        preview_path = self._preview_frame_paths.get(robot_idx)
+        if preview_path is None:
+            return
         try:
-            tmp_path = str(self._preview_frame_path.parent / "_ai_preview_tmp.jpg")
+            tmp_path = str(preview_path.parent / f"_ai_preview_tmp_{robot_idx}.jpg")
             success = cv2.imwrite(tmp_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if not success:
                 logger.warning(
-                    f"cv2.imwrite 실패: shape={frame.shape}, dtype={frame.dtype}, "
-                    f"path={tmp_path}"
+                    f"cv2.imwrite 실패: robot_idx={robot_idx}, "
+                    f"shape={frame.shape}, dtype={frame.dtype}, path={tmp_path}"
                 )
                 return
-            os.replace(tmp_path, str(self._preview_frame_path))
-            logger.debug(f"미리보기 프레임 저장: {self._preview_frame_path}")
+            os.replace(tmp_path, str(preview_path))
+            logger.debug(f"미리보기 프레임 저장: robot_idx={robot_idx}, {preview_path}")
         except Exception as e:
             logger.error(f"미리보기 프레임 저장 실패: {e}", exc_info=True)
+
+    def _get_robot_index(self, robot_ip: str) -> int:
+        """로봇 IP → 인덱스 매핑 (최초 접속 시 자동 등록)"""
+        with self._robot_lock:
+            if robot_ip in self._robot_indices:
+                self._robot_last_seen[robot_ip] = time.time()
+                return self._robot_indices[robot_ip]
+            if len(self._robot_indices) >= self._max_robots:
+                logger.warning(
+                    f"최대 로봇 수({self._max_robots}) 초과: {robot_ip} 무시"
+                )
+                return -1
+            idx = len(self._robot_indices)
+            self._robot_indices[robot_ip] = idx
+            self._robot_last_seen[robot_ip] = time.time()
+            logger.info(f"새 로봇 등록: {robot_ip} → Robot#{idx}")
+            self._save_robots_info()
+            return idx
+
+    def get_robot_index(self, robot_ip: str) -> int:
+        """robot_ip에 대응하는 로봇 인덱스 반환 (미등록이면 -1)"""
+        with self._robot_lock:
+            return self._robot_indices.get(robot_ip, -1)
+
+    def _save_robots_info(self):
+        """연결된 로봇 정보를 JSON 파일로 저장 (GUI에서 읽기 위함)"""
+        try:
+            info = {
+                "robots": [
+                    {
+                        "index": idx,
+                        "ip": ip,
+                        "last_seen": self._robot_last_seen.get(ip, 0),
+                    }
+                    for ip, idx in self._robot_indices.items()
+                ]
+            }
+            tmp = str(self._robots_info_path) + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(info, f)
+            os.replace(tmp, str(self._robots_info_path))
+        except Exception as e:
+            logger.error(f"로봇 정보 저장 실패: {e}")
 
 
 class VideoStreamProcessor:
@@ -360,7 +442,8 @@ class VideoStreamProcessor:
                 # 테스트 모드: 바운딩 박스 그리고 미리보기 저장 + 결과 파일 쓰기
                 if test_mode:
                     annotated = self._draw_annotations(frame, test_results)
-                    self.receiver._save_preview_frame(annotated)
+                    robot_idx = self.receiver.get_robot_index(robot_id)
+                    self.receiver._save_preview_frame(annotated, robot_idx)
                     self._save_test_results(test_results)
 
             except Exception as e:

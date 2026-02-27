@@ -29,7 +29,9 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AI_SERVER_MODULE = "ai_server.server"
 PYTHON_EXE = sys.executable
-PREVIEW_FRAME_PATH = Path("/tmp/ai_server_latest_frame.jpg")
+PREVIEW_FRAME_PATTERN = "/tmp/ai_server_robot_{}_frame.jpg"  # {} → robot index
+ROBOTS_INFO_PATH = Path("/tmp/ai_server_robots.json")
+MAX_ROBOTS = 2
 VIDEO_UPDATE_INTERVAL_MS = 100  # 10fps
 TEST_MODE_FLAG_PATH = Path("/tmp/ai_server_test_mode.flag")
 TEST_MODE_RESULT_PATH = Path("/tmp/ai_server_test_results.json")
@@ -353,9 +355,9 @@ class AIServerGUI:
                 "cfg": cfg,
             }
 
-    # ── 비디오 미리보기 패널 ──────────────────────────────
+    # ── 비디오 미리보기 패널 (듀얼 로봇 지원) ──────────────
     def _build_video_panel(self):
-        """UDP 영상 실시간 미리보기 패널 (초기 숨김)"""
+        """UDP 영상 실시간 미리보기 패널 — 2대 로봇 동시 표시 (초기 숨김)"""
         self.video_frame = tk.Frame(self.root, bg=COLORS["bg"])
         # 초기에는 pack하지 않음 (숨김 상태)
 
@@ -380,35 +382,66 @@ class AIServerGUI:
             fg=COLORS["yellow"],
         ).pack(side=tk.RIGHT)
 
-        self._video_status_var = tk.StringVar(value="")
-        tk.Label(
-            video_header,
-            textvariable=self._video_status_var,
-            font=("Helvetica", 9),
-            bg=COLORS["surface"],
-            fg=COLORS["subtext"],
-        ).pack(side=tk.RIGHT, padx=8)
-
-        # 비디오 표시 영역
+        # 로봇 2대 비디오 표시 영역 (좌우 배치)
         video_container = tk.Frame(self.video_frame, bg=COLORS["bg"], padx=4, pady=4)
         video_container.pack(fill=tk.BOTH, expand=True)
+        video_container.columnconfigure(0, weight=1)
+        video_container.columnconfigure(1, weight=1)
+        video_container.rowconfigure(1, weight=1)
 
-        self.video_label = tk.Label(
-            video_container,
-            bg="#000000",
-            text=(
-                "영상 수신 대기 중..."
-                if HAS_PIL
-                else "⚠ Pillow 패키지 필요 (pip install Pillow)"
-            ),
-            fg=COLORS["subtext"],
-            font=("Helvetica", 11),
-            anchor=tk.CENTER,
-        )
-        self.video_label.pack(fill=tk.BOTH, expand=True, pady=2)
+        self._robot_video_labels: dict = {}
+        self._robot_video_photos: dict = {}
+        self._robot_video_fps: dict = {}
+        self._robot_video_status_vars: dict = {}
 
-        self._video_frame_count = 0
-        self._video_last_fps_time = 0.0
+        for i in range(MAX_ROBOTS):
+            # 로봇별 헤더
+            robot_header = tk.Frame(
+                video_container, bg=COLORS["overlay"], pady=2, padx=6
+            )
+            robot_header.grid(row=0, column=i, sticky="ew", padx=2)
+
+            status_var = tk.StringVar(value=f"Robot #{i + 1} — 연결 대기")
+            tk.Label(
+                robot_header,
+                textvariable=status_var,
+                font=("Helvetica", 9, "bold"),
+                bg=COLORS["overlay"],
+                fg=COLORS["fg"],
+            ).pack(side=tk.LEFT)
+
+            fps_var = tk.StringVar(value="")
+            tk.Label(
+                robot_header,
+                textvariable=fps_var,
+                font=("Helvetica", 8),
+                bg=COLORS["overlay"],
+                fg=COLORS["yellow"],
+            ).pack(side=tk.RIGHT)
+
+            # 비디오 라벨
+            label = tk.Label(
+                video_container,
+                bg="#000000",
+                text=(
+                    "영상 수신 대기 중..."
+                    if HAS_PIL
+                    else "⚠ Pillow 패키지 필요 (pip install Pillow)"
+                ),
+                fg=COLORS["subtext"],
+                font=("Helvetica", 10),
+                anchor=tk.CENTER,
+            )
+            label.grid(row=1, column=i, sticky="nsew", padx=2, pady=2)
+
+            self._robot_video_labels[i] = label
+            self._robot_video_photos[i] = None
+            self._robot_video_fps[i] = {
+                "count": 0,
+                "last_time": 0.0,
+                "var": fps_var,
+            }
+            self._robot_video_status_vars[i] = status_var
 
     def _toggle_video(self):
         """비디오 미리보기 패널 표시/숨김 토글"""
@@ -425,11 +458,13 @@ class AIServerGUI:
                 fill=tk.BOTH, after=self._conn_panel, before=self.paned
             )
             self._video_visible = True
-            self._video_frame_count = 0
-            self._video_last_fps_time = 0.0
+            # 로봇별 FPS 카운터 초기화
+            for fps_info in self._robot_video_fps.values():
+                fps_info["count"] = 0
+                fps_info["last_time"] = 0.0
             self._schedule_video_update()
             self.btn_video.configure(bg=COLORS["green"])
-            self._append_log("비디오 미리보기 ON", "INFO")
+            self._append_log("비디오 미리보기 ON (2대 동시 표시)", "INFO")
 
     def _schedule_video_update(self):
         """비디오 프레임 업데이트 스케줄"""
@@ -444,45 +479,68 @@ class AIServerGUI:
             self._video_update_id = None
 
     def _update_video_frame(self):
-        """주기적으로 최신 프레임을 읽어 비디오 라벨에 표시"""
+        """주기적으로 각 로봇의 최신 프레임을 읽어 비디오 라벨에 표시"""
         if not self._video_visible:
             return
 
         try:
-            if HAS_PIL and PREVIEW_FRAME_PATH.exists():
-                # 프레임 파일 읽기
-                img = Image.open(str(PREVIEW_FRAME_PATH))
+            # 로봇 연결 정보 읽기
+            connected_count = 0
+            if ROBOTS_INFO_PATH.exists():
+                try:
+                    with open(str(ROBOTS_INFO_PATH), "r") as f:
+                        info = json.load(f)
+                    robots = info.get("robots", [])
+                    connected_count = len(robots)
+                    for r in robots:
+                        idx = r["index"]
+                        ip = r["ip"]
+                        if idx in self._robot_video_status_vars:
+                            self._robot_video_status_vars[idx].set(
+                                f"Robot #{idx + 1} — {ip}"
+                            )
+                except Exception:
+                    pass
 
-                # 패널 너비에 맞춰 리사이즈 (비율 유지)
-                panel_w = self.video_label.winfo_width()
-                if panel_w < 100:
-                    panel_w = 800
-                target_h = int(panel_w * img.height / img.width)
-                if target_h > 480:
-                    target_h = 480
-                    panel_w = int(target_h * img.width / img.height)
-                img = img.resize((panel_w, target_h), Image.LANCZOS)
+            if connected_count > 0:
+                self._video_fps_var.set(f"{connected_count}대 연결")
 
-                photo = ImageTk.PhotoImage(img)
-                self.video_label.configure(image=photo, text="")
-                self._video_photo = photo  # 참조 유지 (GC 방지)
+            # 각 로봇의 프레임 업데이트
+            for i in range(MAX_ROBOTS):
+                preview_path = Path(PREVIEW_FRAME_PATTERN.format(i))
+                label = self._robot_video_labels[i]
 
-                # FPS 계산
-                self._video_frame_count += 1
-                now = datetime.now().timestamp()
-                if self._video_last_fps_time == 0:
-                    self._video_last_fps_time = now
-                elif (now - self._video_last_fps_time) >= 1.0:
-                    fps = self._video_frame_count / (now - self._video_last_fps_time)
-                    self._video_fps_var.set(f"{fps:.1f} FPS")
-                    self._video_status_var.set(f"{img.width}x{img.height}")
-                    self._video_frame_count = 0
-                    self._video_last_fps_time = now
-            else:
-                if not HAS_PIL:
-                    self._video_fps_var.set("Pillow 미설치")
-                else:
-                    self._video_fps_var.set("영상 대기 중...")
+                if HAS_PIL and preview_path.exists():
+                    try:
+                        img = Image.open(str(preview_path))
+
+                        # 패널 너비에 맞춰 리사이즈 (비율 유지)
+                        panel_w = label.winfo_width()
+                        if panel_w < 50:
+                            panel_w = 400
+                        target_h = int(panel_w * img.height / img.width)
+                        if target_h > 480:
+                            target_h = 480
+                            panel_w = int(target_h * img.width / img.height)
+                        img = img.resize((panel_w, target_h), Image.LANCZOS)
+
+                        photo = ImageTk.PhotoImage(img)
+                        label.configure(image=photo, text="")
+                        self._robot_video_photos[i] = photo  # GC 방지
+
+                        # FPS 계산
+                        fps_info = self._robot_video_fps[i]
+                        fps_info["count"] += 1
+                        now = datetime.now().timestamp()
+                        if fps_info["last_time"] == 0:
+                            fps_info["last_time"] = now
+                        elif (now - fps_info["last_time"]) >= 1.0:
+                            fps = fps_info["count"] / (now - fps_info["last_time"])
+                            fps_info["var"].set(f"{fps:.1f} FPS")
+                            fps_info["count"] = 0
+                            fps_info["last_time"] = now
+                    except Exception:
+                        pass
 
         except Exception:
             pass  # 파일 읽기/디코딩 일시 실패 무시
@@ -1077,6 +1135,16 @@ class AIServerGUI:
         try:
             TEST_MODE_FLAG_PATH.unlink(missing_ok=True)
             TEST_MODE_RESULT_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+        # 로봇 미리보기 파일 정리
+        for i in range(MAX_ROBOTS):
+            try:
+                Path(PREVIEW_FRAME_PATTERN.format(i)).unlink(missing_ok=True)
+            except Exception:
+                pass
+        try:
+            ROBOTS_INFO_PATH.unlink(missing_ok=True)
         except Exception:
             pass
         if self.process and self.process.poll() is None:

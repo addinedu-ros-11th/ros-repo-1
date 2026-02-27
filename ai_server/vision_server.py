@@ -44,12 +44,13 @@ async def serve():
     )
     vision_service.initialize()
 
-    # 3. UDP 영상 수신기 초기화 및 시작
+    # 3. UDP 영상 수신기 초기화 및 시작 (멀티 로봇 지원)
     logger.info("UDP Video Receiver 초기화 중...")
     video_receiver = UDPVideoReceiver(
         host=config.VIDEO_STREAM_HOST,
         port=config.VIDEO_STREAM_PORT,
         buffer_size=config.VIDEO_BUFFER_SIZE,
+        max_robots=config.MAX_ROBOTS,
     )
     video_receiver.start()
 

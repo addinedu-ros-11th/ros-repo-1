@@ -40,6 +40,9 @@ VIDEO_STREAM_HOST = os.getenv("VIDEO_STREAM_HOST", "0.0.0.0")
 VIDEO_STREAM_PORT = int(os.getenv("VIDEO_STREAM_PORT", 54321))
 VIDEO_BUFFER_SIZE = int(os.getenv("VIDEO_BUFFER_SIZE", 65536))
 
+# Multi-Robot Configuration
+MAX_ROBOTS = int(os.getenv("MAX_ROBOTS", 2))  # 동시 수신 가능한 최대 로봇 수
+
 # Inference Processing Configuration
 # 프레임 처리 간격 (초) — YOLO/얼굴 인식을 매 프레임 돌리지 않고 간격을 둠
 INFERENCE_INTERVAL = float(os.getenv("INFERENCE_INTERVAL", "0.3"))
