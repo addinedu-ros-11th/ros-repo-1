@@ -195,3 +195,5 @@ ai_server/data/employee_metadata.json
 
 prompt.md
 .geminiignore
+
+.*venv

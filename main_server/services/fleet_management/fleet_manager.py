@@ -141,9 +141,16 @@ class FleetManager:
             )
             
             if path:
-                # 2. 경로가 존재하면 경로의 노드 개수(또는 실제 거리 합산)를 저장
-                # path는 [{'x':...}, {'y':...}] 형태의 리스트이므로 len(path)가 곧 비용입니다.
-                robot_distances.append((robot, len(path)))
+                # 2. 경로가 존재하면 실제 거리 합산을 비용으로 사용
+                # path는 [{'x':...}, {'y':...}] 형태의 리스트입니다.
+                path_length = 0.0
+                if len(path) > 1:
+                    for i in range(len(path) - 1):
+                        p1 = path[i]
+                        p2 = path[i+1]
+                        path_length += math.hypot(p2['x'] - p1['x'], p2['y'] - p1['y'])
+                
+                robot_distances.append((robot, path_length))
             else:
                 # 경로가 없는 로봇(도달 불가능)은 제외
                 continue
