@@ -175,6 +175,21 @@ class ROSBridgeCommunicator(IRobotCommunicator):
         self.status_topics[robot_name] = topic
         logger.info(f"[{robot_name}] 상태 구독 시작 (Topic: {topic.name})")
 
+    def cancel_robot_task(self, robot_name: str):
+        """로봇에게 현재 수행 중인 태스크 취소 명령(CANCEL)을 전송합니다."""
+        if not self.client.is_connected:
+            logger.warning(f"[{robot_name}] ROS Bridge 미연결로 취소 명령 불가.")
+            return
+
+        topic = self._get_command_topic(robot_name)
+        message = {
+            "robot_name": robot_name,
+            "type": "CANCEL",
+            "payload": {}
+        }
+        topic.publish(roslibpy.Message({"data": json.dumps(message)}))
+        logger.info(f"[{robot_name}] 취소(CANCEL) 명령 전송 완료")
+
 class ROSBridge:
     """
     애플리케이션 시작 시 백그라운드에서 실행되어 

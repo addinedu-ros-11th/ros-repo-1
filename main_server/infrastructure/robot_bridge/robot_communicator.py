@@ -62,3 +62,12 @@ class IRobotCommunicator(Protocol):
             callback (Callable): 상태 데이터를 수신했을 때 호출할 함수.
         """
         ...
+        
+    def cancel_robot_task(self, robot_name: str):
+        """
+        특정 로봇의 현재 수행 중인 태스크를 취소(중단)합니다.
+        
+        Args:
+            robot_name (str): 취소 명령을 수신할 로봇의 이름.
+        """
+        ...

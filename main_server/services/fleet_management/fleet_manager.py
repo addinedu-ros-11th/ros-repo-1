@@ -178,6 +178,11 @@ class FleetManager:
         self.robot_communicator.send_action_sequence(robot_name, actions)
         logger.info(f"로봇 '{robot_name}'에게 {len(actions)}개의 액션 전송 완료.")
 
+    def cancel_robot_task(self, robot_name: str):
+        """로봇에게 현재 수행 중인 작업을 즉시 중단하도록 명령합니다."""
+        self.robot_communicator.cancel_robot_task(robot_name)
+        logger.info(f"로봇 '{robot_name}'에게 작업 취소 명령을 전달했습니다.")
+
     async def update_robot_status(self, robot_id: Union[int, str], status: RobotStatus, location: Optional[tuple] = None, battery: Optional[float] = None) -> Optional[Robot]:
         """로봇으로부터 수신된 텔레메트리 정보를 DB에 갱신합니다."""
         

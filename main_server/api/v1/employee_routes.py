@@ -99,6 +99,48 @@ async def process_command(request: Dict[str, Any]):
                 "task_id": task.id,
                 "ai_fields": manual_result["fields"]
             }
+
+    # ---------------------------------------------------------
+    # [TEST ONLY] cancle:(robot_id) 작업 취소 명령 가로채기
+    # ---------------------------------------------------------
+    elif message.lower().startswith("cancel:"):
+        import re
+        # cancle:(robot_1) or cancel:(1)
+        match_cancel = re.match(r"cancell?e?:\(([^)]+)\)", message.strip(), re.IGNORECASE)
+        
+        if match_cancel:
+            robot_identifier = match_cancel.group(1).strip()
+            
+            # 로봇 검색 (ID or Name)
+            target_robot = None
+            
+            # Try as ID first if numeric
+            if robot_identifier.isdigit():
+                target_robot = await container.robot_repo.get_by_id(int(robot_identifier))
+            
+            # Try as Name if not found or not numeric
+            if not target_robot:
+                target_robot = await container.robot_repo.get_by_name(robot_identifier)
+                
+            if target_robot:
+                # 1. 로봇에게 취소 명령 전송
+                container.fleet_manager.cancel_robot_task(target_robot.name)
+                
+                # 2. DB 상의 Task 상태 업데이트 (CANCELLED)
+                if target_robot.current_task_id:
+                     task = await container.task_repo.get_by_id(target_robot.current_task_id)
+                     if task and task.status not in ["COMPLETED", "CANCELLED", "FAILED"]:
+                         await container.task_repo.update(task.id, {"status": "CANCELLED"})
+                         
+                return {
+                    "status": "success", 
+                    "message": f"로봇 '{target_robot.name}'의 작업을 취소했습니다."
+                }
+            else:
+                return {
+                    "status": "error", 
+                    "message": f"로봇 '{robot_identifier}'을(를) 찾을 수 없습니다."
+                }
     # ---------------------------------------------------------
 
     if not caller_id:
