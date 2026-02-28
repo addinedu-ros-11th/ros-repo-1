@@ -42,14 +42,21 @@ async def process_command(request: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="Message is required")
     
     # ---------------------------------------------------------
-    # [TEST ONLY] go:(x,y,theta) 수동 명령 가로채기
+    # [TEST ONLY] go:(x,y,theta) 또는 go:(location_name) 수동 명령 가로채기
     # ---------------------------------------------------------
     if message.startswith("go:"):
         import re
-        # go:(5,5,0) 또는 go:(5.5, -1.2, 3.14) 형식 매칭
-        match = re.match(r"go:\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)", message.strip())
-        if match:
-            x, y, theta = map(float, match.groups())
+        # 1. 좌표 직접 입력: go:(5,5,0)
+        match_coord = re.match(r"go:\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)", message.strip())
+        
+        # 2. 장소 이름 입력: go:(office_1)
+        match_name = re.match(r"go:\(([^)]+)\)", message.strip())
+
+        manual_result = None
+        target_name = None
+
+        if match_coord:
+            x, y, theta = map(float, match_coord.groups())
             manual_result = {
                 "task_type": "MANUAL_MOVE",
                 "fields": {
@@ -57,13 +64,38 @@ async def process_command(request: Dict[str, Any]):
                     "requester_name": caller_id
                 }
             }
+            target_name = f"({x}, {y})"
+
+        elif match_name:
+            loc_name = match_name.group(1).strip()
+            # DB에서 장소 검색
+            location_data = await container.location_repo.find_by_name(loc_name)
+            
+            if location_data:
+                x = location_data.get("coordinate_x")
+                y = location_data.get("coordinate_y")
+                theta = location_data.get("theta", 0.0)
+                
+                manual_result = {
+                    "task_type": "MANUAL_MOVE",
+                    "fields": {
+                        "x": x, "y": y, "theta": theta,
+                        "requester_name": caller_id,
+                        "destination_name": loc_name 
+                    }
+                }
+                target_name = loc_name
+            else:
+                return {"status": "error", "message": f"위치 '{loc_name}'을(를) 찾을 수 없습니다."}
+
+        if manual_result:
             task = await container.task_manager.create_task_from_ai(manual_result, caller_name=caller_id)
             if not task:
                 return {"status": "retry", "message": "가용한 로봇이 없습니다."}
             
             return {
                 "status": "success",
-                "message": f"수동 이동 작업이 생성되었습니다: ({x}, {y})",
+                "message": f"'{target_name}'(으)로 이동하고 있습니다.",
                 "task_id": task.id,
                 "ai_fields": manual_result["fields"]
             }
