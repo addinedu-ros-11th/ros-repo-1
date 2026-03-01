@@ -28,7 +28,12 @@ class FleetManager:
         self.ai_processing_service = ai_processing_service
         self.path_planner = PathPlannerService(config.MAP_YAML_PATH)
         self.forbidden_zones: List[Dict] = []
+        self.task_manager = None  # Circular dependency avoidance
         logger.info(f"FleetManager 초기화 완료. (Map: {config.MAP_YAML_PATH})")
+
+    def set_task_manager(self, task_manager):
+        """TaskManager 인스턴스를 주입받습니다 (Circular Dependency 해결)"""
+        self.task_manager = task_manager
 
     async def enable_obstacle_relay(self, robot_id: str):
         """
@@ -67,21 +72,69 @@ class FleetManager:
     async def enable_employee_relay(self, robot_id: str):
         """
         특정 로봇에 대해 AI 직원/얼굴 인식 스트림을 활성화하고,
-        결과를 로봇에게 실시간으로 전달(Relay)합니다.
+        결과에 따라 LED/LCD 제어 또는 외부인 QR 프로세스를 시작합니다.
         """
         if not self.ai_processing_service:
             logger.error("AIProcessingService가 설정되지 않아 직원 인식 릴레이를 시작할 수 없습니다.")
             return
 
-        async def _relay_callback(data: Dict[str, Any]):
+        async def _face_callback(data: Dict[str, Any]):
             try:
-                # 직원 인식 결과 릴레이
-                self.robot_communicator.publish_employee_result(robot_id, data)
-            except Exception as e:
-                logger.error(f"[{robot_id}] 직원 인식 정보 릴레이 실패: {e}")
+                # AI Server의 응답 구조에 따라 데이터 추출
+                # 예: {'result': {'face_recognition': {'name': 'Alice', 'confidence': 0.9}}}
+                # 'unknown'인 경우 name='unknown' 또는 recognized=False 등으로 가정
+                face_data = data.get("result", {}).get("face_recognition", {})
+                name = face_data.get("name", "unknown")
+                confidence = face_data.get("confidence", 0.0)
 
-        logger.debug(f"[{robot_id}] 직원 인식 릴레이 활성화 요청")
-        await self.ai_processing_service.start_employee_verification(robot_id, _relay_callback)
+                # 로봇 상태 확인 (작업 중이면 무시)
+                robot = await self.robot_repo.get_by_name(robot_id)
+                if not robot or robot.status not in [RobotStatus.IDLE, RobotStatus.CHARGING]:
+                    return
+
+                if name and name.lower() != "unknown" and confidence > 0.5:
+                    # [직원 인식]
+                    logger.info(f"[{robot_id}] 직원 인식됨: {name} ({confidence:.2f})")
+                    actions = [
+                        {"action": "SET_LED", "params": {"color": "GREEN", "mode": "SOLID"}},
+                        {"action": "DISPLAY_TEXT", "params": {"text": f"Hello, {name}", "duration": 5}},
+                        # {"action": "PLAY_SOUND", "params": {"sound": "greeting.wav"}} # 선택 사항
+                    ]
+                    self.send_action_commands(robot_id, actions)
+                
+                else:
+                    # [외부인 감지]
+                    # 이미 GUEST_CHECK 태스크가 진행 중인지 확인 (중복 실행 방지)
+                    if robot.current_task_id:
+                         # 현재 수행 중인 태스크 확인
+                         if self.task_manager:
+                             current_task = await self.task_manager.task_repo.get_by_id(robot.current_task_id)
+                             if current_task and current_task.task_type == "GUEST_CHECK":
+                                 return # 이미 처리 중
+
+                    logger.info(f"[{robot_id}] 외부인 감지됨. QR 인증 절차 시작.")
+                    
+                    # 1. 태스크 생성 (GUEST_CHECK) -> 로봇 상태 잠금
+                    if self.task_manager:
+                        task_data = {
+                            "task_type": "GUEST_CHECK",
+                            "requester_id": 1, # System (Admin ID=1 가정)
+                            "status": "ASSIGNED",
+                            "assigned_robot_id": robot.id,
+                            "details": {"reason": "stranger_detected"}
+                        }
+                        # 로봇이 직접 발견했으므로 즉시 할당
+                        task = await self.task_manager.task_repo.create(task_data)
+                        if task:
+                            await self.task_manager.assign_and_dispatch(robot, task)
+                    else:
+                        logger.error("TaskManager가 설정되지 않아 GUEST_CHECK 태스크를 생성할 수 없습니다.")
+
+            except Exception as e:
+                logger.error(f"[{robot_id}] 직원 인식 처리 실패: {e}")
+
+        logger.debug(f"[{robot_id}] 직원 인식 로직 활성화 요청")
+        await self.ai_processing_service.start_employee_verification(robot_id, _face_callback)
 
     async def disable_employee_relay(self, robot_id: str):
         """특정 로봇의 직원 인식 및 릴레이를 중단합니다."""

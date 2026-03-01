@@ -88,47 +88,61 @@ async def get_office_status():
 # ---------------------------------------------------------
 @router.get("/visitors")
 async def get_visitors():
-    # 1. DB에서 데이터 가져오기
-    pending_raw = await container.reservation_repository.get_pending_list()
-    approved_raw = await container.reservation_repository.get_approved_list()
+    # 1. DB에서 데이터 가져오기 (VisitorRepository 사용)
+    pending_raw = await container.visitor_repository.get_pending_list()
+    approved_raw = await container.visitor_repository.get_approved_list()
 
-    # 2. PENDING 데이터 가공 (REJECTED가 섞여있어도 여기서 제거됨)
-    pending_data = [
-        {
-            "id": v.get("id"),
-            "visitor": v.get("visitor_name"),
-            "purpose": v.get("purpose"),
-            "date": str(v.get("visit_date")),
-            "host": v.get("manager_name"),
-            "status": v.get("status")
-        }
-        for v in pending_raw if v.get("status") == "PENDING"
-    ]
+    # 2. 사용자 정보 매핑 (host_user_id -> User Name)
+    user_ids = set()
+    for v in pending_raw + approved_raw:
+        if v.host_user_id:
+            user_ids.add(v.host_user_id)
+    
+    user_map = {}
+    for uid in user_ids:
+        user = await container.user_repo.get_by_id(uid)
+        if user:
+            user_map[uid] = user.name
 
-    # 3. APPROVED 데이터 가공
-    confirmed_data = [
-        {
-            "id": v.get("id"),
-            "visitor": v.get("visitor_name"),
-            "purpose": v.get("purpose"),
-            "date": str(v.get("visit_date")),
-            "time": str(v.get("visit_time")),
-            "host": v.get("manager_name")
-        }
-        for v in approved_raw if v.get("status") == "APPROVED"
-    ]
+    # 3. PENDING 데이터 가공
+    pending_data = []
+    for v in pending_raw:
+        host_name = user_map.get(v.host_user_id, "-")
+        pending_data.append({
+            "id": v.visitor_id,
+            "visitor": v.name,
+            "purpose": v.purpose,
+            "date": str(v.visit_date),
+            "host": host_name,
+            "status": v.status
+        })
+
+    # 4. APPROVED 데이터 가공
+    confirmed_data = []
+    for v in approved_raw:
+        host_name = user_map.get(v.host_user_id, "-")
+        confirmed_data.append({
+            "id": v.visitor_id,
+            "visitor": v.name,
+            "purpose": v.purpose,
+            "date": str(v.visit_date),
+            "time": str(v.visit_time) if v.visit_time else "-",
+            "host": host_name,
+            "status": v.status
+        })
 
     return {"pending": pending_data, "confirmed": confirmed_data}
 
 @router.post("/reservations/decision")
 async def decide_reservation(request_data: Dict[str, Any]):
     try:
-        # 1. ID를 반드시 정수(int)로 변환 (리포지토리 요구사항)
+        # 1. ID를 반드시 정수(int)로 변환
         res_id = int(request_data.get("id"))
         status = request_data.get("status")
 
-        # 2. 리포지토리 호출
-        await container.reservation_repository.update_status(res_id, status)
+        # 2. 리포지토리 호출 (status 업데이트)
+        # VisitorRepository는 BaseRepository를 상속하므로 update 메서드 사용 가능
+        await container.visitor_repository.update(res_id, {"status": status})
         
         return {"status": "success", "updated_id": res_id}
     except Exception as e:

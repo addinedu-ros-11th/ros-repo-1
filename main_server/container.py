@@ -17,6 +17,7 @@ from main_server.infrastructure.database.repositories.mysql_product_repository i
 from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
 from main_server.infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
 from main_server.infrastructure.database.repositories.mysql_reservation_repository import MySQLReservationRepository
+from main_server.infrastructure.database.repositories.mysql_visitor_repository import MySQLVisitorRepository
 
 # --- Communication Instances ---
 from main_server.infrastructure.robot_bridge.robot_communicator import IRobotCommunicator
@@ -45,6 +46,8 @@ class Container:
         self.product_repository = None
         self.admin_repository = None
         self.log_repository = None
+        self.visitor_repository = None
+        self.reservation_repository = None
         
         self.robot_communicator = None
         self.ai_processing_service = None
@@ -74,6 +77,7 @@ class Container:
         self.admin_repository = MySQLAdminRepository()
         self.log_repository = MySQLLogRepository()
         self.reservation_repository = MySQLReservationRepository()
+        self.visitor_repository = MySQLVisitorRepository()
         
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
         self.connection_manager = connection_manager # WebSocket 관리자
@@ -103,10 +107,14 @@ class Container:
             location_repo=self.location_repo,
             user_repo=self.user_repo,
             product_repo=self.product_repository,
+            visitor_repo=self.visitor_repository,
             fleet_manager=self.fleet_manager,
             ai_processing_service=self.ai_processing_service,
             connection_manager=self.connection_manager
         )
+        
+        # FleetManager에 TaskManager 주입 (Circular Dependency 해결)
+        self.fleet_manager.set_task_manager(self.task_manager)
 
         print("모든 서비스가 성공적으로 초기화되었습니다.")
         return self

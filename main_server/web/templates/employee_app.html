@@ -17,8 +17,11 @@
                 <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
                 <input type="date" id="res-date" class="res-input">
                 <input type="time" id="res-time" class="res-input"> 
-                <input type="text" id="res-phone" class="res-input full-width" 
+                <input type="text" id="res-phone" class="res-input" 
                     placeholder="연락처 (010-0000-0000)" maxlength="13" oninput="autoHyphen(this)">
+                <select id="res-location" class="res-input">
+                    <option value="">목적지 선택 (선택 안함 시 host 위치)</option>
+                </select>
                 <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
             </div>
 
@@ -188,6 +191,7 @@
             const vDate = document.getElementById('res-date').value;
             const vTime = document.getElementById('res-time').value;
             const vPhone = document.getElementById('res-phone').value.trim().replace(/-/g, ''); // 하이픈 제거 후 숫자만 추출
+            const vLocId = document.getElementById('res-location').value;
 
             // 1. 빈 칸 검사
             if (!vName || !vPurpose || !vDate || !vTime || !vPhone) {
@@ -209,8 +213,12 @@
                 purpose: vPurpose,
                 visit_date: vDate,
                 visit_time: vTime,
-                visitor_phone: vPhone // 숫자 11자리만 전송
+                visitor_phone: vPhone 
             };
+
+            if (vLocId) {
+                data.destination_id = parseInt(vLocId);
+            }
 
             try {
                 const response = await fetch('/api/v1/employee/reservations/apply', {
@@ -223,13 +231,32 @@
                 if (result.status === 'success') {
                     alert("예약이 등록되었습니다.");
                     // 입력창 초기화
-                    ['res-name', 'res-purpose', 'res-date', 'res-time', 'res-phone'].forEach(id => {
+                    ['res-name', 'res-purpose', 'res-date', 'res-time', 'res-phone', 'res-location'].forEach(id => {
                         document.getElementById(id).value = '';
                     });
                     loadReservationTables(); // 목록 갱신
                 }
             } catch (e) {
                 alert("서버 통신 오류가 발생했습니다.");
+            }
+        }
+
+        async function loadLocationOptions() {
+            const select = document.getElementById('res-location');
+            if (!select) return;
+
+            try {
+                const response = await fetch('/api/v1/employee/locations');
+                const locations = await response.json();
+                
+                locations.forEach(loc => {
+                    const opt = document.createElement('option');
+                    opt.value = loc.location_id;
+                    opt.textContent = `${loc.name} (${loc.type})`;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error("목적지 목록 로드 실패:", e);
             }
         }
 
@@ -278,22 +305,27 @@
                     myRes.forEach(res => {
                         const tr = document.createElement('tr');
                         
-                        const p = res.visitor_phone || '';
+                        // DB 필드명 변경 대응 (visitor_phone -> phone)
+                        const p = res.phone || res.visitor_phone || ''; 
                         const fPhone = p.length === 11 ? `${p.slice(0,3)}-${p.slice(3,7)}-${p.slice(7)}` : p;
 
+                        // 방문객 이름 필드명 변경 대응 (visitor_name -> name)
+                        const vName = res.name || res.visitor_name || '';
+
                         let fTime = '-';
-                        if (typeof res.visit_time === 'number') {
-                            const h = Math.floor(res.visit_time / 3600);
-                            const m = Math.floor((res.visit_time % 3600) / 60);
-                            fTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                        // time 문자열 처리 (예: "14:00:00")
+                        if (res.visit_time) {
+                            fTime = String(res.visit_time).substring(0, 5);
                         }
 
                         let sLabel = '대기중', sClass = 'status-pending';
                         if (res.status === 'APPROVED') { sLabel = '승인됨'; sClass = 'status-approved'; }
+                        else if (res.status === 'CHECKED_IN') { sLabel = '입장완료'; sClass = 'status-approved'; }
                         else if (res.status === 'REJECTED') { sLabel = '반려됨'; sClass = 'status-rejected'; }
+                        else if (res.status === 'EXPIRED') { sLabel = '만료됨'; sClass = 'status-rejected'; }
 
                         tr.innerHTML = `
-                            <td>${res.visitor_name}</td>
+                            <td>${vName}</td>
                             <td>${fPhone}</td>
                             <td>${res.purpose}</td>
                             <td>${res.visit_date}</td>
@@ -317,6 +349,7 @@
         // # 2. 페이지 로드 시 실행 (기존 로직 유지)
         window.onload = function() {
             loadReservationTables();
+            loadLocationOptions();
         };
 
         // # ---------------------------------------------------------

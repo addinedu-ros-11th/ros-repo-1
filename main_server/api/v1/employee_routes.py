@@ -220,24 +220,64 @@ async def confirm_delivery_action(request: ConfirmTaskRequest):
 @router.get("/reservations/pending")
 async def get_pending_reservations():
     """승인 대기 목록 조회"""
-    return await container.reservation_repository.get_pending_list()
+    visitors = await container.visitor_repository.get_pending_list()
+    # 프론트엔드 필터링(내 예약 찾기)을 위해 manager_account(계정명) 추가
+    result = []
+    for v in visitors:
+        v_dict = v.model_dump()
+        if v.host_user_id:
+            user = await container.user_repo.get_by_id(v.host_user_id)
+            if user:
+                v_dict['manager_account'] = user.account
+        result.append(v_dict)
+    return result
 
 @router.get("/reservations/approved")
 async def get_approved_reservations():
     """확정된 예약 현황 조회"""
-    return await container.reservation_repository.get_approved_list()
+    visitors = await container.visitor_repository.get_approved_list()
+    result = []
+    for v in visitors:
+        v_dict = v.model_dump()
+        if v.host_user_id:
+            user = await container.user_repo.get_by_id(v.host_user_id)
+            if user:
+                v_dict['manager_account'] = user.account
+        result.append(v_dict)
+    return result
+
+@router.get("/locations")
+async def get_locations():
+    """안내 가능한 목적지 목록 조회"""
+    return await container.location_repo.get_all_locations()
 
 @router.post("/reservations/apply")
 async def apply_reservation(request: Dict[str, Any]):
-    # 프론트에서 보낸 manager_name과 별도로 account 정보를 함께 저장
-    res_id = await container.reservation_repository.create({
-        "manager_account": request.get('manager_account'), # 추가됨
-        "manager_name": request.get('manager_name'),
-        "visitor_name": request['visitor_name'],
-        "purpose": request['purpose'],
-        "visit_date": request['visit_date'],
+    # 1. 담당자 계정으로 User ID 조회 (Visitors 테이블은 host_user_id를 FK로 사용)
+    manager_account = request.get('manager_account')
+    host_user = await container.user_repo.get_user_by_username(manager_account)
+    
+    if not host_user:
+        raise HTTPException(status_code=400, detail=f"담당자 계정({manager_account})을 찾을 수 없습니다.")
+
+    # 2. 방문객 정보 생성 (Visitors 테이블)
+    visitor_data = {
+        "host_user_id": host_user.user_id,
+        "name": request.get('visitor_name'),
+        "phone": request.get('visitor_phone'),
+        "purpose": request.get('purpose'),
+        "visit_date": request.get('visit_date'),
         "visit_time": request.get('visit_time'),
-        "visitor_phone": request.get('visitor_phone'),
         "status": "PENDING"
-    })
+    }
+    
+    # 목적지 ID가 있다면 추가
+    if 'destination_id' in request:
+        visitor_data['destination_id'] = request['destination_id']
+
+    res_id = await container.visitor_repository.create(visitor_data)
+    
+    if not res_id:
+        raise HTTPException(status_code=500, detail="예약 생성에 실패했습니다.")
+
     return {"status": "success", "id": res_id}

@@ -15,6 +15,7 @@ class TaskType(str, Enum):
     RETURN = "RETURN"                   # 복귀 모드
     PATROL = "PATROL"                   # 순찰 모드
     MANUAL_MOVE = "MANUAL_MOVE"         # 수동 좌표 이동 (테스트용)
+    GUEST_CHECK = "GUEST_CHECK"         # 외부인 감지 및 QR 인증
 
 class TaskStatus(str, Enum):
     """태스크의 생명주기 상태 (SR-012)"""
@@ -39,6 +40,7 @@ class RobotActionType(str, Enum):
     QR_SCAN = "QR_SCAN"                 # QR 코드 스캔 요청
     DISPLAY_TEXT = "DISPLAY_TEXT"       # LCD 텍스트 표시
     PLAY_SOUND = "PLAY_SOUND"           # 부저/음성 출력
+    SET_LED = "SET_LED"                 # LED 색상 변경
     STOP = "STOP"                       # 긴급 정지
     PAUSE = "PAUSE"                     # 일시 정지 (교차로 대기 등)
     RESUME = "RESUME"                   # 주행 재개

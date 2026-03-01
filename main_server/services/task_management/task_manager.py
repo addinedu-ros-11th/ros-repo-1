@@ -10,8 +10,9 @@ from main_server.infrastructure.database.repositories.mysql_user_repository impo
 from main_server.services.ai_management.ai_processing import AIProcessingService
 from main_server.services.fleet_management.fleet_manager import FleetManager
 from main_server.services.task_management.scenario_data_handler import ScenarioDataHandler
-from main_server.services.task_management.task_processors import GuideProcessor, ItemProcessor, SnackProcessor, ManualMoveProcessor
+from main_server.services.task_management.task_processors import GuideProcessor, ItemProcessor, SnackProcessor, ManualMoveProcessor, GuestCheckProcessor
 from main_server.web.connection_manager import ConnectionManager
+from main_server.infrastructure.database.repositories.mysql_visitor_repository import MySQLVisitorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +26,22 @@ class TaskManager:
                  location_repo: MySQLLocationRepository,
                  user_repo: MySQLUserRepository,
                  product_repo: MySQLProductRepository,
+                 visitor_repo: MySQLVisitorRepository,
                  fleet_manager: FleetManager,
                  ai_processing_service: AIProcessingService,
                  connection_manager: ConnectionManager):
         """
         참고: 이 변경으로 인해 main_server/container.py에서 TaskManager 생성 시
-              user_repo와 product_repo를 추가로 주입해야 합니다.
+              visitor_repo를 추가로 주입해야 합니다.
         """
         self.task_repo = task_repo
         self.location_repo = location_repo
+        self.user_repo = user_repo
+        self.visitor_repo = visitor_repo
         self.fleet_manager = fleet_manager
+
+        # FleetManager에 TaskManager 주입 (Circular Dependency 해결)
+        self.fleet_manager.set_task_manager(self)
 
         # AI 결과를 시나리오에 맞게 처리하는 핸들러
         self.scenario_handler = ScenarioDataHandler(location_repo, user_repo, product_repo)
@@ -45,6 +52,7 @@ class TaskManager:
             TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
             TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
+            TaskType.GUEST_CHECK: GuestCheckProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo),
         }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any], caller_name: Optional[str] = None) -> Optional[Task]:
