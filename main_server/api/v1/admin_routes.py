@@ -92,28 +92,35 @@ async def get_visitors():
     pending_raw = await container.visitor_repository.get_pending_list()
     approved_raw = await container.visitor_repository.get_approved_list()
 
-    # 2. 사용자 정보 매핑 (host_user_id -> User Name)
+    # 2. 정보 매핑 준비 (host_user_id, destination_id)
     user_ids = set()
+    loc_ids = set()
     for v in pending_raw + approved_raw:
-        if v.host_user_id:
-            user_ids.add(v.host_user_id)
+        if v.host_user_id: user_ids.add(v.host_user_id)
+        if v.destination_id: loc_ids.add(v.destination_id)
     
     user_map = {}
     for uid in user_ids:
         user = await container.user_repo.get_by_id(uid)
-        if user:
-            user_map[uid] = user.name
+        if user: user_map[uid] = user.name
+
+    loc_map = {}
+    for lid in loc_ids:
+        loc = await container.location_repo.get_by_id(lid)
+        if loc: loc_map[lid] = loc['name'] if isinstance(loc, dict) else loc.name
 
     # 3. PENDING 데이터 가공
     pending_data = []
     for v in pending_raw:
         host_name = user_map.get(v.host_user_id, "-")
+        dest_name = loc_map.get(v.destination_id, "담당자 위치")
         pending_data.append({
             "id": v.visitor_id,
             "visitor": v.name,
             "purpose": v.purpose,
             "date": str(v.visit_date),
             "host": host_name,
+            "destination": dest_name,
             "status": v.status
         })
 
@@ -121,6 +128,7 @@ async def get_visitors():
     confirmed_data = []
     for v in approved_raw:
         host_name = user_map.get(v.host_user_id, "-")
+        dest_name = loc_map.get(v.destination_id, "담당자 위치")
         confirmed_data.append({
             "id": v.visitor_id,
             "visitor": v.name,
@@ -128,6 +136,7 @@ async def get_visitors():
             "date": str(v.visit_date),
             "time": str(v.visit_time) if v.visit_time else "-",
             "host": host_name,
+            "destination": dest_name,
             "status": v.status
         })
 

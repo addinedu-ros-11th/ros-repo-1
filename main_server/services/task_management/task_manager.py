@@ -40,9 +40,6 @@ class TaskManager:
         self.visitor_repo = visitor_repo
         self.fleet_manager = fleet_manager
 
-        # FleetManager에 TaskManager 주입 (Circular Dependency 해결)
-        self.fleet_manager.set_task_manager(self)
-
         # AI 결과를 시나리오에 맞게 처리하는 핸들러
         self.scenario_handler = ScenarioDataHandler(location_repo, user_repo, product_repo)
 
@@ -143,6 +140,48 @@ class TaskManager:
             await processor.handle_event(task, robot_id, event, data)
         else:
             logger.error(f"[TaskManager] 작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
+
+    async def handle_face_recognition_event(self, robot_id: str, face_data: Dict[str, Any]):
+        """
+        FleetManager로부터 전달받은 얼굴 인식 결과를 처리합니다.
+        - 직원: 환영 메시지 및 LED 제어 명령 전송
+        - 외부인: GUEST_CHECK 태스크 생성 및 할당
+        """
+        name = face_data.get("name", "unknown")
+        confidence = face_data.get("confidence", 0.0)
+        
+        # robot_id(str)로 로봇 정보 조회
+        robot = await self.fleet_manager.robot_repo.get_by_name(robot_id)
+        if not robot:
+            return
+
+        # 작업 중이면 무시 (IDLE, CHARGING 상태는 FleetManager가 이미 필터링해서 보냄)
+        if robot.current_task_id:
+             current_task = await self.task_repo.get_by_id(robot.current_task_id)
+             if current_task and current_task.task_type == "GUEST_CHECK":
+                 return # 이미 처리 중
+
+        if name and name.lower() != "unknown" and confidence > 0.5:
+            # [직원 인식]
+            logger.info(f"[{robot_id}] 직원 인식됨: {name} ({confidence:.2f}) -> 환영 처리")
+            actions = [
+                {"action": "SET_LED", "params": {"color": "GREEN", "mode": "SOLID"}},
+                {"action": "DISPLAY_TEXT", "params": {"text": f"Hello, {name}", "duration": 5}},
+            ]
+            self.fleet_manager.send_action_commands(robot_id, actions)
+        else:
+            # [외부인 감지]
+            logger.info(f"[{robot_id}] 외부인 감지됨 -> QR 인증 태스크 생성")
+            task_data = {
+                "task_type": "GUEST_CHECK",
+                "requester_id": 1, # System
+                "status": "ASSIGNED",
+                "assigned_robot_id": robot.id,
+                "details": {"reason": "stranger_detected"}
+            }
+            task = await self.task_repo.create(task_data)
+            if task:
+                await self.assign_and_dispatch(robot, task)
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

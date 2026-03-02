@@ -1,10 +1,11 @@
+from contextlib import asynccontextmanager
 import logging
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from main_server.config import config
 
-# --- 로깅 설정 (INFO 레벨 이상의 로그를 터미널에 출력) ---
+# --- 로깅 설정 ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
@@ -21,45 +22,49 @@ from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridge
 # 전역 변수로 백그라운드 태스크 저장
 background_tasks = set()
 
-# --- FastAPI 애플리케이션 설정 ---
-async def startup_event():
-    """애플리케이션 시작 시 모든 서비스를 초기화하고 백그라운드 서버를 가동합니다."""
-    # 1. 데이터베이스 연결 풀 생성
-    await Database.initialize()
-    print("Database pool initialized.")
-    
-    # 2. DI 컨테이너 초기화 (서비스, 리포지토리 등)
-    container.services()
-    print("DI container and services initialized.")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """애플리케이션 생명주기 관리 (시작 및 종료)"""
+    try:
+        # [Startup]
+        # 1. 데이터베이스 연결 풀 생성
+        await Database.initialize()
+        logger.info("Database pool initialized.")
+        
+        # 2. DI 컨테이너 초기화
+        container.services()
+        logger.info("DI container and services initialized.")
 
-    # 3. 통신 서버(ROS 브리지)를 백그라운드 태스크로 시작
-    ros_bridge = ROSBridge(
-        host=config.ROS_BRIDGE_HOST, 
-        port=config.ROS_BRIDGE_PORT, 
-        fleet_manager=container.fleet_manager,
-        task_manager=container.task_manager,
-        log_repo=container.log_repository
-    )
-    bridge_task = asyncio.create_task(ros_bridge.start())
-    background_tasks.add(bridge_task)
+        # 3. 통신 서버 시작
+        ros_bridge = ROSBridge(
+            host=config.ROS_BRIDGE_HOST, 
+            port=config.ROS_BRIDGE_PORT, 
+            fleet_manager=container.fleet_manager,
+            task_manager=container.task_manager,
+            log_repo=container.log_repository
+        )
+        bridge_task = asyncio.create_task(ros_bridge.start())
+        background_tasks.add(bridge_task)
 
-    # 4. AI 실시간 추론 결과 구독 시작 (AIProcessingService 사용)
-    ai_stream_task = asyncio.create_task(container.ai_processing_service.start_ai_stream())
-    background_tasks.add(ai_stream_task)
-    
-    print("ROS Bridge server and AI Stream subscriber started.")
+        # 4. AI 실시간 스트림 시작
+        ai_stream_task = asyncio.create_task(container.ai_processing_service.start_ai_stream())
+        background_tasks.add(ai_stream_task)
+        
+        logger.info("ROS Bridge server and AI Stream subscriber started.")
+        
+        yield # 앱 실행 중
 
-
-async def shutdown_event():
-    """애플리케이션 종료 시 모든 백그라운드 태스크를 취소하고 리소스를 정리합니다."""
-    for task in background_tasks:
-        task.cancel()
-    
-    await asyncio.gather(*background_tasks, return_exceptions=True)
-    print("Background servers stopped.")
-    
-    await Database.close()
-    print("Database pool closed.")
+    finally:
+        # [Shutdown]
+        logger.info("Cleaning up resources...")
+        for task in background_tasks:
+            task.cancel()
+        
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
+        
+        await Database.close()
+        logger.info("Background servers stopped and Database pool closed.")
 
 
 # FastAPI 앱 인스턴스 생성
@@ -67,25 +72,24 @@ app = FastAPI(
     title=config.APP_TITLE,
     description=config.APP_DESCRIPTION,
     version=config.APP_VERSION,
-    on_startup=[startup_event],
-    on_shutdown=[shutdown_event]
+    lifespan=lifespan
 )
 
 # --- 정적 파일 마운트 ---
 app.mount("/static", StaticFiles(directory=config.STATIC_FILES_DIR), name="static")
 
 # --- API 및 웹 라우터 등록 ---
-from main_server.api.v1 import admin_routes, employee_routes, guest_routes
+from main_server.api.v1 import admin_routes, employee_routes, guest_routes, login_routes
 from main_server.web import routes as web_router
-from main_server.api.v1 import admin_routes, login_routes  # login_routes 추가 임포트
-from main_server.test_scripts import test_routes # 테스트 라우터 임포트
+from main_server.test_scripts import test_routes 
 
 app.include_router(admin_routes.router)
 app.include_router(employee_routes.router)
 app.include_router(guest_routes.router)
-app.include_router(web_router.router) # 웹 UI 라우터 추가
+app.include_router(web_router.router)
 app.include_router(login_routes.router)
-app.include_router(test_routes.router) # 테스트 라우터 추가
+app.include_router(test_routes.router)
+
 
 # --- WebSocket 엔드포인트 ---
 @app.websocket("/ws/admin/status")

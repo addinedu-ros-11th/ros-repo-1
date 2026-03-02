@@ -16,7 +16,6 @@ from main_server.infrastructure.database.repositories.mysql_admin_repository imp
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
 from main_server.infrastructure.database.repositories.mysql_log_repository import MySQLLogRepository
 from main_server.infrastructure.database.repositories.mysql_user_repository import MySQLUserRepository
-from main_server.infrastructure.database.repositories.mysql_reservation_repository import MySQLReservationRepository
 from main_server.infrastructure.database.repositories.mysql_visitor_repository import MySQLVisitorRepository
 
 # --- Communication Instances ---
@@ -47,7 +46,6 @@ class Container:
         self.admin_repository = None
         self.log_repository = None
         self.visitor_repository = None
-        self.reservation_repository = None
         
         self.robot_communicator = None
         self.ai_processing_service = None
@@ -76,7 +74,6 @@ class Container:
         self.product_repository = MySQLProductRepository()
         self.admin_repository = MySQLAdminRepository()
         self.log_repository = MySQLLogRepository()
-        self.reservation_repository = MySQLReservationRepository()
         self.visitor_repository = MySQLVisitorRepository()
         
         self.robot_communicator: IRobotCommunicator = ROSBridgeCommunicator()
@@ -113,8 +110,8 @@ class Container:
             connection_manager=self.connection_manager
         )
         
-        # FleetManager에 TaskManager 주입 (Circular Dependency 해결)
-        self.fleet_manager.set_task_manager(self.task_manager)
+        # FleetManager에 AI 이벤트 핸들러 등록 (Decoupled Wiring)
+        self.fleet_manager.set_ai_event_callback(self.task_manager.handle_face_recognition_event)
 
         print("모든 서비스가 성공적으로 초기화되었습니다.")
         return self
