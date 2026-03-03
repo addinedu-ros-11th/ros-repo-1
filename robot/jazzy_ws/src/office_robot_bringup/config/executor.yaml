@@ -49,4 +49,8 @@ office_robot_executor:
     qr_scan_image_topic: /camera/image_raw/compressed
     qr_scan_timeout_sec: 8.0
     qr_scan_poll_period_sec: 0.2
+    qr_always_scan_enabled: true
+    qr_always_scan_event_name: QR_DETECTED
+    qr_always_scan_poll_period_sec: 0.5
+    qr_always_scan_min_interval_sec: 3.0
     default_goto_success_event: ARRIVED_AT_DESTINATION

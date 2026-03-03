@@ -8,3 +8,19 @@ office_robot_safety:
     stop_publish_hz: 20.0
     lock_keepalive_hz: 2.0
     stop_publish_count: 10
+    obstacle_enabled: false
+    obstacle_topic: obstacles
+    obstacle_confidence_threshold: 0.6
+    obstacle_timeout_sec: 1.5
+    obstacle_clear_hold_sec: 1.0
+    obstacle_person_stop_without_distance: false
+    obstacle_person_stop_m: 0.65
+    obstacle_person_slow_m: 0.95
+    obstacle_chair_stop_m: 0.45
+    obstacle_chair_slow_m: 0.75
+    obstacle_plant_stop_m: 0.42
+    obstacle_plant_slow_m: 0.72
+    obstacle_bag_stop_m: 0.40
+    obstacle_bag_slow_m: 0.70
+    obstacle_robot_stop_m: 0.55
+    obstacle_robot_slow_m: 0.85

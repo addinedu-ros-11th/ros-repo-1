@@ -12,6 +12,7 @@
   - `/{robot_ns}/status` (`std_msgs/msg/String`)
   - `/{robot_ns}/event` (`std_msgs/msg/String`)
   - `/{robot_ns}/ai_link` (`std_msgs/msg/Bool`, AI link health)
+  - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, optional obstacle relay input)
 
 ## Namespace / Multi-Robot
 - Default namespace: `robot_1`
@@ -27,9 +28,18 @@
   - `RESUME`
   - `CANCEL`
 - `task_id`/`sequence_id` are both carried by executor for compatibility.
-- Safety lock behavior:
-  - `STOP`/`PAUSE` => lock enabled, `cmd_vel` zero hold, running goal canceled.
-  - `RESUME` => lock released, new action sequence can run.
+  - Safety lock behavior:
+    - `STOP`/`PAUSE` => lock enabled, `cmd_vel` zero hold, running goal canceled.
+    - `RESUME` => lock released, new action sequence can run.
+  - Optional obstacle policy (`office_robot_safety`):
+    - subscribes `/{robot_ns}/obstacles` and evaluates class-based slow/stop thresholds.
+    - runtime today: `STOP` threshold enforces lock/zero-velocity, `SLOW` threshold is state/log only.
+    - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
+  - Nav2 recovery behavior (`office_robot_executor`):
+    - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
+    - on `localization_not_ready`, recovery cycle can call global relocalization service + in-place spin.
+    - on `action_server_not_ready` / `goal_rejected`, retries with delay and bounded attempts.
+    - controlled by `nav2_retry_*`, `localization_*`, `localization_recovery_*`, `amcl_*` parameters.
 
 ## Bringup Arguments (Current)
 - `robot_ns`
@@ -39,6 +49,14 @@
 - `nav2_action_name`
 - `goal_response_timeout_sec` (default `8.0`)
 - `mock_mode` (default `false`)
+- `obstacle_enabled` (default `false`)
+- `obstacle_topic` (default `obstacles`)
+- `nav2_retry_attempts` (default `8`)
+- `nav2_retry_delay_sec` (default `1.0`)
+- `localization_required` (default `true`)
+- `amcl_pose_topic` (default `amcl_pose`)
+- `localization_recovery_enabled` (default `true`)
+- `localization_recovery_max_cycles` (default `2`)
 
 ## Standard Run
 ```bash
@@ -86,8 +104,36 @@ ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
   - `robot/jazzy_ws/log`
   - `robot/jazzy_ws/mujoco_menagerie`
 
+## Nav2 Runtime Recovery Procedure
+```bash
+# 1) Baseline audit
+/home/pinky/ros-repo-1/robot/scripts/nav2_runtime_audit.sh
+
+# 2) Install/update systemd override (root)
+sudo /home/pinky/ros-repo-1/robot/scripts/install_pinky_navigation_override.sh
+
+# 3) Verify env keys
+grep -E '^(MAP_PATH|NAV2_PARAMS_FILE)=' /etc/robot_runtime.env
+
+# 4) Restart + re-audit
+sudo systemctl restart pinky-navigation.service
+/home/pinky/ros-repo-1/robot/scripts/nav2_runtime_audit.sh
+```
+
+- Pass expectation from audit:
+  - `local rolling_window=true`
+  - `local/global observation_sources` includes `scan`
+  - frame pair is `odom` (local) / `map` (global)
+- Warning means service/node/parameter lookup failed.
+- Fail means runtime Nav2 config is mismatched and should be fixed before E2E.
+- Operational rule: do not run `navigation_launch.xml` alone in production path.
+  Use `bringup_launch.xml` with explicit `params_file` chain.
+
 ## Runtime Templates
 - `robot/systemd/robot-camera.service`
 - `robot/systemd/robot-udp-bridge.service`
 - `robot/systemd/robot_runtime.env.example`
+- `robot/systemd/pinky-navigation.override.conf.example`
 - `robot/scripts/camera_probe.sh`
+- `robot/scripts/nav2_runtime_audit.sh`
+- `robot/scripts/install_pinky_navigation_override.sh`

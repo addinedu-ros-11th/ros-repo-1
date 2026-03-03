@@ -103,6 +103,10 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("qr_scan_image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("qr_scan_timeout_sec", 8.0)
         self.declare_parameter("qr_scan_poll_period_sec", 0.2)
+        self.declare_parameter("qr_always_scan_enabled", True)
+        self.declare_parameter("qr_always_scan_event_name", "QR_DETECTED")
+        self.declare_parameter("qr_always_scan_poll_period_sec", 0.5)
+        self.declare_parameter("qr_always_scan_min_interval_sec", 3.0)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -280,6 +284,27 @@ class OfficeRobotExecutor(Node):
             0.05,
             self.get_parameter("qr_scan_poll_period_sec").get_parameter_value().double_value,
         )
+        self.qr_always_scan_enabled = (
+            self.get_parameter("qr_always_scan_enabled").get_parameter_value().bool_value
+        )
+        self.qr_always_scan_event_name = (
+            self.get_parameter("qr_always_scan_event_name")
+            .get_parameter_value()
+            .string_value
+            .strip()
+        ) or "QR_DETECTED"
+        self.qr_always_scan_poll_period_sec = max(
+            0.1,
+            self.get_parameter("qr_always_scan_poll_period_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.qr_always_scan_min_interval_sec = max(
+            0.5,
+            self.get_parameter("qr_always_scan_min_interval_sec")
+            .get_parameter_value()
+            .double_value,
+        )
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
@@ -315,8 +340,17 @@ class OfficeRobotExecutor(Node):
         self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
         self._qr_scan_on_success: Optional[str] = None
+        self._qr_always_scan_timer = None
+        self._qr_always_last_data = ""
+        self._qr_always_last_emit_mono = 0.0
         self._qr_detector = (
-            cv2.QRCodeDetector() if (self.qr_scan_local_enabled and cv2 is not None and np is not None) else None
+            cv2.QRCodeDetector()
+            if (
+                (self.qr_scan_local_enabled or self.qr_always_scan_enabled)
+                and cv2 is not None
+                and np is not None
+            )
+            else None
         )
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
@@ -344,14 +378,24 @@ class OfficeRobotExecutor(Node):
             Float32, self.battery_topic, self._on_battery, 10
         )
         self.qr_image_sub = None
-        if self.qr_scan_local_enabled:
+        if self.qr_scan_local_enabled or self.qr_always_scan_enabled:
             self.qr_image_sub = self.create_subscription(
                 CompressedImage, self.qr_scan_image_topic, self._on_qr_image, 10
             )
             if self._qr_detector is None:
                 self.get_logger().warn(
-                    "Local QR scan is enabled, but cv2/numpy is unavailable. "
-                    "QR_SCAN will wait and fallback without decoding."
+                    "QR scan is enabled, but cv2/numpy is unavailable. "
+                    "QR decoding is disabled."
+                )
+            elif self.qr_always_scan_enabled:
+                self._qr_always_scan_timer = self.create_timer(
+                    self.qr_always_scan_poll_period_sec, self._poll_always_qr_scan
+                )
+                self.get_logger().info(
+                    f"Always QR scan enabled (topic={self.qr_scan_image_topic}, "
+                    f"event={self.qr_always_scan_event_name}, "
+                    f"poll_sec={self.qr_always_scan_poll_period_sec:.2f}, "
+                    f"dedup_sec={self.qr_always_scan_min_interval_sec:.2f})."
                 )
 
         self.nav_client = None
@@ -1507,21 +1551,7 @@ class OfficeRobotExecutor(Node):
             )
             return
 
-        if self._latest_qr_image is None or self._qr_detector is None or cv2 is None or np is None:
-            return
-
-        try:
-            frame = cv2.imdecode(np.frombuffer(self._latest_qr_image, dtype=np.uint8), cv2.IMREAD_COLOR)
-        except Exception:
-            return
-        if frame is None:
-            return
-
-        try:
-            decoded, _, _ = self._qr_detector.detectAndDecode(frame)
-        except Exception:
-            decoded = ""
-        scanned = str(decoded).strip() if decoded is not None else ""
+        scanned = self._decode_latest_qr()
         if not scanned:
             return
 
@@ -1536,12 +1566,67 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._finish_action_once(on_success)
 
+    def _poll_always_qr_scan(self) -> None:
+        if not self.qr_always_scan_enabled:
+            return
+        if self._current_action is not None:
+            action_name = str(
+                self._current_action.get("action", self._current_action.get("type", ""))
+            ).upper().strip()
+            if action_name == "QR_SCAN":
+                # Avoid duplicate event emission while QR_SCAN action is actively running.
+                return
+
+        scanned = self._decode_latest_qr()
+        if not scanned:
+            return
+
+        now_mono = time.monotonic()
+        if (
+            scanned == self._qr_always_last_data
+            and (now_mono - self._qr_always_last_emit_mono) < self.qr_always_scan_min_interval_sec
+        ):
+            return
+
+        self._qr_always_last_data = scanned
+        self._qr_always_last_emit_mono = now_mono
+        payload = {
+            "scanned_data": scanned,
+            "source": "always_scan",
+            "detected_at": time.time(),
+        }
+        self._publish_event(self.qr_always_scan_event_name, payload)
+
+    def _decode_latest_qr(self) -> Optional[str]:
+        if self._latest_qr_image is None or self._qr_detector is None or cv2 is None or np is None:
+            return None
+
+        try:
+            frame = cv2.imdecode(np.frombuffer(self._latest_qr_image, dtype=np.uint8), cv2.IMREAD_COLOR)
+        except Exception:
+            return None
+        if frame is None:
+            return None
+
+        try:
+            decoded, _, _ = self._qr_detector.detectAndDecode(frame)
+        except Exception:
+            return None
+
+        scanned = str(decoded).strip() if decoded is not None else ""
+        return scanned or None
+
     def _stop_local_qr_scan(self) -> None:
         if self._qr_scan_timer is not None:
             self._qr_scan_timer.cancel()
             self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
         self._qr_scan_on_success = None
+
+    def _stop_always_qr_scan(self) -> None:
+        if self._qr_always_scan_timer is not None:
+            self._qr_always_scan_timer.cancel()
+            self._qr_always_scan_timer = None
 
     def _on_nav_cancel_response(self, future: Any, source: str) -> None:
         try:
@@ -1793,6 +1878,7 @@ def main() -> None:
         pass
     finally:
         node._stop_local_qr_scan()
+        node._stop_always_qr_scan()
         node.destroy_node()
         rclpy.shutdown()
 
