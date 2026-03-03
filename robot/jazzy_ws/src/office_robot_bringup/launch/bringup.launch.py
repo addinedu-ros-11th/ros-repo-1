@@ -123,7 +123,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("localization_recovery_enabled", default_value="true"),
             DeclareLaunchArgument("localization_recovery_max_cycles", default_value="2"),
             DeclareLaunchArgument("localization_recovery_cooldown_sec", default_value="8.0"),
-            DeclareLaunchArgument("localization_recovery_spin_duration_sec", default_value="4.0"),
+            DeclareLaunchArgument("localization_recovery_spin_duration_sec", default_value="8.0"),
             DeclareLaunchArgument("localization_recovery_spin_angular_speed", default_value="0.8"),
             DeclareLaunchArgument(
                 "global_localization_service_name", default_value="reinitialize_global_localization"

@@ -35,7 +35,7 @@ office_robot_executor:
     localization_recovery_enabled: true
     localization_recovery_max_cycles: 2
     localization_recovery_cooldown_sec: 8.0
-    localization_recovery_spin_duration_sec: 4.0
+    localization_recovery_spin_duration_sec: 8.0
     localization_recovery_spin_angular_speed: 0.8
     global_localization_service_name: reinitialize_global_localization
     global_localization_wait_sec: 0.5
