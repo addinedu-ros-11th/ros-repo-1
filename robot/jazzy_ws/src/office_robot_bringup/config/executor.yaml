@@ -41,6 +41,14 @@ office_robot_executor:
     global_localization_wait_sec: 0.5
     amcl_nomotion_update_service_name: request_nomotion_update
     amcl_nomotion_wait_sec: 0.3
+    nav2_lifecycle_check_enabled: true
+    nav2_required_active_nodes: planner_server,controller_server,bt_navigator,behavior_server
+    nav2_lifecycle_get_state_timeout_sec: 0.15
+    nav2_lifecycle_reactivate_enabled: true
+    nav2_lifecycle_manager_service_name: lifecycle_manager_navigation/manage_nodes
+    nav2_lifecycle_manager_wait_sec: 0.5
+    localization_not_ready_event_name: LOCALIZATION_NOT_READY
+    localization_not_ready_event_min_interval_sec: 2.0
     enable_display: true
     display_topic: display
     guide_display_period_sec: 2.0

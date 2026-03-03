@@ -37,7 +37,11 @@
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
   - Nav2 recovery behavior (`office_robot_executor`):
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
+    - validates required Nav2 lifecycle nodes are `active` before goal send
+      (`planner_server`, `controller_server`, `bt_navigator`, `behavior_server` by default).
+    - when blocked, emits `LOCALIZATION_NOT_READY` event with `reason`, `reason_code`, and `operator_hint`.
     - on `localization_not_ready`, recovery cycle can call global relocalization service + in-place spin.
+    - if lifecycle is inactive, recovery also requests lifecycle manager `STARTUP`/`RESUME`.
     - on `action_server_not_ready` / `goal_rejected`, retries with delay and bounded attempts.
     - controlled by `nav2_retry_*`, `localization_*`, `localization_recovery_*`, `amcl_*` parameters.
 

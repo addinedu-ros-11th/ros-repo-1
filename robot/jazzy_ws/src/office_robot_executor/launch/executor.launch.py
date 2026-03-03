@@ -52,6 +52,24 @@ def generate_launch_description() -> LaunchDescription:
                 "amcl_nomotion_update_service_name", default_value="request_nomotion_update"
             ),
             DeclareLaunchArgument("amcl_nomotion_wait_sec", default_value="0.3"),
+            DeclareLaunchArgument("nav2_lifecycle_check_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "nav2_required_active_nodes",
+                default_value="planner_server,controller_server,bt_navigator,behavior_server",
+            ),
+            DeclareLaunchArgument("nav2_lifecycle_get_state_timeout_sec", default_value="0.15"),
+            DeclareLaunchArgument("nav2_lifecycle_reactivate_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "nav2_lifecycle_manager_service_name",
+                default_value="lifecycle_manager_navigation/manage_nodes",
+            ),
+            DeclareLaunchArgument("nav2_lifecycle_manager_wait_sec", default_value="0.5"),
+            DeclareLaunchArgument(
+                "localization_not_ready_event_name", default_value="LOCALIZATION_NOT_READY"
+            ),
+            DeclareLaunchArgument(
+                "localization_not_ready_event_min_interval_sec", default_value="2.0"
+            ),
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
@@ -130,6 +148,30 @@ def generate_launch_description() -> LaunchDescription:
                             "amcl_nomotion_update_service_name"
                         ),
                         "amcl_nomotion_wait_sec": LaunchConfiguration("amcl_nomotion_wait_sec"),
+                        "nav2_lifecycle_check_enabled": LaunchConfiguration(
+                            "nav2_lifecycle_check_enabled"
+                        ),
+                        "nav2_required_active_nodes": LaunchConfiguration(
+                            "nav2_required_active_nodes"
+                        ),
+                        "nav2_lifecycle_get_state_timeout_sec": LaunchConfiguration(
+                            "nav2_lifecycle_get_state_timeout_sec"
+                        ),
+                        "nav2_lifecycle_reactivate_enabled": LaunchConfiguration(
+                            "nav2_lifecycle_reactivate_enabled"
+                        ),
+                        "nav2_lifecycle_manager_service_name": LaunchConfiguration(
+                            "nav2_lifecycle_manager_service_name"
+                        ),
+                        "nav2_lifecycle_manager_wait_sec": LaunchConfiguration(
+                            "nav2_lifecycle_manager_wait_sec"
+                        ),
+                        "localization_not_ready_event_name": LaunchConfiguration(
+                            "localization_not_ready_event_name"
+                        ),
+                        "localization_not_ready_event_min_interval_sec": LaunchConfiguration(
+                            "localization_not_ready_event_min_interval_sec"
+                        ),
                         "enable_display": LaunchConfiguration("enable_display"),
                         "display_topic": LaunchConfiguration("display_topic"),
                         "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),

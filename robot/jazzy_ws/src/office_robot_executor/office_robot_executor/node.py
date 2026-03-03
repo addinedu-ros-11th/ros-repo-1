@@ -32,6 +32,16 @@ except Exception:  # pragma: no cover - runtime environment dependent
     NavigateToPose = None
 
 try:
+    from nav2_msgs.srv import ManageLifecycleNodes
+except Exception:  # pragma: no cover - runtime environment dependent
+    ManageLifecycleNodes = None
+
+try:
+    from lifecycle_msgs.srv import GetState
+except Exception:  # pragma: no cover - runtime environment dependent
+    GetState = None
+
+try:
     from tf2_ros import Buffer, TransformException, TransformListener
 except Exception:  # pragma: no cover - runtime environment dependent
     Buffer = None
@@ -94,6 +104,18 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("global_localization_wait_sec", 0.5)
         self.declare_parameter("amcl_nomotion_update_service_name", "request_nomotion_update")
         self.declare_parameter("amcl_nomotion_wait_sec", 0.3)
+        self.declare_parameter("nav2_lifecycle_check_enabled", True)
+        self.declare_parameter(
+            "nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"
+        )
+        self.declare_parameter("nav2_lifecycle_get_state_timeout_sec", 0.15)
+        self.declare_parameter("nav2_lifecycle_reactivate_enabled", True)
+        self.declare_parameter(
+            "nav2_lifecycle_manager_service_name", "lifecycle_manager_navigation/manage_nodes"
+        )
+        self.declare_parameter("nav2_lifecycle_manager_wait_sec", 0.5)
+        self.declare_parameter("localization_not_ready_event_name", "LOCALIZATION_NOT_READY")
+        self.declare_parameter("localization_not_ready_event_min_interval_sec", 2.0)
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("guide_display_period_sec", 2.0)
@@ -255,6 +277,52 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.nav2_lifecycle_check_enabled = (
+            self.get_parameter("nav2_lifecycle_check_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.nav2_required_active_nodes = [
+            token.strip()
+            for token in self.get_parameter("nav2_required_active_nodes")
+            .get_parameter_value()
+            .string_value.split(",")
+            if token.strip()
+        ]
+        self.nav2_lifecycle_get_state_timeout_sec = max(
+            0.05,
+            self.get_parameter("nav2_lifecycle_get_state_timeout_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.nav2_lifecycle_reactivate_enabled = (
+            self.get_parameter("nav2_lifecycle_reactivate_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.nav2_lifecycle_manager_service_name = (
+            self.get_parameter("nav2_lifecycle_manager_service_name")
+            .get_parameter_value()
+            .string_value
+        )
+        self.nav2_lifecycle_manager_wait_sec = max(
+            0.1,
+            self.get_parameter("nav2_lifecycle_manager_wait_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.localization_not_ready_event_name = (
+            self.get_parameter("localization_not_ready_event_name")
+            .get_parameter_value()
+            .string_value.strip()
+            or "LOCALIZATION_NOT_READY"
+        )
+        self.localization_not_ready_event_min_interval_sec = max(
+            0.1,
+            self.get_parameter("localization_not_ready_event_min_interval_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self.enable_display = (
             self.get_parameter("enable_display").get_parameter_value().bool_value
         )
@@ -343,6 +411,14 @@ class OfficeRobotExecutor(Node):
         self._qr_always_scan_timer = None
         self._qr_always_last_data = ""
         self._qr_always_last_emit_mono = 0.0
+        self._last_localization_not_ready_event_mono = 0.0
+        self._last_localization_not_ready_reason = ""
+        self._last_nav_goal_start_failure_reason = ""
+        self._last_nav_goal_start_failure_extra: Dict[str, Any] = {}
+        self._nav2_lifecycle_clients: Dict[str, Any] = {}
+        self._nav2_lifecycle_states: Dict[str, Tuple[int, str, float]] = {}
+        self._nav2_lifecycle_pending: Dict[str, bool] = {}
+        self._nav2_lifecycle_poll_timer = None
         self._qr_detector = (
             cv2.QRCodeDetector()
             if (
@@ -413,6 +489,7 @@ class OfficeRobotExecutor(Node):
             self.get_logger().warn("tf2_ros unavailable; map->odom readiness check will be skipped.")
         self.global_localization_client = None
         self.amcl_nomotion_client = None
+        self.nav2_lifecycle_manager_client = None
         if self.localization_recovery_enabled:
             if Empty is None:
                 self.get_logger().warn(
@@ -425,6 +502,20 @@ class OfficeRobotExecutor(Node):
                 self.amcl_nomotion_client = self.create_client(
                     Empty, self.amcl_nomotion_update_service_name
                 )
+        if self.nav2_lifecycle_reactivate_enabled:
+            if ManageLifecycleNodes is None:
+                self.get_logger().warn(
+                    "nav2_msgs/srv/ManageLifecycleNodes unavailable; lifecycle reactivation is disabled."
+                )
+            else:
+                self.nav2_lifecycle_manager_client = self.create_client(
+                    ManageLifecycleNodes, self.nav2_lifecycle_manager_service_name
+                )
+        if self.nav2_lifecycle_check_enabled and GetState is not None:
+            self._poll_nav2_lifecycle_states()
+            self._nav2_lifecycle_poll_timer = self.create_timer(
+                1.0, self._poll_nav2_lifecycle_states
+            )
 
         self.status_timer = self.create_timer(5.0, self._publish_heartbeat)
 
@@ -436,7 +527,8 @@ class OfficeRobotExecutor(Node):
             f"amcl_pose_topic={self.amcl_pose_topic}, amcl_stale_check={self.amcl_pose_stale_check_enabled}, "
             f"allow_degraded_cov={self.localization_allow_degraded_covariance}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
-            f"recovery_cycles={self.localization_recovery_max_cycles})."
+            f"recovery_cycles={self.localization_recovery_max_cycles}, "
+            f"lifecycle_check_enabled={self.nav2_lifecycle_check_enabled})."
         )
         self._publish_display("대기", "idle")
 
@@ -742,8 +834,8 @@ class OfficeRobotExecutor(Node):
                 return
             if not self._execute_nav2_goal(params):
                 self._fail_current_action(
-                    "nav2_goal_start_failed",
-                    {"status_code": 500, "status_text": "nav2 goal start failed"},
+                    self._last_nav_goal_start_failure_reason or "nav2_goal_start_failed",
+                    self._build_nav_goal_start_failure_extra(),
                 )
                 return
             return
@@ -846,11 +938,18 @@ class OfficeRobotExecutor(Node):
         return False
 
     def _execute_nav2_goal(self, params: Dict[str, Any]) -> bool:
+        self._last_nav_goal_start_failure_reason = ""
+        self._last_nav_goal_start_failure_extra = {}
         if self.nav_client is None:
             self.get_logger().error("Nav2 client unavailable.")
+            self._set_nav_goal_start_failure(
+                "nav_client_unavailable",
+                {"status_code": 503, "status_text": "nav2 client unavailable"},
+            )
             return False
         localization_ready, localization_reason = self._is_localization_ready()
         if not localization_ready:
+            self._publish_localization_not_ready(localization_reason)
             if (
                 self.localization_allow_degraded_covariance
                 and self._is_covariance_only_block(localization_reason)
@@ -864,6 +963,14 @@ class OfficeRobotExecutor(Node):
                     return True
                 self.get_logger().error(
                     f"Localization not ready (reason={localization_reason}, task_id={self._current_task_id})."
+                )
+                self._set_nav_goal_start_failure(
+                    "localization_not_ready",
+                    {
+                        "status_code": 503,
+                        "status_text": "localization not ready",
+                        "localization_reason": localization_reason,
+                    },
                 )
                 return False
         if self._localization_recovery_cycle_count > 0:
@@ -881,6 +988,10 @@ class OfficeRobotExecutor(Node):
             self.get_logger().error(
                 f"Nav2 action server not ready (action={self.nav2_action_name}, task_id={self._current_task_id})."
             )
+            self._set_nav_goal_start_failure(
+                "nav2_action_server_not_ready",
+                {"status_code": 503, "status_text": "nav2 action server not ready"},
+            )
             return False
 
         try:
@@ -889,6 +1000,10 @@ class OfficeRobotExecutor(Node):
             yaw = float(params.get("yaw", params.get("theta", 0.0)))
         except (TypeError, ValueError):
             self.get_logger().error("Invalid GOTO params: x/y(/yaw) required.")
+            self._set_nav_goal_start_failure(
+                "invalid_goto_params",
+                {"status_code": 400, "status_text": "invalid goto params"},
+            )
             return False
 
         goal = NavigateToPose.Goal()
@@ -927,6 +1042,28 @@ class OfficeRobotExecutor(Node):
         )
         send_future.add_done_callback(self._on_nav_goal_response)
         return True
+
+    def _set_nav_goal_start_failure(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        self._last_nav_goal_start_failure_reason = str(reason or "nav2_goal_start_failed")
+        payload: Dict[str, Any] = {}
+        if extra:
+            payload.update(extra)
+        self._last_nav_goal_start_failure_extra = payload
+
+    def _build_nav_goal_start_failure_extra(self) -> Dict[str, Any]:
+        payload = {
+            "status_code": 500,
+            "status_text": "nav2 goal start failed",
+        }
+        if self._last_nav_goal_start_failure_extra:
+            payload.update(self._last_nav_goal_start_failure_extra)
+        payload.setdefault(
+            "reason_code",
+            self._normalize_reason_code(
+                self._last_nav_goal_start_failure_reason or "nav2_goal_start_failed"
+            ),
+        )
+        return payload
 
     def _schedule_nav_retry(self, reason: str) -> bool:
         if self._safety_locked or self._current_action is None:
@@ -971,8 +1108,8 @@ class OfficeRobotExecutor(Node):
                 return
             if not self._execute_nav2_goal(retry_params):
                 self._fail_current_action(
-                    "nav2_goal_start_failed",
-                    {"status_code": 500, "status_text": "nav2 goal start failed"},
+                    self._last_nav_goal_start_failure_reason or "nav2_goal_start_failed",
+                    self._build_nav_goal_start_failure_extra(),
                 )
 
         self._nav_retry_timer = self.create_timer(delay_sec, _retry_once)
@@ -1014,6 +1151,15 @@ class OfficeRobotExecutor(Node):
         elif reason_detail.startswith("amcl_pose_stale"):
             self._call_nomotion_update(cycle, reason)
             use_global_relocalization = False
+        elif reason_detail.startswith("nav2_node_not_active:") or reason_detail.startswith(
+            "nav2_node_state_unknown:"
+        ) or reason_detail.startswith(
+            "nav2_node_state_stale:"
+        ):
+            self._request_nav2_lifecycle_startup(cycle, reason)
+            self._call_nomotion_update(cycle, reason)
+        elif reason_detail.startswith("nav2_lifecycle_service_unavailable:"):
+            self._request_nav2_lifecycle_startup(cycle, reason)
 
         if use_global_relocalization:
             self._call_global_localization(cycle, reason)
@@ -1022,6 +1168,209 @@ class OfficeRobotExecutor(Node):
     @staticmethod
     def _is_covariance_only_block(reason: str) -> bool:
         return reason.startswith("amcl_cov_xy_high") or reason.startswith("amcl_cov_yaw_high")
+
+    def _publish_localization_not_ready(self, reason: str) -> None:
+        now = time.monotonic()
+        same_reason = reason == self._last_localization_not_ready_reason
+        if (
+            same_reason
+            and (now - self._last_localization_not_ready_event_mono)
+            < self.localization_not_ready_event_min_interval_sec
+        ):
+            return
+        self._last_localization_not_ready_reason = reason
+        self._last_localization_not_ready_event_mono = now
+        payload = self._task_id_payload(
+            {
+                "reason": reason,
+                "reason_code": self._normalize_reason_code(reason),
+                "recovery_enabled": bool(self.localization_recovery_enabled),
+                "recovery_cycles_used": int(self._localization_recovery_cycle_count),
+                "recovery_cycles_max": int(self.localization_recovery_max_cycles),
+                "operator_hint": (
+                    "place_robot_inside_map_and_set_initialpose_if_needed"
+                    if (
+                        reason.startswith("amcl_pose_missing")
+                        or reason.startswith("map_odom_tf_missing")
+                        or reason.startswith("nav2_node_not_active")
+                        or reason.startswith("nav2_node_state_unknown")
+                        or reason.startswith("nav2_node_state_stale")
+                    )
+                    else "check_amcl_covariance_and_lidar_matching"
+                ),
+            }
+        )
+        self._publish_event(self.localization_not_ready_event_name, payload)
+
+    def _resolve_full_node_name(self, node_name: str) -> str:
+        name = str(node_name or "").strip()
+        if not name:
+            return ""
+        if name.startswith("/"):
+            return name.rstrip("/")
+        namespace = str(self.get_namespace() or "").rstrip("/")
+        if not namespace:
+            return f"/{name}".rstrip("/")
+        return f"{namespace}/{name}".replace("//", "/").rstrip("/")
+
+    def _get_lifecycle_get_state_client(self, full_node_name: str) -> Optional[Any]:
+        if GetState is None:
+            return None
+        client = self._nav2_lifecycle_clients.get(full_node_name)
+        if client is not None:
+            return client
+        service_name = f"{full_node_name}/get_state"
+        client = self.create_client(GetState, service_name)
+        self._nav2_lifecycle_clients[full_node_name] = client
+        return client
+
+    def _poll_nav2_lifecycle_states(self) -> None:
+        if not self.nav2_lifecycle_check_enabled or GetState is None:
+            return
+        if not self.nav2_required_active_nodes:
+            return
+
+        for node_name in self.nav2_required_active_nodes:
+            full_name = self._resolve_full_node_name(node_name)
+            if not full_name:
+                continue
+            if self._nav2_lifecycle_pending.get(full_name, False):
+                continue
+            client = self._get_lifecycle_get_state_client(full_name)
+            if client is None:
+                continue
+            if not client.wait_for_service(timeout_sec=0.01):
+                continue
+            try:
+                future = client.call_async(GetState.Request())
+            except Exception:
+                continue
+            self._nav2_lifecycle_pending[full_name] = True
+            future.add_done_callback(
+                lambda f, fn=full_name: self._on_nav2_lifecycle_state_response(fn, f)
+            )
+
+    def _on_nav2_lifecycle_state_response(self, full_node_name: str, future: Any) -> None:
+        self._nav2_lifecycle_pending[full_node_name] = False
+        try:
+            response = future.result()
+            state_id = int(response.current_state.id)
+            state_label = str(response.current_state.label)
+            self._nav2_lifecycle_states[full_node_name] = (state_id, state_label, time.monotonic())
+        except Exception:
+            return
+
+    def _is_nav2_lifecycle_ready(self) -> Tuple[bool, str]:
+        if not self.nav2_lifecycle_check_enabled:
+            return True, "nav2_lifecycle_check_disabled"
+        if GetState is None:
+            return True, "nav2_lifecycle_get_state_unavailable"
+        if not self.nav2_required_active_nodes:
+            return True, "nav2_required_nodes_empty"
+
+        self._poll_nav2_lifecycle_states()
+        for node_name in self.nav2_required_active_nodes:
+            full_name = self._resolve_full_node_name(node_name)
+            if not full_name:
+                continue
+            client = self._get_lifecycle_get_state_client(full_name)
+            if client is None:
+                return False, f"nav2_lifecycle_service_unavailable:{node_name}"
+            if not client.wait_for_service(timeout_sec=self.nav2_lifecycle_get_state_timeout_sec):
+                return False, f"nav2_lifecycle_service_unavailable:{node_name}"
+            state_snapshot = self._nav2_lifecycle_states.get(full_name)
+            if state_snapshot is None:
+                return False, f"nav2_node_state_unknown:{node_name}"
+            state_id, state_label, stamp_mono = state_snapshot
+            if (time.monotonic() - stamp_mono) > max(
+                0.2, self.nav2_lifecycle_get_state_timeout_sec * 4.0
+            ):
+                return False, f"nav2_node_state_stale:{node_name}:{state_label}"
+            if state_id != 3:  # active
+                return False, f"nav2_node_not_active:{node_name}:{state_label}"
+        return True, "nav2_lifecycle_ready"
+
+    def _request_nav2_lifecycle_startup(self, cycle: int, reason: str) -> None:
+        if not self.nav2_lifecycle_reactivate_enabled:
+            return
+        if self.nav2_lifecycle_manager_client is None:
+            return
+        if ManageLifecycleNodes is None:
+            return
+
+        try:
+            if not self.nav2_lifecycle_manager_client.wait_for_service(
+                timeout_sec=self.nav2_lifecycle_manager_wait_sec
+            ):
+                self.get_logger().warn(
+                    f"Localization recovery cycle={cycle}: lifecycle manager service not ready "
+                    f"(service={self.nav2_lifecycle_manager_service_name})."
+                )
+                return
+            startup_req = ManageLifecycleNodes.Request()
+            startup_req.command = int(getattr(ManageLifecycleNodes.Request, "STARTUP", 0))
+            startup_future = self.nav2_lifecycle_manager_client.call_async(startup_req)
+            startup_future.add_done_callback(
+                lambda f: self._on_nav2_lifecycle_startup_response(f, cycle, reason)
+            )
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: requested nav2 lifecycle STARTUP "
+                f"(service={self.nav2_lifecycle_manager_service_name}, reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle STARTUP request failed ({exc})."
+            )
+
+    def _on_nav2_lifecycle_startup_response(self, future: Any, cycle: int, reason: str) -> None:
+        if ManageLifecycleNodes is None or self.nav2_lifecycle_manager_client is None:
+            return
+        try:
+            response = future.result()
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle STARTUP response error ({exc})."
+            )
+            return
+        if bool(getattr(response, "success", False)):
+            self.get_logger().info(
+                f"Localization recovery cycle={cycle}: lifecycle STARTUP success (reason={reason})."
+            )
+            return
+
+        self.get_logger().warn(
+            f"Localization recovery cycle={cycle}: lifecycle STARTUP rejected; trying RESUME "
+            f"(reason={reason})."
+        )
+        try:
+            resume_req = ManageLifecycleNodes.Request()
+            resume_req.command = int(getattr(ManageLifecycleNodes.Request, "RESUME", 2))
+            resume_future = self.nav2_lifecycle_manager_client.call_async(resume_req)
+            resume_future.add_done_callback(
+                lambda f: self._on_nav2_lifecycle_resume_response(f, cycle, reason)
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESUME request failed ({exc})."
+            )
+
+    def _on_nav2_lifecycle_resume_response(self, future: Any, cycle: int, reason: str) -> None:
+        try:
+            response = future.result()
+            success = bool(getattr(response, "success", False))
+            if success:
+                self.get_logger().info(
+                    f"Localization recovery cycle={cycle}: lifecycle RESUME success (reason={reason})."
+                )
+            else:
+                self.get_logger().warn(
+                    f"Localization recovery cycle={cycle}: lifecycle RESUME returned success=False "
+                    f"(reason={reason})."
+                )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESUME response error ({exc})."
+            )
 
     def _call_nomotion_update(self, cycle: int, reason: str) -> None:
         if self.amcl_nomotion_client is None:
@@ -1181,6 +1530,10 @@ class OfficeRobotExecutor(Node):
                 )
             except TransformException:
                 return False, "map_odom_tf_missing"
+
+        nav2_lifecycle_ready, nav2_lifecycle_reason = self._is_nav2_lifecycle_ready()
+        if not nav2_lifecycle_ready:
+            return False, nav2_lifecycle_reason
 
         return True, "ready"
 

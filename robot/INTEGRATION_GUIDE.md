@@ -35,9 +35,12 @@ This guide documents the integration contract for the robot runtime in
   - final lock is `command_lock OR obstacle_lock` to keep STOP/PAUSE semantics deterministic.
 - Nav2 startup recovery in `office_robot_executor`:
   - executor validates localization readiness (`amcl_pose` freshness/covariance, optional `map->odom` TF) before Nav2 goal send.
+  - executor also gates by Nav2 lifecycle state (`planner/controller/bt/behavior` must be `active`).
+  - when blocked, `/{robot_ns}/event` emits `LOCALIZATION_NOT_READY` with machine-readable reason.
   - if not ready, recovery cycle can run:
     - call `/{robot_ns}/reinitialize_global_localization` (service name configurable)
     - rotate in place (`cmd_vel`) for active scan
+    - request Nav2 lifecycle manager `STARTUP/RESUME` if lifecycle nodes are inactive
     - retry with bounded attempts (`nav2_retry_*`, `localization_recovery_*`, `amcl_*` params).
 - Obstacle and other-robot avoidance is handled by Nav2 costmap/controller policy.
 - AI dependency split:
