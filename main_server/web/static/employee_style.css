@@ -72,19 +72,47 @@ body, html {
 }
 
 /* # ---------------------------------------------------------
-# 3. 컴포넌트 스타일 (방문예약 & 공조)
+# 3. 컴포넌트 스타일 (방문예약)
 # --------------------------------------------------------- */
 .res-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
 .res-input { padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
 .btn-submit { grid-column: span 2; padding: 10px; background: var(--ai-blue); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-
-.temp-display { 
-    background: #222; color: #0f0; padding: 15px; border-radius: 12px;
-    text-align: center; font-family: monospace; font-size: 20px;
-}
-.remote-grid { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 10px; margin-top: 10px; }
 .remote-btn { padding: 8px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; font-size: 12px; }
 
+/* 호출 버튼을 상단 우측으로 (조회 버튼과 통일감) */
+.btn-call-header {
+    background-color: var(--ai-blue) !important;
+    padding: 6px 15px !important;
+}
+
+/* 테이블 내 취소 버튼 스타일 */
+.btn-task-cancel {
+    background-color: #fff;
+    color: #ea4335;
+    border: 1px solid #ea4335;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-task-cancel:hover {
+    background-color: #ea4335;
+    color: white;
+}
+
+/* 테이블 컬럼 비율 조정 */
+#robot-task-table th:nth-child(1) { width: 20%; } /* 업무 유형 */
+#robot-task-table th:nth-child(2) { width: 45%; } /* 상세 정보 */
+#robot-task-table th:nth-child(3) { width: 20%; } /* 상태 */
+#robot-task-table th:nth-child(4) { width: 15%; } /* 관리(버튼) */
+
+/* 패널 내부 레이아웃 최적화 */
+.combined-control-panel {
+    display: flex;
+    flex-direction: column;
+}
 /* # ---------------------------------------------------------
 # 4. AI Assistant 채팅 영역 스타일
 # --------------------------------------------------------- */

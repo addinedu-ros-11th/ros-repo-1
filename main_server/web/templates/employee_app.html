@@ -52,24 +52,26 @@
         </div>
 
         <div class="panel combined-control-panel">
-            <div class="control-section-title">❄️ 공조 시스템 제어</div>
-            <div class="remote-grid">
-                <div class="temp-display">
-                    <span id="temp-val">24°C</span>
-                    </div>
-                <button class="remote-btn btn-pwr">전원</button>
-                <div class="remote-ctrl-grid">
-                    <button class="remote-btn" onclick="tempChange(1)">▲</button>
-                    <button class="remote-btn" onclick="tempChange(-1)">▼</button>
-                    <button class="remote-btn" onclick="windChange(1)">바람▲</button>
-                    <button class="remote-btn" onclick="windChange(-1)">바람▼</button>
-                </div>
+            <div class="res-list-header">
+                <div class="control-section-title" style="margin: 0;">🤖 로봇 업무 수행 현황</div>
+                <button class="btn-refresh btn-call-header" onclick="robotAction('call')">
+                    로봇 호출 ⚡
+                </button>
             </div>
-            
-            <div class="control-section-title">🤖 로봇 기본 제어</div>
-            <div class="robot-btn-group">
-                <button class="ctrl-btn btn-call" onclick="robotAction('call')">로봇 호출</button>
-                <button class="ctrl-btn btn-cancel" onclick="robotAction('cancel')">호출 취소</button>
+
+            <div class="table-wrapper" style="margin-top: 10px; flex-grow: 1; overflow-y: auto;">
+                <table class="res-table excel-style" id="robot-task-table">
+                    <thead>
+                        <tr>
+                            <th>업무 유형</th>
+                            <th>상세 정보</th>
+                            <th>상태</th>
+                            <th>관리</th> </tr>
+                    </thead>
+                    <tbody id="robot-task-body">
+                        <tr><td colspan="4" style="text-align:center; padding:20px;">수행 중인 업무가 없습니다.</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -152,25 +154,89 @@
         // # ---------------------------------------------------------
         // # 2. 공조 및 로봇 제어 (IoT & Robot Control)
         // # ---------------------------------------------------------
-        let currentTemp = 24;
-        let windLevel = 2;
+        let myActiveTasks = [];
 
-        function tempChange(val) {
-            currentTemp += val;
-            document.getElementById('temp-val').innerText = `${currentTemp}°C`;
-            aiSpeak(`실내 온도를 ${currentTemp}도로 조정합니다.`);
+        // [수정] sendMessage 후 로봇 업무 테이블 갱신 로직 추가
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            appendMessage('user', text);
+            input.value = '';
+
+            const userId = getCookie('user_id') || 'unknown';
+
+            try {
+                const response = await fetch('/api/v1/employee/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, user_id: userId })
+                });
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    aiSpeak(result.message);
+                    // 로봇 작업이 생성된 경우 테이블에 즉시 추가 (임시 표시용)
+                    if (result.task_id) {
+                        updateRobotTaskTable(result.task_id, result.message, "접수됨");
+                    }
+                } else {
+                    aiSpeak(result.message || "오류가 발생했습니다.");
+                }
+            } catch (e) {
+                aiSpeak("서버 통신 오류");
+            }
         }
 
-        function windChange(val) {
-            windLevel = Math.max(0, Math.min(4, windLevel + val));
-            const bars = document.getElementById('wind-display').children;
-            for(let i=0; i<4; i++) bars[i].className = i < windLevel ? 'bar active' : 'bar';
-            aiSpeak(`바람 세기를 ${windLevel}단계로 변경하였습니다.`);
+        // [추가] 로봇 업무 테이블 업데이트 함수
+        function updateRobotTaskTable(id, type, status) {
+            const tbody = document.getElementById('robot-task-body');
+            
+            // 초기 문구 삭제
+            if (tbody.rows.length === 1 && tbody.rows[0].cells.length === 1) tbody.innerHTML = '';
+
+            // 이미 존재하는 행인지 확인 (중복 방지)
+            if (document.getElementById(`task-${id}`)) return;
+
+            const row = document.createElement('tr');
+            row.id = `task-${id}`;
+            
+            // 상태값에 따른 라벨 설정
+            let statusClass = 'status-pending';
+            if (status === 'COMPLETED') statusClass = 'status-approved';
+            if (status === 'CANCELLED') statusClass = 'status-rejected';
+
+            row.innerHTML = `
+                <td>${type.split(':')[0] || '업무'}</td>
+                <td style="font-size: 11px; text-align: left;">${type}</td>
+                <td><span class="status-badge ${statusClass}">${status}</span></td>
+                <td>
+                    <button class="btn-task-cancel" onclick="cancelSpecificTask('${id}')">취소</button>
+                </td>
+            `;
+            tbody.prepend(row); 
         }
 
-        function robotAction(type) {
-            let msg = (type === 'call') ? "로봇을 호출하겠습니다." : "호출을 취소했습니다.";
-            aiSpeak(msg);
+        // [추가] 특정 작업 취소 함수
+        async function cancelSpecificTask(taskId) {
+            if (!confirm("해당 로봇 업무를 취소하시겠습니까?")) return;
+            
+            try {
+                // routes.py의 cancel 로직 활용 (메시지 포맷팅 활용)
+                const response = await fetch('/api/v1/employee/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: `cancel:(${taskId})`, 
+                        user_id: getCookie('user_id') 
+                    })
+                });
+                const result = await response.json();
+                alert(result.message);
+            } catch (e) {
+                alert("취소 요청 중 오류가 발생했습니다.");
+            }
         }
 
         // # ---------------------------------------------------------
@@ -443,6 +509,39 @@
                 aiSpeak(message.data.message);
             }
             // 로봇 수령 확인 알림 로직
+            else if (message.event === "user_action_required") {
+                showNotification(message.data);
+            }
+        };
+
+        ws.onmessage = function(event) {
+            const message = JSON.parse(event.data);
+            console.log("WS 수신:", message);
+            
+            // 1. [공통] 작업 상태 업데이트 알림 (기존 기능: AI가 말해줌)
+            if (message.event === "task_update") {
+                const data = message.data;
+                
+                // (기존 기능) AI 음성 안내
+                aiSpeak(data.message);
+
+                // (신규 기능) 로봇 업무 수행 현황 테이블 업데이트
+                const row = document.getElementById(`task-${data.task_id}`);
+                if (row) {
+                    const statusSpan = row.querySelector('.status-badge');
+                    statusSpan.innerText = data.status;
+                    
+                    // 상태별 색상 클래스 변경
+                    if (data.status === 'COMPLETED') statusSpan.className = 'status-badge status-approved';
+                    else if (data.status === 'CANCELLED') statusSpan.className = 'status-badge status-rejected';
+                    else statusSpan.className = 'status-badge status-pending';
+                } else {
+                    // 테이블에 없는 새로운 작업인 경우 행 추가
+                    updateRobotTaskTable(data.task_id, data.message, data.status);
+                }
+            }
+            
+            // 2. [기존 기능] 로봇 수령 확인 알림 로직 (절대 삭제하면 안 됨)
             else if (message.event === "user_action_required") {
                 showNotification(message.data);
             }
