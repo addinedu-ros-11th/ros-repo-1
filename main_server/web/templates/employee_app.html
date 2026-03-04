@@ -74,8 +74,15 @@
         </div>
 
         <div class="right-container">
-            <div class="panel logout-section">
-                <button class="btn-logout" onclick="logout()">로그아웃</button>
+            <div class="employee-info-bar">
+                <div class="info-group">
+                    <div class="info-item"><span class="info-tag">이름</span><span id="info-name">-</span></div>
+                    <div class="info-item"><span class="info-tag">부서</span><span id="info-dept">-</span></div>
+                    <div class="info-item"><span class="info-tag">직급</span><span id="info-role">-</span></div>
+                    <div class="info-item"><span class="info-tag">사무실</span><span id="info-loc">-</span></div>
+                    <div class="info-item"><span class="info-tag">입사일</span><span id="info-date">-</span></div>
+                </div>
+                <button class="logout-btn-new" onclick="logout()">로그아웃</button>
             </div>
             <div class="panel ai-assistant-section">
                 <div class="chat-header">
@@ -262,7 +269,6 @@
             const tbody = document.getElementById('res-table-body');
             const refreshBtn = document.querySelector('.btn-refresh');
 
-            // 디버깅: 버튼 누를 때마다 콘솔에 현재 인지하는 ID를 찍어봅니다.
             console.log("현재 브라우저가 인식한 유저 ID:", userAccount);
 
             if (!userAccount || !tbody) {
@@ -276,23 +282,24 @@
             }
 
             try {
-                // 2. 캐시를 무시하고 서버의 최신 DB 정보를 직접 요청합니다.
-                const [pending, approved] = await Promise.all([
+                // [수정 포인트] rejected 데이터를 가져오는 fetch를 추가했습니다.
+                const [pending, approved, rejected] = await Promise.all([
                     fetch(`/api/v1/employee/reservations/pending?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()),
-                    fetch(`/api/v1/employee/reservations/approved?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json())
+                    fetch(`/api/v1/employee/reservations/approved?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()),
+                    fetch(`/api/v1/employee/reservations/rejected?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json())
                 ]);
 
-                const allRes = [...pending, ...approved];
-                console.log("서버에서 받은 전체 데이터:", allRes);
+                // [수정 포인트] rejected를 포함하여 모든 데이터를 하나로 합칩니다.
+                const allRes = [...pending, ...approved, ...rejected];
+                console.log("서버에서 받은 전체 데이터 (반려 포함):", allRes);
 
-                // 3. 필터링: DB의 manager_account와 현재 쿠키 ID를 대조합니다.
+                // 3. 필터링: 사용자님의 기존 로직 그대로 유지
                 const myRes = allRes.filter(r => {
                     const dbAcc = String(r.manager_account || "").trim().toLowerCase();
                     const loginAcc = String(userAccount).trim().toLowerCase();
                     return dbAcc === loginAcc;
                 });
 
-                // 4. 화면 갱신: 기존 내용을 지우고 새로 그립니다.
                 tbody.innerHTML = ''; 
 
                 if (myRes.length === 0) {
@@ -301,19 +308,16 @@
                     myRes.forEach(res => {
                         const tr = document.createElement('tr');
                         
-                        // DB 필드명 변경 대응 (visitor_phone -> phone)
                         const p = res.phone || res.visitor_phone || ''; 
                         const fPhone = p.length === 11 ? `${p.slice(0,3)}-${p.slice(3,7)}-${p.slice(7)}` : p;
-
-                        // 방문객 이름 필드명 변경 대응 (visitor_name -> name)
                         const vName = res.name || res.visitor_name || '';
 
                         let fTime = '-';
-                        // time 문자열 처리 (예: "14:00:00")
                         if (res.visit_time) {
                             fTime = String(res.visit_time).substring(0, 5);
                         }
 
+                        // 사용자님의 상태 판별 로직 (데이터만 들어오면 REJECTED는 여기서 처리됨)
                         let sLabel = '대기중', sClass = 'status-pending';
                         if (res.status === 'APPROVED') { sLabel = '승인됨'; sClass = 'status-approved'; }
                         else if (res.status === 'CHECKED_IN') { sLabel = '입장완료'; sClass = 'status-approved'; }
@@ -342,11 +346,31 @@
             }
         }
 
-        // # 2. 페이지 로드 시 실행 (기존 로직 유지)
-        window.onload = function() {
+        async function loadMyInfo() {
+            try {
+                const response = await fetch('/api/v1/employee/me');
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                console.log("받은 정보:", data); // 브라우저 콘솔에서 확인용
+
+                // 백엔드 return 키값과 HTML ID 매칭
+                document.getElementById('info-name').innerText = data.name || "-";
+                document.getElementById('info-dept').innerText = data.department || "-";
+                document.getElementById('info-role').innerText = data.role || "-";
+                document.getElementById('info-loc').innerText = data.location || "-";
+                document.getElementById('info-date').innerText = data.created_at || "-";
+            } catch (e) {
+                console.error("내 정보 로드 중 오류:", e);
+            }
+        }
+
+        // 기존 window.onload 또는 초기화 부분에 추가
+        window.addEventListener('DOMContentLoaded', () => {
+            loadMyInfo();
             loadReservationTables();
-            loadLocationOptions();
-        };
+            loadLocationOptions(); // 기존 함수
+        });
 
         // # ---------------------------------------------------------
         // # 4. AI Assistant 통신 및 알림 (정리된 버전)
@@ -455,6 +479,21 @@
             }
             currentTaskData = null;
         }
+
+        window.onload = async function() {
+            console.log("페이지 로드 완료: 정보 호출 시작");
+            
+            // 1. 내 정보 가져오기 (이 줄이 실행되어야 화면에 나옵니다)
+            await loadMyInfo(); 
+            
+            // 2. 예약 현황 가져오기 (기존 로직)
+            await loadReservationTables(); 
+            
+            // 3. 목적지 리스트 가져오기 (기존 로직)
+            if (typeof loadLocations === 'function') {
+                await loadLocations();
+            }
+        };
     </script>
 </body>
 </html>

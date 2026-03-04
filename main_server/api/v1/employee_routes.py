@@ -1,11 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Cookie
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from main_server.container import container
 from main_server.domains.tasks.schemas import ConfirmTaskRequest
+from datetime import datetime
+from pydantic import BaseModel
 import uuid
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 사용자님의 요구사항을 반영한 UserModel (created_at 추가)
+class UserModel(BaseModel):
+    user_id: int
+    account: str
+    name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
+    location_id: Optional[int] = None
+    created_at: Optional[datetime] = None # 이제 AttributeError가 나지 않습니다.
 
 # ---------------------------------------------------------
 # 1. 직원 권한 확인 및 라우터 설정
@@ -246,6 +258,24 @@ async def get_approved_reservations():
         result.append(v_dict)
     return result
 
+@router.get("/reservations/rejected")
+async def get_reservations_rejected():
+    """반려된 방문 예약 목록 조회"""
+    # 1. 리포지토리에서 REJECTED 상태인 데이터를 가져옵니다.
+    visitors = await container.visitor_repository.get_rejected_list()
+    
+    result = []
+    for v in visitors:
+        v_dict = v.model_dump()
+        # 2. 기존 코드와 동일하게 담당자 계정(manager_account) 정보를 매핑합니다.
+        if v.host_user_id:
+            user = await container.user_repo.get_by_id(v.host_user_id)
+            if user:
+                v_dict['manager_account'] = user.account
+        result.append(v_dict)
+        
+    return result
+
 @router.get("/locations")
 async def get_locations():
     """안내 가능한 목적지 목록 조회"""
@@ -281,3 +311,37 @@ async def apply_reservation(request: Dict[str, Any]):
         raise HTTPException(status_code=500, detail="예약 생성에 실패했습니다.")
 
     return {"status": "success", "id": res_id}
+
+# ---------------------------------------------------------
+# 5.직원정보
+# ---------------------------------------------------------
+@router.get("/me")
+async def get_my_info(user_id: str = Cookie(None)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+
+    user = await container.user_repo.get_user_by_username(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    location_name = "미지정"
+    if user.location_id:
+        loc = await container.location_repo.get_by_id(user.location_id)
+        if loc:
+            location_name = loc.name
+
+    # [중요] 이 부분이 안전하게 작성되어야 500 에러가 안 납니다.
+    formatted_date = "-"
+    if hasattr(user, 'created_at') and user.created_at:
+        if isinstance(user.created_at, datetime):
+            formatted_date = user.created_at.strftime("%Y-%m-%d")
+        else:
+            formatted_date = str(user.created_at)[:10]
+
+    return {
+        "name": user.name,
+        "department": user.department,
+        "location": location_name,
+        "created_at": formatted_date,
+        "role": user.role
+    }

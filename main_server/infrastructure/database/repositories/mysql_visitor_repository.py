@@ -40,5 +40,9 @@ class MySQLVisitorRepository(BaseRepository):
         query = f"SELECT * FROM {self.table_name} WHERE status IN ('APPROVED', 'CHECKED_IN') ORDER BY visit_date ASC, visit_time ASC"
         results = await self._execute(query, fetch="all")
         return [self.model(**row) for row in results]
-
-
+    
+    async def get_rejected_list(self):
+        """반려된 방문 예약 목록 조회"""
+        query = f"SELECT * FROM {self.table_name} WHERE status = 'REJECTED' ORDER BY created_at DESC"
+        results = await self._execute(query, fetch="all")
+        return [self.model(**row) for row in results]

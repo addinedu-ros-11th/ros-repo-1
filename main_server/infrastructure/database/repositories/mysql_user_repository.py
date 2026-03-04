@@ -2,6 +2,7 @@ from typing import Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 from .base_repository import BaseRepository
+from datetime import datetime
 
 # [1] 데이터 구조 정의
 class UserRole(str, Enum):
@@ -16,6 +17,7 @@ class UserModel(BaseModel):
     name: str
     department: Optional[str] = None
     location_id: Optional[int] = None # location_id 추가
+    created_at: Optional[datetime] = None
 
 # [2] 리포지토리 클래스
 class MySQLUserRepository(BaseRepository):
