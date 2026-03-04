@@ -153,3 +153,62 @@ body, html {
 .res-table th:nth-child(4) { width: 15%; } /* 날짜*/
 .res-table th:nth-child(5) { width: 15%; } /* 시간*/
 .res-table th:nth-child(6) { width: 20%; } /* 상태 */
+
+/* # ---------------------------------------------------------
+# 6. 추가 분리된 스타일 (Inline to CSS)
+# --------------------------------------------------------- */
+
+/* 1번 관련: 패널 제목 */
+.reservation-panel h3 {
+    margin-top: 0;
+}
+
+/* 2번 관련: 리스트 헤더 영역 */
+.res-list-header {
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 10px;
+}
+
+.res-list-header h4 {
+    margin: 0;
+}
+
+.btn-refresh {
+    padding: 5px 15px; 
+    background: #4285f4;
+    color: white; 
+    border: none; 
+    border-radius: 5px; 
+    cursor: pointer; 
+    font-size: 0.85rem;
+}
+
+/* 3번 관련: 리모컨 버튼 그리드 */
+.remote-ctrl-grid {
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 4px;
+}
+
+/* 4번 관련: 알림 오버레이 */
+#notification-overlay {
+    display: none; /* JS에서 flex로 전환 */
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%; 
+    background: rgba(0,0,0,0.5); 
+    z-index: 9999; 
+    justify-content: center; 
+    align-items: center;
+}
+
+.noti-content {
+    background: white; 
+    padding: 20px; 
+    border-radius: 10px; 
+    text-align: center;
+}

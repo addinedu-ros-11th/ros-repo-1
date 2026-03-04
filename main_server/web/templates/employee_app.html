@@ -11,7 +11,7 @@
 
     <div class="container">
         <div class="panel reservation-panel">
-            <h3 style="margin-top: 0;">📅 방문 예약 및 현황</h3>
+            <h3>📅 방문 예약 및 현황</h3>
             <div class="res-form">
                 <input type="text" id="res-name" class="res-input" placeholder="방문객 성함">
                 <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
@@ -26,10 +26,9 @@
             </div>
 
             <div class="res-list-container">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h4 style="margin: 0;">📋 내 예약 현황</h4>
-                    <button type="button" class="btn-refresh" onclick="loadReservationTables()" 
-                            style="padding: 5px 15px; background: #4285f4; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85rem;">
+                <div class="res-list-header">
+                    <h4>📋 내 예약 현황</h4>
+                    <button type="button" class="btn-refresh" onclick="loadReservationTables()">
                         조회 🔄
                     </button>
                 </div>
@@ -57,12 +56,9 @@
             <div class="remote-grid">
                 <div class="temp-display">
                     <span id="temp-val">24°C</span>
-                    <div class="wind-display" id="wind-display">
-                        <div class="bar active"></div><div class="bar active"></div><div class="bar"></div><div class="bar"></div>
                     </div>
-                </div>
                 <button class="remote-btn btn-pwr">전원</button>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                <div class="remote-ctrl-grid">
                     <button class="remote-btn" onclick="tempChange(1)">▲</button>
                     <button class="remote-btn" onclick="tempChange(-1)">▼</button>
                     <button class="remote-btn" onclick="windChange(1)">바람▲</button>
@@ -95,8 +91,8 @@
             </div>
         </div>
 
-        <div id="notification-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
-            <div style="background:white; padding:20px; border-radius:10px; text-align:center;">
+        <div id="notification-overlay">
+            <div class="noti-content">
                 <p id="noti-message"></p>
                 <button onclick="handleNotification('accept')">수령 확인</button>
                 <button onclick="handleNotification('reject')">거절</button>
