@@ -37,13 +37,14 @@ async def lifespan(app: FastAPI):
 
         # 3. 통신 서버 시작
         ros_bridge = ROSBridge(
-            host=config.ROS_BRIDGE_HOST, 
-            port=config.ROS_BRIDGE_PORT, 
             fleet_manager=container.fleet_manager,
             task_manager=container.task_manager,
-            log_repo=container.log_repository
+            # mutex_manager는 현재 컨테이너에 없으므로 생략 (내부적으로 None 처리됨)
+            log_repo=container.log_repository,
+            communicator=container.robot_communicator # [Fix] 공유 인스턴스 주입
         )
         bridge_task = asyncio.create_task(ros_bridge.start())
+        bridge_task.add_done_callback(lambda t: logger.error(f"ROS Bridge Task Failed: {t.exception()}") if t.exception() else None)
         background_tasks.add(bridge_task)
 
         # 4. AI 실시간 스트림 시작

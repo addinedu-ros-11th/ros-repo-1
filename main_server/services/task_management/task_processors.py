@@ -50,7 +50,7 @@ class SnackProcessor(BaseTaskProcessor):
     """간식 배달 시나리오 처리기"""
     async def get_initial_actions(self, task: Task):
         # AI 결과와 DB 데이터를 기반으로 'snack_entrance' 사용
-        pantry_entrance = await self.location_repo.find_by_name("snack_entrance")
+        pantry_entrance = await self.location_repo.find_by_name("snack_waiting_area")
         if pantry_entrance:
             actions = [{
                 "action": "GOTO", 

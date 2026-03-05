@@ -214,9 +214,9 @@ CREATE TABLE `Robots` (
 LOCK TABLES `Robots` WRITE;
 /*!40000 ALTER TABLE `Robots` DISABLE KEYS */;
 INSERT INTO `Robots` (`name`, `status`, `battery_level`, `current_x`, `current_y`, `current_task_id`, `last_heartbeat`) VALUES
-('robot_1', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
+('robot01', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
 INSERT INTO `Robots` (`name`, `status`, `battery_level`, `current_x`, `current_y`, `current_task_id`, `last_heartbeat`) VALUES
-('robot_2', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
+('robot02', 'OFFLINE', 100.0, 0.0, 0.0, NULL, NOW());
 /*!40000 ALTER TABLE `Robots` ENABLE KEYS */;
 UNLOCK TABLES;
 

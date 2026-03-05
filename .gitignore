@@ -197,3 +197,4 @@ prompt.md
 .geminiignore
 
 .*venv
+test_yw/

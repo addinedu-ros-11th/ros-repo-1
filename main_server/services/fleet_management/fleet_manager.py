@@ -141,7 +141,7 @@ class FleetManager:
         # 배터리 충분하고 위치 정보가 유효한 로봇만 필터링
         available_robots = [
             r for r in idle_robots 
-            if r.battery_level > 20 and r.pose_x is not None and r.pose_y is not None
+            if r.battery_level > -1 and r.pose_x is not None and r.pose_y is not None
         ]
         
         if not available_robots: 
@@ -222,10 +222,18 @@ class FleetManager:
         new_battery = battery if battery is not None else robot.battery_level
 
         # [Optimization] 변경 사항이 없으면 DB 업데이트 건너뛰기
-        if (old_status == status and 
-            math.isclose(robot.pose_x, new_x, abs_tol=1e-9) and 
-            math.isclose(robot.pose_y, new_y, abs_tol=1e-9) and 
-            math.isclose(robot.battery_level, new_battery, abs_tol=1e-9)):
+        has_changed = (old_status != status)
+        
+        if not has_changed:
+            # 좌표 비교 (None 체크 포함)
+            if robot.pose_x is None or new_x is None or not math.isclose(robot.pose_x, new_x, abs_tol=1e-9):
+                has_changed = True
+            elif robot.pose_y is None or new_y is None or not math.isclose(robot.pose_y, new_y, abs_tol=1e-9):
+                has_changed = True
+            elif robot.battery_level is None or new_battery is None or not math.isclose(robot.battery_level, new_battery, abs_tol=1e-9):
+                has_changed = True
+
+        if not has_changed:
             return robot
 
         update_data = {
