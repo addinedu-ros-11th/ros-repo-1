@@ -104,6 +104,10 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("global_localization_wait_sec", 0.5)
         self.declare_parameter("amcl_nomotion_update_service_name", "request_nomotion_update")
         self.declare_parameter("amcl_nomotion_wait_sec", 0.3)
+        self.declare_parameter("startup_localization_bootstrap_enabled", True)
+        self.declare_parameter("startup_localization_bootstrap_delay_sec", 2.0)
+        self.declare_parameter("startup_localization_bootstrap_recheck_sec", 6.0)
+        self.declare_parameter("startup_localization_bootstrap_max_cycles", 3)
         self.declare_parameter("nav2_lifecycle_check_enabled", True)
         self.declare_parameter(
             "nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"
@@ -277,6 +281,29 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.startup_localization_bootstrap_enabled = (
+            self.get_parameter("startup_localization_bootstrap_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.startup_localization_bootstrap_delay_sec = max(
+            0.0,
+            self.get_parameter("startup_localization_bootstrap_delay_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.startup_localization_bootstrap_recheck_sec = max(
+            1.0,
+            self.get_parameter("startup_localization_bootstrap_recheck_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.startup_localization_bootstrap_max_cycles = max(
+            0,
+            self.get_parameter("startup_localization_bootstrap_max_cycles")
+            .get_parameter_value()
+            .integer_value,
+        )
         self.nav2_lifecycle_check_enabled = (
             self.get_parameter("nav2_lifecycle_check_enabled")
             .get_parameter_value()
@@ -404,6 +431,13 @@ class OfficeRobotExecutor(Node):
         self._localization_recovery_until_mono = 0.0
         self._localization_recovery_cycle_count = 0
         self._last_localization_recovery_mono = 0.0
+        self._localization_spin_allow_without_action = False
+        self._startup_localization_bootstrap_timer = None
+        self._startup_localization_bootstrap_done = False
+        self._startup_localization_bootstrap_cycle_count = 0
+        self._startup_localization_bootstrap_next_mono = (
+            time.monotonic() + self.startup_localization_bootstrap_delay_sec
+        )
         self._latest_qr_image: Optional[bytes] = None
         self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
@@ -516,6 +550,14 @@ class OfficeRobotExecutor(Node):
             self._nav2_lifecycle_poll_timer = self.create_timer(
                 1.0, self._poll_nav2_lifecycle_states
             )
+        if (
+            self.startup_localization_bootstrap_enabled
+            and self.use_nav2
+            and not self.mock_mode
+        ):
+            self._startup_localization_bootstrap_timer = self.create_timer(
+                1.0, self._run_startup_localization_bootstrap
+            )
 
         self.status_timer = self.create_timer(5.0, self._publish_heartbeat)
 
@@ -528,7 +570,9 @@ class OfficeRobotExecutor(Node):
             f"allow_degraded_cov={self.localization_allow_degraded_covariance}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
             f"recovery_cycles={self.localization_recovery_max_cycles}, "
-            f"lifecycle_check_enabled={self.nav2_lifecycle_check_enabled})."
+            f"lifecycle_check_enabled={self.nav2_lifecycle_check_enabled}, "
+            f"startup_bootstrap_enabled={self.startup_localization_bootstrap_enabled}, "
+            f"startup_bootstrap_max_cycles={self.startup_localization_bootstrap_max_cycles})."
         )
         self._publish_display("대기", "idle")
 
@@ -1367,10 +1411,51 @@ class OfficeRobotExecutor(Node):
                     f"Localization recovery cycle={cycle}: lifecycle RESUME returned success=False "
                     f"(reason={reason})."
                 )
+                self._request_nav2_lifecycle_reset_startup(cycle, reason)
         except Exception as exc:
             self.get_logger().warn(
                 f"Localization recovery cycle={cycle}: lifecycle RESUME response error ({exc})."
             )
+            self._request_nav2_lifecycle_reset_startup(cycle, reason)
+
+    def _request_nav2_lifecycle_reset_startup(self, cycle: int, reason: str) -> None:
+        if ManageLifecycleNodes is None or self.nav2_lifecycle_manager_client is None:
+            return
+        try:
+            reset_req = ManageLifecycleNodes.Request()
+            reset_req.command = int(getattr(ManageLifecycleNodes.Request, "RESET", 3))
+            reset_future = self.nav2_lifecycle_manager_client.call_async(reset_req)
+            reset_future.add_done_callback(
+                lambda f: self._on_nav2_lifecycle_reset_response(f, cycle, reason)
+            )
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESET requested (reason={reason})."
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESET request failed ({exc})."
+            )
+
+    def _on_nav2_lifecycle_reset_response(self, future: Any, cycle: int, reason: str) -> None:
+        try:
+            response = future.result()
+            success = bool(getattr(response, "success", False))
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESET response error ({exc})."
+            )
+            return
+        if not success:
+            self.get_logger().warn(
+                f"Localization recovery cycle={cycle}: lifecycle RESET returned success=False "
+                f"(reason={reason})."
+            )
+            return
+        self.get_logger().warn(
+            f"Localization recovery cycle={cycle}: lifecycle RESET success; re-requesting STARTUP "
+            f"(reason={reason})."
+        )
+        self._request_nav2_lifecycle_startup(cycle, f"{reason}:after_reset")
 
     def _call_nomotion_update(self, cycle: int, reason: str) -> None:
         if self.amcl_nomotion_client is None:
@@ -1441,7 +1526,9 @@ class OfficeRobotExecutor(Node):
                 f"Localization recovery cycle={cycle}: global relocalization response error ({exc})."
             )
 
-    def _start_localization_spin(self, cycle: int, reason: str) -> None:
+    def _start_localization_spin(
+        self, cycle: int, reason: str, allow_without_action: bool = False
+    ) -> None:
         if self.localization_recovery_spin_duration_sec <= 0.0:
             return
         if abs(self.localization_recovery_spin_angular_speed) < 1e-3:
@@ -1451,6 +1538,7 @@ class OfficeRobotExecutor(Node):
 
         self._stop_localization_recovery(None)
         self._localization_recovery_active = True
+        self._localization_spin_allow_without_action = bool(allow_without_action)
         self._localization_recovery_until_mono = (
             time.monotonic() + self.localization_recovery_spin_duration_sec
         )
@@ -1467,7 +1555,9 @@ class OfficeRobotExecutor(Node):
     def _on_localization_spin_timer(self, cycle: int, reason: str) -> None:
         if not self._localization_recovery_active:
             return
-        if self._safety_locked or self._current_action is None:
+        if self._safety_locked or (
+            self._current_action is None and not self._localization_spin_allow_without_action
+        ):
             self._stop_localization_recovery("interrupted")
             return
         if time.monotonic() >= self._localization_recovery_until_mono:
@@ -1483,6 +1573,7 @@ class OfficeRobotExecutor(Node):
         was_active = self._localization_recovery_active
         self._localization_recovery_active = False
         self._localization_recovery_until_mono = 0.0
+        self._localization_spin_allow_without_action = False
         if self._localization_recovery_timer is not None:
             self._localization_recovery_timer.cancel()
             self._localization_recovery_timer = None
@@ -1536,6 +1627,55 @@ class OfficeRobotExecutor(Node):
             return False, nav2_lifecycle_reason
 
         return True, "ready"
+
+    def _run_startup_localization_bootstrap(self) -> None:
+        if self._startup_localization_bootstrap_done:
+            return
+        now = time.monotonic()
+        if now < self._startup_localization_bootstrap_next_mono:
+            return
+        self._startup_localization_bootstrap_next_mono = (
+            now + self.startup_localization_bootstrap_recheck_sec
+        )
+        if self._safety_locked:
+            return
+        if self._current_action is not None or self._action_queue:
+            return
+
+        ready, reason = self._is_localization_ready()
+        if ready:
+            self._startup_localization_bootstrap_done = True
+            self._startup_localization_bootstrap_cycle_count = 0
+            if self._startup_localization_bootstrap_timer is not None:
+                self._startup_localization_bootstrap_timer.cancel()
+                self._startup_localization_bootstrap_timer = None
+            self.get_logger().info("Startup localization bootstrap completed; Nav2 is ready.")
+            return
+
+        if self._startup_localization_bootstrap_cycle_count >= self.startup_localization_bootstrap_max_cycles:
+            return
+
+        self._startup_localization_bootstrap_cycle_count += 1
+        cycle = self._startup_localization_bootstrap_cycle_count
+        bootstrap_reason = f"startup_bootstrap:{reason}"
+        self.get_logger().warn(
+            f"Startup localization bootstrap cycle={cycle}/{self.startup_localization_bootstrap_max_cycles} "
+            f"(reason={reason})."
+        )
+        self._publish_localization_not_ready(bootstrap_reason)
+
+        if reason.startswith("nav2_") or reason.startswith("map_odom_tf_missing"):
+            self._request_nav2_lifecycle_startup(cycle, bootstrap_reason)
+
+        if reason.startswith("amcl_pose_") or reason.startswith("amcl_cov_") or reason.startswith(
+            "map_odom_tf_missing"
+        ):
+            if not self._is_covariance_only_block(reason):
+                self._call_global_localization(cycle, bootstrap_reason)
+            self._call_nomotion_update(cycle, bootstrap_reason)
+            self._start_localization_spin(
+                cycle, bootstrap_reason, allow_without_action=True
+            )
 
     def _on_nav_goal_feedback(self, feedback_msg: Any) -> None:
         feedback = getattr(feedback_msg, "feedback", None)

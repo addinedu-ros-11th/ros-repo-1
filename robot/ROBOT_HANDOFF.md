@@ -39,6 +39,9 @@
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
     - validates required Nav2 lifecycle nodes are `active` before goal send
       (`planner_server`, `controller_server`, `bt_navigator`, `behavior_server` by default).
+    - startup bootstrap (`startup_localization_bootstrap_*`) runs from idle:
+      - global relocalization + nomotion update + slow in-place spin
+      - periodic readiness re-check before first stable GOTO
     - when blocked, emits `LOCALIZATION_NOT_READY` event with `reason`, `reason_code`, and `operator_hint`.
     - on `localization_not_ready`, recovery cycle can call global relocalization service + in-place spin.
     - if lifecycle is inactive, recovery also requests lifecycle manager `STARTUP`/`RESUME`.

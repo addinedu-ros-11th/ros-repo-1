@@ -37,6 +37,11 @@ This guide documents the integration contract for the robot runtime in
   - executor validates localization readiness (`amcl_pose` freshness/covariance, optional `map->odom` TF) before Nav2 goal send.
   - executor also gates by Nav2 lifecycle state (`planner/controller/bt/behavior` must be `active`).
   - when blocked, `/{robot_ns}/event` emits `LOCALIZATION_NOT_READY` with machine-readable reason.
+  - startup bootstrap (`startup_localization_bootstrap_*`) runs automatically after boot:
+    - global localization call
+    - no-motion update
+    - in-place spin for scan acquisition
+    - re-check lifecycle/covariance before allowing stable GOTO path
   - if not ready, recovery cycle can run:
     - call `/{robot_ns}/reinitialize_global_localization` (service name configurable)
     - rotate in place (`cmd_vel`) for active scan
