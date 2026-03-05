@@ -91,6 +91,7 @@ async def get_visitors():
     # 1. DB에서 데이터 가져오기 (VisitorRepository 사용)
     pending_raw = await container.visitor_repository.get_pending_list()
     approved_raw = await container.visitor_repository.get_approved_list()
+    rejected_raw = await container.visitor_repository.get_rejected_list()
 
     # 2. 정보 매핑 준비 (host_user_id, destination_id)
     user_ids = set()
@@ -140,7 +141,27 @@ async def get_visitors():
             "status": v.status
         })
 
-    return {"pending": pending_data, "confirmed": confirmed_data}
+    # 5. REJECTED 데이터 가공
+    rejected_data = []
+    for v in rejected_raw:
+        host_name = user_map.get(v.host_user_id, "-")
+        dest_name = loc_map.get(v.destination_id, "담당자 위치")
+        rejected_data.append({
+            "id": v.visitor_id,
+            "visitor": v.name,
+            "purpose": v.purpose,
+            "date": str(v.visit_date),
+            "time": str(v.visit_time) if v.visit_time else "-",
+            "host": host_name,
+            "destination": dest_name,
+            "status": v.status
+        })
+
+    return {
+        "pending": pending_data,
+        "confirmed": confirmed_data,
+        "rejected": rejected_data
+    }
 
 @router.post("/reservations/decision")
 async def decide_reservation(request_data: Dict[str, Any]):
