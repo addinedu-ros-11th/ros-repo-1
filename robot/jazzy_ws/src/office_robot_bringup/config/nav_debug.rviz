@@ -1,0 +1,135 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/ToolProperties
+    Name: Tool Properties
+  - Class: rviz_common/Views
+    Name: Views
+  - Class: rviz_common/Time
+    Name: Time
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.4
+      Cell Size: 0.5
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15.0
+      Marker Scale: 0.3
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Enabled: true
+      Name: Map
+      Topic:
+        Value: map
+    - Alpha: 1.0
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 25; 0
+      Decay Time: 0.0
+      Enabled: true
+      Name: LaserScan
+      Queue Size: 10
+      Size (m): 0.03
+      Style: Flat Squares
+      Topic:
+        Value: /scan
+    - Alpha: 1.0
+      Class: rviz_default_plugins/PoseWithCovariance
+      Color: 255; 255; 0
+      Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.06
+      Name: AMCL Pose
+      Shaft Length: 0.4
+      Shaft Radius: 0.03
+      Shape: Arrow
+      Topic:
+        Value: amcl_pose
+    - Alpha: 0.9
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 255; 0
+      Enabled: true
+      Line Width: 0.03
+      Name: Global Plan
+      Topic:
+        Value: plan
+    - Alpha: 0.8
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 170; 255
+      Enabled: true
+      Line Width: 0.02
+      Name: Received Global Plan
+      Topic:
+        Value: received_global_plan
+    - Alpha: 0.4
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Enabled: true
+      Name: Local Costmap
+      Topic:
+        Value: local_costmap/costmap
+    - Alpha: 0.3
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Enabled: true
+      Name: Global Costmap
+      Topic:
+        Value: global_costmap/costmap
+    - Alpha: 1.0
+      Class: rviz_default_plugins/Pose
+      Color: 255; 105; 180
+      Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.05
+      Name: Goal Pose
+      Shaft Length: 0.35
+      Shaft Radius: 0.02
+      Topic:
+        Value: goal_pose
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: goal_pose
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 12
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Pitch: 1.0
+      Yaw: 0.5
+Window Geometry:
+  Height: 900
+  Width: 1600

@@ -111,6 +111,16 @@ ros2 topic echo /robot01/ai_link --once
 ss -lntp | grep 9090
 ```
 
+## RViz Debug (On-PC)
+```bash
+# PC must be on same network / ROS_DOMAIN_ID as robot
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
+
+# or direct launch
+ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
+```
+
 ## Compatibility Notes
 - Keep topic/port contract stable; downstream services depend on it.
 - Any schema/key changes must be documented in `HANDOFF.md` and communicated before rollout.

@@ -141,3 +141,11 @@ sudo systemctl restart pinky-navigation.service
 - `robot/scripts/camera_probe.sh`
 - `robot/scripts/nav2_runtime_audit.sh`
 - `robot/scripts/install_pinky_navigation_override.sh`
+- `robot/scripts/run_rviz_nav_debug.sh`
+
+## RViz Debug (On-PC)
+```bash
+# PC must join same network and ROS_DOMAIN_ID as robot
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
+```
