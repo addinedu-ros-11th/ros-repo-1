@@ -1699,7 +1699,14 @@ class OfficeRobotExecutor(Node):
         if reason.startswith("amcl_pose_") or reason.startswith("amcl_cov_") or reason.startswith(
             "map_odom_tf_missing"
         ):
-            if not self._is_covariance_only_block(reason):
+            use_global_relocalization = not self._is_covariance_only_block(reason)
+            if reason.startswith("amcl_pose_missing"):
+                # On first startup cycle, avoid random global relocalization that can
+                # converge to a 180-deg flipped hypothesis in symmetric corridors.
+                use_global_relocalization = cycle > 1
+            if reason.startswith("amcl_pose_stale"):
+                use_global_relocalization = False
+            if use_global_relocalization:
                 self._call_global_localization(cycle, bootstrap_reason)
             self._call_nomotion_update(cycle, bootstrap_reason)
             self._start_localization_spin(
