@@ -130,7 +130,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("qr_scan_image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("qr_scan_timeout_sec", 8.0)
         self.declare_parameter("qr_scan_poll_period_sec", 0.2)
-        self.declare_parameter("qr_always_scan_enabled", True)
+        self.declare_parameter("qr_always_scan_enabled", False)
         self.declare_parameter("qr_always_scan_event_name", "QR_DETECTED")
         self.declare_parameter("qr_always_scan_poll_period_sec", 0.5)
         self.declare_parameter("qr_always_scan_min_interval_sec", 3.0)
