@@ -1,0 +1,1 @@
+/home/ywpc/Projects_ws/final_ros_project/ros-repo-1/test_yw/build/pinky_office_navigation/ament_cmake_core/pinky_office_navigationConfig.cmake
