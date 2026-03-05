@@ -6,6 +6,7 @@ ROBOT_NS="${ROBOT_NS:-robot01}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-88}"
 PARAM_TIMEOUT_SEC="${PARAM_TIMEOUT_SEC:-2}"
 SKIP_PARAM_WHEN_SERVICE_DOWN="${SKIP_PARAM_WHEN_SERVICE_DOWN:-true}"
+RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-/etc/robot_runtime.env}"
 
 PINKY_SETUP_PATH="${PINKY_SETUP_PATH:-/home/pinky/pinky_pro/install/setup.bash}"
 ROBOT_WS_SETUP_PATH="${ROBOT_WS_SETUP_PATH:-/home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash}"
@@ -111,6 +112,37 @@ amcl_node="/${ns}/amcl"
 local_costmap_node="/${ns}/local_costmap/local_costmap"
 global_costmap_node="/${ns}/global_costmap/global_costmap"
 controller_node="/${ns}/controller_server"
+nav2_params_file="${NAV2_PARAMS_FILE:-}"
+if [[ -z "${nav2_params_file}" ]] && [[ -f "${RUNTIME_ENV_FILE}" ]]; then
+  nav2_params_file="$(sed -n -E 's/^NAV2_PARAMS_FILE=(.*)$/\1/p' "${RUNTIME_ENV_FILE}" | tail -n 1)"
+fi
+
+echo "## params file namespace check"
+if [[ -n "${nav2_params_file}" ]]; then
+  echo "params_file=${nav2_params_file}"
+else
+  echo "params_file=__UNSET__"
+fi
+
+if [[ -n "${nav2_params_file}" ]] && [[ -f "${nav2_params_file}" ]]; then
+  ns_keys="$(
+    grep -E '^[[:space:]]*/[^ #][^:]*:' "${nav2_params_file}" \
+      | sed -E 's#^[[:space:]]*/([^/]+)/.*#\1#' \
+      | sort -u \
+      | tr '\n' ' '
+  )"
+  if [[ -n "${ns_keys// }" ]]; then
+    echo "params_namespaces=${ns_keys}"
+    if [[ " ${ns_keys} " != *" ${ns} "* ]]; then
+      FAILS+=("params file namespace mismatch (ROBOT_NS=${ns}, params namespaces=${ns_keys})")
+    fi
+  else
+    echo "params_namespaces=none (namespace-agnostic keys)"
+  fi
+else
+  WARNS+=("params file missing or unreadable: ${nav2_params_file:-__UNSET__}")
+fi
+echo
 
 echo "## ros2 param snapshot"
 for key in \
@@ -121,9 +153,9 @@ for key in \
   local.rolling_window \
   local.width \
   local.height \
-  local.observation_sources \
+  local.voxel_layer.observation_sources \
   global.global_frame \
-  global.observation_sources \
+  global.obstacle_layer.observation_sources \
   controller.follow_path_desired_linear_vel; do
   PARAMS["${key}"]="__ERROR__"
 done
@@ -139,10 +171,10 @@ else
   read_param "local.rolling_window" "${local_costmap_node}" "rolling_window"
   read_param "local.width" "${local_costmap_node}" "width"
   read_param "local.height" "${local_costmap_node}" "height"
-  read_param "local.observation_sources" "${local_costmap_node}" "observation_sources"
+  read_param "local.voxel_layer.observation_sources" "${local_costmap_node}" "voxel_layer.observation_sources"
 
   read_param "global.global_frame" "${global_costmap_node}" "global_frame"
-  read_param "global.observation_sources" "${global_costmap_node}" "observation_sources"
+  read_param "global.obstacle_layer.observation_sources" "${global_costmap_node}" "obstacle_layer.observation_sources"
 
   read_param "controller.follow_path_desired_linear_vel" "${controller_node}" "FollowPath.desired_linear_vel"
 fi
@@ -155,9 +187,9 @@ for key in \
   local.rolling_window \
   local.width \
   local.height \
-  local.observation_sources \
+  local.voxel_layer.observation_sources \
   global.global_frame \
-  global.observation_sources \
+  global.obstacle_layer.observation_sources \
   controller.follow_path_desired_linear_vel; do
   printf "  %-40s = %s\n" "${key}" "${PARAMS[$key]:-__MISSING__}"
 done
@@ -181,15 +213,15 @@ if [[ "${PARAMS[global.global_frame]:-__ERROR__}" != "__ERROR__" ]]; then
   fi
 fi
 
-if [[ "${PARAMS[local.observation_sources]:-__ERROR__}" != "__ERROR__" ]]; then
-  if [[ "$(normalize "${PARAMS[local.observation_sources]}")" != *scan* ]]; then
-    FAILS+=("local observation_sources does not include scan")
+if [[ "${PARAMS[local.voxel_layer.observation_sources]:-__ERROR__}" != "__ERROR__" ]]; then
+  if [[ "$(normalize "${PARAMS[local.voxel_layer.observation_sources]}")" != *scan* ]]; then
+    FAILS+=("local voxel_layer observation_sources does not include scan")
   fi
 fi
 
-if [[ "${PARAMS[global.observation_sources]:-__ERROR__}" != "__ERROR__" ]]; then
-  if [[ "$(normalize "${PARAMS[global.observation_sources]}")" != *scan* ]]; then
-    FAILS+=("global observation_sources does not include scan")
+if [[ "${PARAMS[global.obstacle_layer.observation_sources]:-__ERROR__}" != "__ERROR__" ]]; then
+  if [[ "$(normalize "${PARAMS[global.obstacle_layer.observation_sources]}")" != *scan* ]]; then
+    FAILS+=("global obstacle_layer observation_sources does not include scan")
   fi
 fi
 
