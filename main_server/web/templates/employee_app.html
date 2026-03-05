@@ -357,7 +357,15 @@
                     const dbAcc = String(r.manager_account || "").trim().toLowerCase();
                     const loginAcc = String(userAccount).trim().toLowerCase();
                     return dbAcc === loginAcc;
-                });
+                })
+                //날짜와 시간을 기준으로 최신순 정렬 (내림차순)
+                .sort((a, b) => {
+                    const dateA = new Date(`${a.visit_date}T${a.visit_time || '00:00:00'}`);
+                    const dateB = new Date(`${b.visit_date}T${b.visit_time || '00:00:00'}`);
+                    return dateB - dateA; 
+                })
+                //최신 데이터 3개만 추출
+                // .slice(0, 3);
 
                 tbody.innerHTML = ''; 
 
@@ -371,12 +379,27 @@
                         const fPhone = p.length === 11 ? `${p.slice(0,3)}-${p.slice(3,7)}-${p.slice(7)}` : p;
                         const vName = res.name || res.visitor_name || '';
 
-                        let fTime = '-';
-                        if (res.visit_time) {
-                            fTime = String(res.visit_time).substring(0, 5);
+                        // --- [날짜 형식 수정] 2026-03-04T00:00:00 -> 2026-03-04 ---
+                        let fDate = '-';
+                        if (res.visit_date) {
+                            // T를 기준으로 자르거나 앞의 10자리만 추출
+                            fDate = String(res.visit_date).substring(0, 10);
                         }
 
-                        // 사용자님의 상태 판별 로직 (데이터만 들어오면 REJECTED는 여기서 처리됨)
+                        // --- [시간 형식 수정] 50400 (초) -> HH:mm ---
+                        let fTime = '-';
+                        if (res.visit_time) {
+                            // 데이터가 "14:00:00" 형태의 문자열로 올 때와 50400 같은 숫자로 올 때 모두 대응
+                            if (typeof res.visit_time === 'number') {
+                                const hours = Math.floor(res.visit_time / 3600);
+                                const minutes = Math.floor((res.visit_time % 3600) / 60);
+                                fTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                            } else {
+                                // "14:00:00" 형태의 문자열인 경우 앞 5자리(HH:mm)만 추출
+                                fTime = String(res.visit_time).substring(0, 5);
+                            }
+                        }
+
                         let sLabel = '대기중', sClass = 'status-pending';
                         if (res.status === 'APPROVED') { sLabel = '승인됨'; sClass = 'status-approved'; }
                         else if (res.status === 'CHECKED_IN') { sLabel = '입장완료'; sClass = 'status-approved'; }
@@ -387,7 +410,7 @@
                             <td>${vName}</td>
                             <td>${fPhone}</td>
                             <td>${res.purpose}</td>
-                            <td>${res.visit_date}</td>
+                            <td>${fDate}</td>
                             <td>${fTime}</td>
                             <td><span class="status-badge ${sClass}">${sLabel}</span></td>
                         `;
