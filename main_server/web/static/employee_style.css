@@ -72,7 +72,7 @@ body, html {
 }
 
 /* # ---------------------------------------------------------
-# 3. 컴포넌트 스타일 (방문예약)
+# 3. 컴포넌트 스타일 (방문예약 && 로봇업무현황)
 # --------------------------------------------------------- */
 .res-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
 .res-input { padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
@@ -85,22 +85,49 @@ body, html {
     padding: 6px 15px !important;
 }
 
-/* 테이블 내 취소 버튼 스타일 */
-.btn-task-cancel {
-    background-color: #fff;
-    color: #ea4335;
-    border: 1px solid #ea4335;
-    padding: 2px 8px;
+/* 로봇 현황 전용 버튼 공통 스타일 */
+.robot-btn {
+    width: 70px;             /* 버튼 너비 고정 */
+    height: 28px;            /* 버튼 높이 고정 */
+    border: none;
     border-radius: 4px;
     font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
-    transition: 0.2s;
+    transition: background 0.2s;
 }
 
-.btn-task-cancel:hover {
-    background-color: #ea4335;
+/* 수령 확인 전용 (초록) */
+.btn-robot-confirm {
+    background-color: #28a745;
     color: white;
 }
+.btn-robot-confirm:hover { background-color: #218838; }
+
+/* 취소 전용 (빨강 - 기존 btn-task-cancel 활용 또는 신규) */
+.btn-robot-cancel {
+    background-color: #dc3545;
+    color: white;
+}
+.btn-robot-cancel:hover { background-color: #c82333; }
+
+/* 테이블 레이아웃 및 상세정보 너비 제어 */
+.task-table {
+    table-layout: fixed;     /* 컬럼 너비 강제 고정 */
+    width: 100%;
+}
+
+/* 상세정보 칸: 너비를 제한하고 넘치면 줄임표(...) 표시 */
+.col-details {
+    width: 35%;             /* 상세정보 너비 비율 축소 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.col-type { width: 20%; }
+.col-status { width: 15%; }
+.col-action { width: 30%; } /* 버튼 2개가 들어갈 충분한 공간 */
 
 /* 테이블 컬럼 비율 조정 */
 #robot-task-table th:nth-child(1) { width: 20%; } /* 업무 유형 */

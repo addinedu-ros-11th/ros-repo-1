@@ -63,13 +63,10 @@
                 <table class="res-table excel-style" id="robot-task-table">
                     <thead>
                         <tr>
-                            <th>업무 유형</th>
-                            <th>상세 정보</th>
-                            <th>상태</th>
-                            <th>관리</th> </tr>
+                            <th>업무 유형</th> <th>상세 정보</th> <th>상태</th>    <th>관리</th>    </tr>
                     </thead>
                     <tbody id="robot-task-body">
-                        <tr><td colspan="4" style="text-align:center; padding:20px;">수행 중인 업무가 없습니다.</td></tr>
+                        <tr><td colspan="4" style="text-align:center; padding:20px;">데이터를 불러오는 중입니다...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -152,90 +149,84 @@
         }
 
         // # ---------------------------------------------------------
-        // # 2. 공조 및 로봇 제어 (IoT & Robot Control)
+        // # 2. 로봇 업무 현황
         // # ---------------------------------------------------------
-        let myActiveTasks = [];
 
-        // [수정] sendMessage 후 로봇 업무 테이블 갱신 로직 추가
-        async function sendMessage() {
-            const input = document.getElementById('user-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
-            appendMessage('user', text);
-            input.value = '';
-
-            const userId = getCookie('user_id') || 'unknown';
+        async function loadMyRobotTasks() {
+            const tbody = document.getElementById('robot-task-body');
+            if (!tbody) return;
 
             try {
-                const response = await fetch('/api/v1/employee/command', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text, user_id: userId })
-                });
+                const response = await fetch('/api/v1/employee/tasks/my');
+                if (!response.ok) throw new Error("Failed to fetch tasks");
                 
-                const result = await response.json();
-                if (result.status === 'success') {
-                    aiSpeak(result.message);
-                    // 로봇 작업이 생성된 경우 테이블에 즉시 추가 (임시 표시용)
-                    if (result.task_id) {
-                        updateRobotTaskTable(result.task_id, result.message, "접수됨");
-                    }
-                } else {
-                    aiSpeak(result.message || "오류가 발생했습니다.");
+                const tasks = await response.json();
+                console.log("실제 받은 Task 데이터:", tasks); // 디버깅용: 콘솔에서 status 값을 확인하세요
+
+                if (tasks.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">수행 중인 업무가 없습니다.</td></tr>';
+                    return;
                 }
+
+                tbody.innerHTML = ''; 
+                tasks.forEach(task => {
+                    const row = document.createElement('tr');
+                    row.id = `task-${task.task_id}`;
+
+                    const detailsText = task.details ? JSON.stringify(task.details) : "-";
+                    
+                    // 버튼 부분: 전용 클래스(robot-btn) 적용 및 인라인 스타일 제거
+                    let actionHtml = `
+                        <div style="display: flex; gap: 4px; justify-content: center;">
+                            <button class="robot-btn btn-robot-confirm" 
+                                onclick="updateTaskStatus('${task.task_id}', 'COMPLETED')">수령 확인</button>
+                            <button class="robot-btn btn-robot-cancel" 
+                                onclick="updateTaskStatus('${task.task_id}', 'CANCELLED')">취소</button>
+                        </div>
+                    `;
+
+                    row.innerHTML = `
+                        <td class="col-type">${task.task_type}</td>
+                        <td class="col-details" title='${detailsText}'>${detailsText}</td>
+                        <td class="col-status"><span class="status-badge">${task.status}</span></td>
+                        <td class="col-action">${actionHtml}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
             } catch (e) {
-                aiSpeak("서버 통신 오류");
+                console.error("로봇 작업 목록 로드 실패:", e);
             }
         }
 
-        // [추가] 로봇 업무 테이블 업데이트 함수
-        function updateRobotTaskTable(id, type, status) {
-            const tbody = document.getElementById('robot-task-body');
+        // 중복된 updateTaskStatus를 하나로 합치고 기능을 확정합니다.
+        async function updateTaskStatus(taskId, newStatus) {
+            const isCompleted = (newStatus === 'COMPLETED');
+            const confirmMsg = isCompleted ? "수령 확인하시겠습니까?" : "취소하시겠습니까?";
             
-            // 초기 문구 삭제
-            if (tbody.rows.length === 1 && tbody.rows[0].cells.length === 1) tbody.innerHTML = '';
+            if (!confirm(confirmMsg)) return;
 
-            // 이미 존재하는 행인지 확인 (중복 방지)
-            if (document.getElementById(`task-${id}`)) return;
-
-            const row = document.createElement('tr');
-            row.id = `task-${id}`;
-            
-            // 상태값에 따른 라벨 설정
-            let statusClass = 'status-pending';
-            if (status === 'COMPLETED') statusClass = 'status-approved';
-            if (status === 'CANCELLED') statusClass = 'status-rejected';
-
-            row.innerHTML = `
-                <td>${type.split(':')[0] || '업무'}</td>
-                <td style="font-size: 11px; text-align: left;">${type}</td>
-                <td><span class="status-badge ${statusClass}">${status}</span></td>
-                <td>
-                    <button class="btn-task-cancel" onclick="cancelSpecificTask('${id}')">취소</button>
-                </td>
-            `;
-            tbody.prepend(row); 
-        }
-
-        // [추가] 특정 작업 취소 함수
-        async function cancelSpecificTask(taskId) {
-            if (!confirm("해당 로봇 업무를 취소하시겠습니까?")) return;
-            
             try {
-                // routes.py의 cancel 로직 활용 (메시지 포맷팅 활용)
-                const response = await fetch('/api/v1/employee/command', {
+                const response = await fetch('/api/v1/employee/confirm', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: `cancel:(${taskId})`, 
-                        user_id: getCookie('user_id') 
+                    body: JSON.stringify({
+                        task_id: parseInt(taskId),
+                        // 백엔드 TaskManager/Repository의 수령 확인 액션은 'RECEIVE' 또는 'LOAD'입니다.
+                        // 요구사항에 맞춰 COMPLETED로 수정하기 위해 'RECEIVE'를 보냅니다.
+                        action_type: isCompleted ? 'RECEIVE' : 'CANCEL' 
                     })
                 });
+                
                 const result = await response.json();
-                alert(result.message);
+                if (response.ok && (result.status === 'success' || result.status === 'ok')) {
+                    alert(isCompleted ? "수령 확인되었습니다." : "취소되었습니다.");
+                    await loadMyRobotTasks(); // 목록 새로고침
+                } else {
+                    alert("처리 실패: " + (result.message || "권한이 없거나 상태를 변경할 수 없습니다."));
+                }
             } catch (e) {
-                alert("취소 요청 중 오류가 발생했습니다.");
+                console.error("상태 업데이트 실패:", e);
+                alert("서버 통신 중 오류가 발생했습니다.");
             }
         }
 
@@ -431,13 +422,6 @@
             }
         }
 
-        // 기존 window.onload 또는 초기화 부분에 추가
-        window.addEventListener('DOMContentLoaded', () => {
-            loadMyInfo();
-            loadReservationTables();
-            loadLocationOptions(); // 기존 함수
-        });
-
         // # ---------------------------------------------------------
         // # 4. AI Assistant 통신 및 알림 (정리된 버전)
         // # ---------------------------------------------------------
@@ -579,20 +563,31 @@
             currentTaskData = null;
         }
 
-        window.onload = async function() {
-            console.log("페이지 로드 완료: 정보 호출 시작");
-            
-            // 1. 내 정보 가져오기 (이 줄이 실행되어야 화면에 나옵니다)
-            await loadMyInfo(); 
-            
-            // 2. 예약 현황 가져오기 (기존 로직)
-            await loadReservationTables(); 
-            
-            // 3. 목적지 리스트 가져오기 (기존 로직)
-            if (typeof loadLocations === 'function') {
-                await loadLocations();
+        async function initPage() {
+            console.log("🚀 페이지 초기화 시작 (병렬 로드)");
+
+            try {
+                await Promise.all([
+                    typeof loadMyInfo === 'function' ? loadMyInfo() : Promise.resolve(),
+                    typeof loadReservationTables === 'function' ? loadReservationTables() : Promise.resolve(),
+                    typeof loadMyRobotTasks === 'function' ? loadMyRobotTasks() : Promise.resolve()
+                ]);
+
+                // 2. 목적지 리스트는 함수 이름이 혼용될 수 있으니 별도 처리
+                if (typeof loadLocationOptions === 'function') {
+                    await loadLocationOptions();
+                } else if (typeof loadLocations === 'function') {
+                    await loadLocations();
+                }
+
+                console.log("✅ 모든 데이터 로드 완료");
+            } catch (error) {
+                console.error("❌ 초기화 중 오류 발생:", error);
             }
-        };
+        }
+
+        // DOM이 준비되면 실행
+        window.addEventListener('DOMContentLoaded', initPage);
     </script>
 </body>
 </html>

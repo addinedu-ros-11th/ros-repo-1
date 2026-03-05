@@ -210,20 +210,28 @@ async def process_command(request: Dict[str, Any]):
 # ---------------------------------------------------------
 # 3. 작업 수행 확인 처리 (Confirm)
 # ---------------------------------------------------------
-@router.post("/confirm")
-async def confirm_delivery_action(request: ConfirmTaskRequest):
-    """
-    로봇 도착 후 사용자의 수령 또는 적재 확인 액션을 처리합니다.
-    """
-    success, message = await container.task_manager.confirm_delivery(
-        request.task_id, 
-        request.action_type
-    )
+
+@router.get("/tasks/my")
+async def get_my_tasks(user_id: str = Cookie(None)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+
+    user = await container.user_repo.get_user_by_username(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    tasks = await container.task_repo.get_all_for_user(user.user_id)
     
-    if not success:
-        return {"status": "error", "message": message}
-        
-    return {"status": "success", "message": message}
+    return [
+        {
+            "task_id": t.id,  # [수정] t.task_id 대신 t.id 사용
+            "task_type": t.task_type,
+            "status": t.status,
+            "created_at": t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "-",
+            "details": t.details
+        }
+        for t in tasks
+    ]
 
 # ---------------------------------------------------------
 # 4. 방문 예약 관리 API (Reservations)
