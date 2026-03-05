@@ -78,7 +78,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
             DeclareLaunchArgument("qr_scan_timeout_sec", default_value="8.0"),
             DeclareLaunchArgument("qr_scan_poll_period_sec", default_value="0.2"),
-            DeclareLaunchArgument("qr_always_scan_enabled", default_value="true"),
+            DeclareLaunchArgument("qr_always_scan_enabled", default_value="false"),
             DeclareLaunchArgument("qr_always_scan_event_name", default_value="QR_DETECTED"),
             DeclareLaunchArgument("qr_always_scan_poll_period_sec", default_value="0.5"),
             DeclareLaunchArgument("qr_always_scan_min_interval_sec", default_value="3.0"),
