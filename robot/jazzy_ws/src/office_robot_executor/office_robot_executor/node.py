@@ -1331,13 +1331,37 @@ class OfficeRobotExecutor(Node):
                 return False, f"nav2_lifecycle_service_unavailable:{node_name}"
             state_snapshot = self._nav2_lifecycle_states.get(full_name)
             if state_snapshot is None:
-                return False, f"nav2_node_state_unknown:{node_name}"
+                state_snapshot = self._refresh_nav2_lifecycle_state(full_name, client)
+                if state_snapshot is None:
+                    return False, f"nav2_node_state_unknown:{node_name}"
             state_id, state_label, stamp_mono = state_snapshot
             if (time.monotonic() - stamp_mono) > self.nav2_lifecycle_state_stale_sec:
-                return False, f"nav2_node_state_stale:{node_name}:{state_label}"
+                state_snapshot = self._refresh_nav2_lifecycle_state(full_name, client)
+                if state_snapshot is None:
+                    return False, f"nav2_node_state_stale:{node_name}:{state_label}"
+                state_id, state_label, _ = state_snapshot
             if state_id != 3:  # active
                 return False, f"nav2_node_not_active:{node_name}:{state_label}"
         return True, "nav2_lifecycle_ready"
+
+    def _refresh_nav2_lifecycle_state(self, full_node_name: str, client: Any) -> Optional[Tuple[int, str, float]]:
+        if GetState is None:
+            return None
+        try:
+            future = client.call_async(GetState.Request())
+            rclpy.spin_until_future_complete(
+                self, future, timeout_sec=self.nav2_lifecycle_get_state_timeout_sec
+            )
+            if not future.done():
+                return None
+            response = future.result()
+            state_id = int(response.current_state.id)
+            state_label = str(response.current_state.label)
+            snapshot = (state_id, state_label, time.monotonic())
+            self._nav2_lifecycle_states[full_node_name] = snapshot
+            return snapshot
+        except Exception:
+            return None
 
     def _request_nav2_lifecycle_startup(self, cycle: int, reason: str) -> None:
         if not self.nav2_lifecycle_reactivate_enabled:
