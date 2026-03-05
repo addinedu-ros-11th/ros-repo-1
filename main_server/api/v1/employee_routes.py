@@ -233,6 +233,61 @@ async def get_my_tasks(user_id: str = Cookie(None)):
         for t in tasks
     ]
 
+@router.post("/confirm")
+async def confirm_task_action(request: Dict[str, Any], user_id: str = Cookie(None)):
+    """
+    직원이 로봇으로부터 물품을 수령하거나(RECEIVE), 작업을 취소(CANCEL)하는 요청을 처리합니다.
+    """
+    task_id = request.get("task_id")
+    action_type = request.get("action_type")
+
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id가 필요합니다.")
+
+    # 1. 해당 작업(Task)이 존재하는지 확인
+    task = await container.task_repo.get_by_id(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="해당 작업을 찾을 수 없습니다.")
+
+    # 2. 사용자 정보 확인
+    user = await container.user_repo.get_user_by_username(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    # 3. 권한 확인 (requester_id 필드 사용)
+    if task.requester_id != user.user_id:
+         raise HTTPException(status_code=403, detail="해당 작업에 대한 권한이 없습니다.")
+
+    # 4. 직접 DB 상태 업데이트 (TaskManager 메서드 부재 해결)
+    try:
+        new_status = None
+        if action_type == 'RECEIVE':
+            new_status = "COMPLETED"
+        elif action_type == 'CANCEL':
+            new_status = "CANCELLED"
+        
+        if not new_status:
+             return {"status": "error", "message": "유효하지 않은 액션 타입입니다."}
+
+        # Repository의 update 메서드를 호출하여 상태 변경
+        # mysql_task_repository.py의 update 메서드는 status가 COMPLETED일 때 완료 시간을 자동 기록합니다.
+        updated_task = await container.task_repo.update(task_id, {"status": new_status})
+        
+        if updated_task:
+            # (선택 사항) 만약 취소 액션인 경우 로봇에게도 정지 명령을 보내야 한다면 추가
+            if action_type == 'CANCEL' and task.assigned_robot_id:
+                robot = await container.robot_repo.get_by_id(task.assigned_robot_id)
+                if robot:
+                    container.fleet_manager.cancel_robot_task(robot.name)
+
+            return {"status": "success", "message": f"작업이 {new_status} 상태로 변경되었습니다."}
+        else:
+            return {"status": "error", "message": "데이터베이스 업데이트에 실패했습니다."}
+
+    except Exception as e:
+        logger.error(f"Confirm Error: {e}")
+        return {"status": "error", "message": f"서버 로직 처리 중 오류: {str(e)}"}
+    
 # ---------------------------------------------------------
 # 4. 방문 예약 관리 API (Reservations)
 # ---------------------------------------------------------

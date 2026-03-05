@@ -63,7 +63,10 @@
                 <table class="res-table excel-style" id="robot-task-table">
                     <thead>
                         <tr>
-                            <th>업무 유형</th> <th>상세 정보</th> <th>상태</th>    <th>관리</th>    </tr>
+                            <th>업무 유형</th>
+                            <th>상태</th>
+                            <th>관리</th>
+                        </tr>
                     </thead>
                     <tbody id="robot-task-body">
                         <tr><td colspan="4" style="text-align:center; padding:20px;">데이터를 불러오는 중입니다...</td></tr>
@@ -187,7 +190,6 @@
 
                     row.innerHTML = `
                         <td class="col-type">${task.task_type}</td>
-                        <td class="col-details" title='${detailsText}'>${detailsText}</td>
                         <td class="col-status"><span class="status-badge">${task.status}</span></td>
                         <td class="col-action">${actionHtml}</td>
                     `;
