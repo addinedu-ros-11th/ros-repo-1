@@ -15,8 +15,8 @@
   - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, optional obstacle relay input)
 
 ## Namespace / Multi-Robot
-- Default namespace: `robot_1`
-- Launch arg: `robot_ns` (example: `robot_1`, `robot_2`)
+- Default namespace: `robot01`
+- Launch arg: `robot_ns` (example: `robot01`, `robot02`)
 - All robot runtime nodes are launched under `PushRosNamespace(robot_ns)`.
 
 ## Command / Status Contract
@@ -69,22 +69,22 @@ colcon build --symlink-install
 source install/setup.bash
 
 ros2 launch office_robot_bringup bringup.launch.py \
-  robot_ns:=robot_1 robot_id:=1 enable_rosbridge:=true \
-  use_nav2:=true nav2_action_name:=/robot_1/navigate_to_pose
+  robot_ns:=robot01 robot_id:=1 enable_rosbridge:=true \
+  use_nav2:=true nav2_action_name:=/robot01/navigate_to_pose
 ```
 
 ## Smoke Commands
 ```bash
 # ACTION_SEQUENCE (example)
-ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
-'{data: "{\"robot_name\":\"robot_1\",\"type\":\"ACTION_SEQUENCE\",\"task_id\":101,\"payload\":[{\"action\":\"DISPLAY_TEXT\",\"params\":{\"text\":\"hello\"},\"on_success\":\"DONE\"}]}"}'
+ros2 topic pub --once /robot01/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot01\",\"type\":\"ACTION_SEQUENCE\",\"task_id\":101,\"payload\":[{\"action\":\"DISPLAY_TEXT\",\"params\":{\"text\":\"hello\"},\"on_success\":\"DONE\"}]}"}'
 
 # STOP / RESUME
-ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
-'{data: "{\"robot_name\":\"robot_1\",\"type\":\"STOP\",\"task_id\":102}"}'
+ros2 topic pub --once /robot01/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot01\",\"type\":\"STOP\",\"task_id\":102}"}'
 
-ros2 topic pub --once /robot_1/commands std_msgs/msg/String \
-'{data: "{\"robot_name\":\"robot_1\",\"type\":\"RESUME\",\"task_id\":102}"}'
+ros2 topic pub --once /robot01/commands std_msgs/msg/String \
+'{data: "{\"robot_name\":\"robot01\",\"type\":\"RESUME\",\"task_id\":102}"}'
 ```
 
 ## Ops Notes

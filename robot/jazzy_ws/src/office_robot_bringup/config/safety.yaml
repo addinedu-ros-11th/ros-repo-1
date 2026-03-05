@@ -1,6 +1,6 @@
 office_robot_safety:
   ros__parameters:
-    robot_name: robot_1
+    robot_name: robot01
     robot_id: 1
     cmd_topic: commands
     lock_topic: safety_lock

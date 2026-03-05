@@ -1,6 +1,6 @@
 office_robot_executor:
   ros__parameters:
-    robot_name: robot_1
+    robot_name: robot01
     robot_id: 1
     mock_mode: false
     use_nav2: true

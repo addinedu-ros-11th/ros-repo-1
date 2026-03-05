@@ -21,7 +21,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("udp_warn_throttle_sec", default_value="5.0"),
             DeclareLaunchArgument("tx_stats_log_period_sec", default_value="5.0"),
             DeclareLaunchArgument("frame_id_seed", default_value="-1"),
-            DeclareLaunchArgument("ai_link_topic", default_value="/robot_1/ai_link"),
+            DeclareLaunchArgument("ai_link_topic", default_value="/robot01/ai_link"),
             DeclareLaunchArgument("ai_healthcheck_enabled", default_value="true"),
             DeclareLaunchArgument("ai_healthcheck_mode", default_value="tcp_port"),
             DeclareLaunchArgument("ai_healthcheck_port", default_value="50052"),

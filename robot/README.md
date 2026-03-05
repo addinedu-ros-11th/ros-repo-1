@@ -42,7 +42,7 @@ colcon build --symlink-install
 source install/setup.bash
 
 ros2 launch office_robot_bringup bringup.launch.py \
-  robot_ns:=robot_1 robot_id:=1 enable_rosbridge:=true
+  robot_ns:=robot01 robot_id:=1 enable_rosbridge:=true
 ```
 
 ## Related Docs

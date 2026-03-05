@@ -53,8 +53,8 @@ This guide documents the integration contract for the robot runtime in
 cd /home/changpc/ros-repo-1/robot/jazzy_ws
 source install/setup.bash
 ros2 launch office_robot_bringup bringup.launch.py \
-  robot_ns:=robot_1 robot_id:=1 enable_rosbridge:=true \
-  use_nav2:=true nav2_action_name:=/robot_1/navigate_to_pose
+  robot_ns:=robot01 robot_id:=1 enable_rosbridge:=true \
+  use_nav2:=true nav2_action_name:=/robot01/navigate_to_pose
 ```
 
 ## Nav2 Params File Fix Checklist
@@ -104,10 +104,10 @@ journalctl -u robot-udp-bridge.service -n 50 --no-pager
 
 ## Verification Checklist
 ```bash
-ros2 topic info /robot_1/commands -v
-ros2 topic info /robot_1/status -v
-ros2 topic info /robot_1/event -v
-ros2 topic echo /robot_1/ai_link --once
+ros2 topic info /robot01/commands -v
+ros2 topic info /robot01/status -v
+ros2 topic info /robot01/event -v
+ros2 topic echo /robot01/ai_link --once
 ss -lntp | grep 9090
 ```
 

@@ -1,4 +1,4 @@
 [Service]
 EnvironmentFile=-/etc/robot_runtime.env
 ExecStart=
-ExecStart=/bin/bash -lc 'set -e; source /opt/ros/jazzy/setup.bash; source /home/pinky/pinky_pro/install/setup.bash; export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-88}; exec ros2 launch pinky_navigation bringup_launch.xml namespace:=${ROBOT_NS:-robot_1} map:=${MAP_PATH} params_file:=${NAV2_PARAMS_FILE} use_composition:=False'
+ExecStart=/bin/bash -lc 'set -e; source /opt/ros/jazzy/setup.bash; source /home/pinky/pinky_pro/install/setup.bash; export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-88}; exec ros2 launch pinky_navigation bringup_launch.xml namespace:=${ROBOT_NS:-robot01} map:=${MAP_PATH} params_file:=${NAV2_PARAMS_FILE} use_composition:=False'

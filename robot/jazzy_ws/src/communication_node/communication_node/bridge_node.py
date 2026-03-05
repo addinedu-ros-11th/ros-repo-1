@@ -41,7 +41,7 @@ class CommunicationBridgeNode(Node):
         self.declare_parameter("udp_warn_throttle_sec", 5.0)
         self.declare_parameter("tx_stats_log_period_sec", 5.0)
         self.declare_parameter("frame_id_seed", -1)
-        self.declare_parameter("ai_link_topic", "/robot_1/ai_link")
+        self.declare_parameter("ai_link_topic", "/robot01/ai_link")
         self.declare_parameter("ai_healthcheck_enabled", True)
         self.declare_parameter("ai_healthcheck_mode", "tcp_port")  # tcp_port or none
         self.declare_parameter("ai_healthcheck_port", 50052)
