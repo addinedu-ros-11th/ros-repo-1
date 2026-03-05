@@ -24,15 +24,10 @@ class ROSBridgeCommunicator(IRobotCommunicator):
 
         try:
             logger.info(f"Adding robot: {robot_name} -> {host}:{port}")
-            # roslibpy.Ros connects automatically if run() is called, but we prepare it here.
             client = roslibpy.Ros(host=host, port=port)
             self.clients[robot_name] = client
             self.topics[robot_name] = {}
-            
-            # 연결 이벤트 핸들러 등록 (디버깅용)
             client.on_ready(lambda: logger.info(f"[{robot_name}] ROS Bridge Connected!"))
-            # client.on_close is not available in standard roslibpy Ros object
-            
         except Exception as e:
             logger.error(f"Failed to create client for ({robot_name}): {e}")
 
@@ -41,7 +36,7 @@ class ROSBridgeCommunicator(IRobotCommunicator):
             if not client.is_connected:
                 try:
                     logger.info(f"[{name}] Connecting to ROS Bridge...")
-                    client.run(timeout=5) # 타임아웃 설정
+                    client.run(timeout=5)
                 except Exception as e:
                     logger.error(f"[{name}] Connection failed: {e}")
 
@@ -68,17 +63,22 @@ class ROSBridgeCommunicator(IRobotCommunicator):
         
         topic_key = f"{topic_name}_{message_type}"
         if topic_key not in self.topics[robot_name]:
-            logger.debug(f"[{robot_name}] Creating topic handler for {topic_name}")
             self.topics[robot_name][topic_key] = roslibpy.Topic(client, topic_name, message_type)
         return self.topics[robot_name][topic_key]
 
     # --- IRobotCommunicator Implementation ---
-    def send_action_sequence(self, robot_name: str, actions: List[Dict[str, Any]]):
+    def send_action_sequence(self, robot_name: str, actions: List[Dict[str, Any]], task_id: Optional[int] = None):
+        """로봇에게 액션 시퀀스와 Task ID를 전송합니다."""
         topic = self._get_topic(robot_name, f"/{robot_name}/commands", "std_msgs/String")
         if topic:
-            payload = json.dumps({"robot_name": robot_name, "type": "ACTION_SEQUENCE", "payload": actions})
-            topic.publish(roslibpy.Message({"data": payload}))
-            logger.info(f"[{robot_name}] Sent ACTION_SEQUENCE: {len(actions)} actions")
+            payload = {
+                "robot_name": robot_name,
+                "type": "ACTION_SEQUENCE",
+                "payload": actions,
+                "task_id": task_id
+            }
+            topic.publish(roslibpy.Message({"data": json.dumps(payload)}))
+            logger.info(f"[{robot_name}] Sent ACTION_SEQUENCE (Task: {task_id}): {len(actions)} actions")
 
     def publish_obstacle_info(self, robot_name: str, obstacle_data: Dict[str, Any]):
         topic = self._get_topic(robot_name, f"/{robot_name}/obstacles", "std_msgs/String")
@@ -102,25 +102,19 @@ class ROSBridgeCommunicator(IRobotCommunicator):
             return False
 
     def listen_for_robot_status(self, robot_name: str, callback: Any):
-        # 로봇 네임스페이스를 포함한 절대 경로 토픽 구독
         target_topic = f"/{robot_name}/status"
         topic = self._get_topic(robot_name, target_topic, "std_msgs/String")
-        
         if topic:
             def _cb(msg):
                 try:
                     data = json.loads(msg["data"])
                     if "robot_name" not in data: data["robot_name"] = robot_name
-                    # logger.debug(f"[{robot_name}] Received status: {data.get('status')}")
                     callback(data)
                 except Exception as e: 
-                    logger.error(f"[{robot_name}] Error processing status msg: {e}, Raw: {msg}")
-
+                    logger.error(f"[{robot_name}] Error processing status msg: {e}")
             if not topic.is_subscribed:
                 topic.subscribe(_cb)
                 logger.info(f"[{robot_name}] Subscribed to {target_topic}")
-        else:
-            logger.error(f"[{robot_name}] Failed to get topic object for {target_topic}")
 
     def cancel_robot_task(self, robot_name: str):
         topic = self._get_topic(robot_name, f"/{robot_name}/commands", "std_msgs/String")
@@ -143,46 +137,25 @@ class ROSBridge:
     async def start(self):
         loop = asyncio.get_running_loop()
         try:
-            # DB에서 모든 로봇 정보를 가져와서 로드
             robots = await self.fleet_manager.get_all_robot_status()
-            if not robots:
-                logger.warning("No robots found in DB to connect.")
-            
             self.managed_robots = [r.name for r in robots]
-            
             for robot in robots:
-                # 로봇 IP가 DB에 없으면 로컬호스트나 mDNS 이름 사용. 
                 host = getattr(robot, 'ip_address', None) 
                 if not host:
-                    # mDNS 호스트명 사용 (예: robot02.local)
                     host = f"{robot.name}.local"
                     logger.info(f"Robot {robot.name} has no IP in DB. Using mDNS: {host}")
-
-                port = 9090 # Rosbridge Default
-                self.communicator.add_robot(robot.name, host, port)
+                self.communicator.add_robot(robot.name, host, port=9090)
                 self.last_known_status[robot.name] = robot.status.value if hasattr(robot.status, 'value') else robot.status
 
-            # 비동기 콜백 래퍼
             def status_handler(data: Dict[str, Any]):
                 asyncio.run_coroutine_threadsafe(self._handle_status_update(data), loop)
 
-            # 연결 시작 (동기 블로킹 가능성 있으므로 주의)
-            # roslibpy의 connect는 쓰레드를 사용하므로 괜찮음
             self.communicator.connect()
-            
-            # 연결 안정화를 위해 잠시 대기
             await asyncio.sleep(2)
-            
             for name in self.managed_robots:
                 self.communicator.listen_for_robot_status(name, status_handler)
-
-            # 하트비트 모니터링 태스크 시작
             asyncio.create_task(self._monitor_heartbeats())
-            
-            # 메인 루프 유지
-            while True: 
-                await asyncio.sleep(5)
-                
+            while True: await asyncio.sleep(5)
         except Exception as e:
             logger.error(f"ROSBridge critical error: {e}")
         finally:
@@ -194,7 +167,6 @@ class ROSBridge:
             now = time.time()
             for name in self.managed_robots:
                 last_hb = self.last_heartbeat.get(name, 0)
-                # 15초 이상 하트비트 없으면 오프라인 처리
                 if last_hb > 0 and (now - last_hb > 15):
                     if self.last_known_status.get(name) != "OFFLINE":
                         logger.warning(f"[{name}] Heartbeat lost. Marking OFFLINE.")
@@ -204,10 +176,8 @@ class ROSBridge:
     async def _handle_status_update(self, data: Dict[str, Any]):
         robot_id_raw = data.get("robot_id")
         robot_name_raw = data.get("robot_name")
-        
         identifier = robot_name_raw or robot_id_raw
         if not identifier: return
-
         self.last_heartbeat[str(identifier)] = time.time()
         
         status = data.get("status")
@@ -215,21 +185,14 @@ class ROSBridge:
         battery = data.get("battery", 0.0)
         event = data.get("event")
 
-        # Update FleetManager
         updated_robot = await self.fleet_manager.update_robot_status(
-            robot_id=identifier, 
-            status=status, 
-            location=location, 
-            battery=battery
+            robot_id=identifier, status=status, location=location, battery=battery
         )
-        
         if updated_robot:
             self.last_known_status[updated_robot.name] = status
-            
             if event:
                 logger.info(f"[{updated_robot.name}] Event received: {event}")
                 if self.task_manager and updated_robot.current_task_id:
                     await self.task_manager.handle_robot_event(updated_robot.current_task_id, updated_robot.id, event, data)
-            
             if status == "ERROR" and self.log_repo:
                 await self.log_repo.create({"log_level": "ERROR", "event_type": "ROBOT_ERROR", "robot_id": updated_robot.id, "message": f"Robot {updated_robot.name} error: {data.get('reason','')}"})

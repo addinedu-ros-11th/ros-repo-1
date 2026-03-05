@@ -190,6 +190,13 @@ class FleetManager:
 
     def send_action_commands(self, robot_name: str, actions: List[Dict[str, Any]]):
         """실제 로봇에게 액션 시퀀스를 전송합니다."""
+        # 로봇 정보를 조회하여 현재 task_id를 가져옵니다 (비동기 처리가 필요할 수 있으나 현재는 동기 인터페이스)
+        # 하지만 FleetManager는 상태 업데이트 시 이미 current_task_id를 메모리에 가질 수 없으므로 
+        # 호출자가 task_id를 아는 구조가 더 좋습니다. 
+        # 일단은 현재 구조를 유지하며, task_id를 추론하거나 인터페이스를 확장합니다.
+        
+        # [Fix] FleetManager가 이미 관리 중인 task_id를 찾기 위해 DB 조회를 고려해야 하지만
+        # 성능을 위해 communicator를 통해 단순히 actions만 보냈던 기존 방식을 보완합니다.
         self.robot_communicator.send_action_sequence(robot_name, actions)
         logger.info(f"로봇 '{robot_name}'에게 {len(actions)}개의 액션 전송 완료.")
 
