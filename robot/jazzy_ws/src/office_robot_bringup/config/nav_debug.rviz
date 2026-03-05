@@ -1,7 +1,7 @@
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
-  - Class: rviz_common/ToolProperties
+  - Class: rviz_common/Tool Properties
     Name: Tool Properties
   - Class: rviz_common/Views
     Name: Views

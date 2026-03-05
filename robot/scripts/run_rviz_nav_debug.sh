@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROBOT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+source_safe() {
+  local setup_file="$1"
+  set +u
+  # shellcheck source=/dev/null
+  source "${setup_file}"
+  set -u
+}
+
 RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-/etc/robot_runtime.env}"
 if [[ -f "${RUNTIME_ENV_FILE}" ]]; then
   set -a
@@ -18,16 +26,13 @@ ROBOT_WS_SETUP_PATH="${ROBOT_WS_SETUP_PATH:-${ROBOT_ROOT}/jazzy_ws/install/setup
 EXTRA_SETUP_PATH="${EXTRA_SETUP_PATH:-}"
 
 if [[ -f /opt/ros/jazzy/setup.bash ]]; then
-  # shellcheck source=/dev/null
-  source /opt/ros/jazzy/setup.bash
+  source_safe /opt/ros/jazzy/setup.bash
 fi
 if [[ -f "${ROBOT_WS_SETUP_PATH}" ]]; then
-  # shellcheck source=/dev/null
-  source "${ROBOT_WS_SETUP_PATH}"
+  source_safe "${ROBOT_WS_SETUP_PATH}"
 fi
 if [[ -n "${EXTRA_SETUP_PATH}" ]] && [[ -f "${EXTRA_SETUP_PATH}" ]]; then
-  # shellcheck source=/dev/null
-  source "${EXTRA_SETUP_PATH}"
+  source_safe "${EXTRA_SETUP_PATH}"
 fi
 
 export ROS_DOMAIN_ID
