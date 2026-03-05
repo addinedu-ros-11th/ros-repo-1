@@ -148,4 +148,10 @@ sudo systemctl restart pinky-navigation.service
 # PC must join same network and ROS_DOMAIN_ID as robot
 cd /home/changpc/ros-repo-1
 ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
+
+# one-command quick test
+./robot/scripts/test_rviz_debug.sh
 ```
+
+- RViz `Debug Overlay` display uses `/{robot_ns}/debug_markers`
+  and shows latest `status` + `event` text in the scene.

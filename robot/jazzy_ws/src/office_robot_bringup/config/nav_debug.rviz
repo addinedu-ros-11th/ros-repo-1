@@ -101,6 +101,13 @@ Visualization Manager:
       Shaft Radius: 0.02
       Topic:
         Value: goal_pose
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Debug Overlay
+      Namespaces:
+        rviz_debug_overlay: true
+      Topic:
+        Value: debug_markers
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

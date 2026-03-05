@@ -117,9 +117,17 @@ ss -lntp | grep 9090
 cd /home/changpc/ros-repo-1
 ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
 
+# one-command test launcher
+./robot/scripts/test_rviz_debug.sh
+
 # or direct launch
 ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
 ```
+
+- RViz includes `Debug Overlay` display (`debug_markers`) showing:
+  - latest `status` line
+  - latest `event` line
+  - overlay timestamp
 
 ## Compatibility Notes
 - Keep topic/port contract stable; downstream services depend on it.

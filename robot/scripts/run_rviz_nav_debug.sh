@@ -24,6 +24,9 @@ ROBOT_NS="${ROBOT_NS:-robot01}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-88}"
 ROBOT_WS_SETUP_PATH="${ROBOT_WS_SETUP_PATH:-${ROBOT_ROOT}/jazzy_ws/install/setup.bash}"
 EXTRA_SETUP_PATH="${EXTRA_SETUP_PATH:-}"
+OVERLAY_ENABLED="${OVERLAY_ENABLED:-true}"
+OVERLAY_FRAME_ID="${OVERLAY_FRAME_ID:-map}"
+OVERLAY_SCRIPT_PATH="${OVERLAY_SCRIPT_PATH:-${ROBOT_ROOT}/scripts/rviz_status_overlay.py}"
 
 if [[ -f /opt/ros/jazzy/setup.bash ]]; then
   source_safe /opt/ros/jazzy/setup.bash
@@ -42,4 +45,24 @@ if [[ -z "${DISPLAY:-}" ]]; then
 fi
 
 echo "Launching RViz debug from PC (robot_ns=${ROBOT_NS}, ROS_DOMAIN_ID=${ROS_DOMAIN_ID})"
-exec ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:="${ROBOT_NS}" "$@"
+
+overlay_pid=""
+cleanup() {
+  if [[ -n "${overlay_pid}" ]] && kill -0 "${overlay_pid}" 2>/dev/null; then
+    kill "${overlay_pid}" >/dev/null 2>&1 || true
+    wait "${overlay_pid}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if [[ "${OVERLAY_ENABLED,,}" == "true" ]]; then
+  if [[ -f "${OVERLAY_SCRIPT_PATH}" ]]; then
+    python3 "${OVERLAY_SCRIPT_PATH}" --robot-ns "${ROBOT_NS}" --frame-id "${OVERLAY_FRAME_ID}" &
+    overlay_pid="$!"
+    echo "Started RViz overlay helper (pid=${overlay_pid})"
+  else
+    echo "WARN: overlay script not found: ${OVERLAY_SCRIPT_PATH}"
+  fi
+fi
+
+ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:="${ROBOT_NS}" "$@"
