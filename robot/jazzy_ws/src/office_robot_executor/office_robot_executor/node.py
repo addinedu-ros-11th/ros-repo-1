@@ -113,6 +113,7 @@ class OfficeRobotExecutor(Node):
             "nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"
         )
         self.declare_parameter("nav2_lifecycle_get_state_timeout_sec", 0.15)
+        self.declare_parameter("nav2_lifecycle_state_stale_sec", 3.0)
         self.declare_parameter("nav2_lifecycle_reactivate_enabled", True)
         self.declare_parameter(
             "nav2_lifecycle_manager_service_name", "lifecycle_manager_navigation/manage_nodes"
@@ -319,6 +320,12 @@ class OfficeRobotExecutor(Node):
         self.nav2_lifecycle_get_state_timeout_sec = max(
             0.05,
             self.get_parameter("nav2_lifecycle_get_state_timeout_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.nav2_lifecycle_state_stale_sec = max(
+            0.5,
+            self.get_parameter("nav2_lifecycle_state_stale_sec")
             .get_parameter_value()
             .double_value,
         )
@@ -1326,9 +1333,7 @@ class OfficeRobotExecutor(Node):
             if state_snapshot is None:
                 return False, f"nav2_node_state_unknown:{node_name}"
             state_id, state_label, stamp_mono = state_snapshot
-            if (time.monotonic() - stamp_mono) > max(
-                0.2, self.nav2_lifecycle_get_state_timeout_sec * 4.0
-            ):
+            if (time.monotonic() - stamp_mono) > self.nav2_lifecycle_state_stale_sec:
                 return False, f"nav2_node_state_stale:{node_name}:{state_label}"
             if state_id != 3:  # active
                 return False, f"nav2_node_not_active:{node_name}:{state_label}"

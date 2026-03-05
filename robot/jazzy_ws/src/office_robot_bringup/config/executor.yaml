@@ -48,6 +48,7 @@ office_robot_executor:
     nav2_lifecycle_check_enabled: true
     nav2_required_active_nodes: planner_server,controller_server,bt_navigator,behavior_server
     nav2_lifecycle_get_state_timeout_sec: 0.15
+    nav2_lifecycle_state_stale_sec: 3.0
     nav2_lifecycle_reactivate_enabled: true
     nav2_lifecycle_manager_service_name: lifecycle_manager_navigation/manage_nodes
     nav2_lifecycle_manager_wait_sec: 0.5
