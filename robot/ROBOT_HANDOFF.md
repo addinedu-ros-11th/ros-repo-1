@@ -39,6 +39,9 @@
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
     - validates required Nav2 lifecycle nodes are `active` before goal send
       (`planner_server`, `controller_server`, `bt_navigator`, `behavior_server` by default).
+    - startup bootstrap (`startup_localization_bootstrap_*`) runs from idle:
+      - global relocalization + nomotion update + slow in-place spin
+      - periodic readiness re-check before first stable GOTO
     - when blocked, emits `LOCALIZATION_NOT_READY` event with `reason`, `reason_code`, and `operator_hint`.
     - on `localization_not_ready`, recovery cycle can call global relocalization service + in-place spin.
     - if lifecycle is inactive, recovery also requests lifecycle manager `STARTUP`/`RESUME`.
@@ -141,3 +144,17 @@ sudo systemctl restart pinky-navigation.service
 - `robot/scripts/camera_probe.sh`
 - `robot/scripts/nav2_runtime_audit.sh`
 - `robot/scripts/install_pinky_navigation_override.sh`
+- `robot/scripts/run_rviz_nav_debug.sh`
+
+## RViz Debug (On-PC)
+```bash
+# PC must join same network and ROS_DOMAIN_ID as robot
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
+
+# one-command quick test
+./robot/scripts/test_rviz_debug.sh
+```
+
+- RViz `Debug Overlay` display uses `/{robot_ns}/debug_markers`
+  and shows latest `status` + `event` text in the scene.

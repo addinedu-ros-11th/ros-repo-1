@@ -37,6 +37,11 @@ This guide documents the integration contract for the robot runtime in
   - executor validates localization readiness (`amcl_pose` freshness/covariance, optional `map->odom` TF) before Nav2 goal send.
   - executor also gates by Nav2 lifecycle state (`planner/controller/bt/behavior` must be `active`).
   - when blocked, `/{robot_ns}/event` emits `LOCALIZATION_NOT_READY` with machine-readable reason.
+  - startup bootstrap (`startup_localization_bootstrap_*`) runs automatically after boot:
+    - global localization call
+    - no-motion update
+    - in-place spin for scan acquisition
+    - re-check lifecycle/covariance before allowing stable GOTO path
   - if not ready, recovery cycle can run:
     - call `/{robot_ns}/reinitialize_global_localization` (service name configurable)
     - rotate in place (`cmd_vel`) for active scan
@@ -110,6 +115,24 @@ ros2 topic info /robot01/event -v
 ros2 topic echo /robot01/ai_link --once
 ss -lntp | grep 9090
 ```
+
+## RViz Debug (On-PC)
+```bash
+# PC must be on same network / ROS_DOMAIN_ID as robot
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
+
+# one-command test launcher
+./robot/scripts/test_rviz_debug.sh
+
+# or direct launch
+ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
+```
+
+- RViz includes `Debug Overlay` display (`debug_markers`) showing:
+  - latest `status` line
+  - latest `event` line
+  - overlay timestamp
 
 ## Compatibility Notes
 - Keep topic/port contract stable; downstream services depend on it.

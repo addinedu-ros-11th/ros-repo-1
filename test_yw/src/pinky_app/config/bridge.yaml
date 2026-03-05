@@ -1,0 +1,11 @@
+# Pinky Communication & Bridge 파라미터
+/**:
+  ros__parameters:
+    # AI Server (UDP Stream)
+    ai_server_ip: "192.168.1.15"
+    ai_server_port: 54321
+    ai_healthcheck_port: 54321
+    skip_stream_when_ai_dead: false
+
+    # Rosbridge (Websocket)
+    rosbridge_port: 9090
