@@ -449,3 +449,38 @@ async def create_room_reservation(request: RoomReservationRequest):
     except Exception as e:
         logger.error(f"Error saving room reservation: {e}")
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
+    
+# employee_routes.py
+
+@router.get("/reservations/room/my")
+async def get_my_room_reservations(user_id: str = Cookie(None)):
+    if not user_id:
+        return []
+    try:
+        user = await container.user_repo.get_user_by_username(user_id)
+        if not user: return []
+
+        reservations = await container.location_repo.get_room_reservations_by_user(user.user_id)
+        
+        # [중요] 시간/날짜 객체를 문자열로 변환하여 JSON 오류 방지
+        for res in reservations:
+            if res.get('reservation_date'):
+                res['reservation_date'] = str(res['reservation_date'])
+            if res.get('start_time'):
+                res['start_time'] = str(res['start_time'])
+            if res.get('end_time'):
+                res['end_time'] = str(res['end_time'])
+        
+        return reservations
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return []
+
+@router.patch("/reservations/room/{res_id}/cancel")
+async def cancel_room(res_id: int, user_id: str = Cookie(None)):
+    """취소 버튼 클릭 시 상태 업데이트"""
+    user = await container.user_repo.get_user_by_username(user_id)
+    success = await container.location_repo.cancel_room_reservation(res_id, user.user_id)
+    if success:
+        return {"message": "취소 성공"}
+    raise HTTPException(status_code=400, detail="취소 처리 실패")

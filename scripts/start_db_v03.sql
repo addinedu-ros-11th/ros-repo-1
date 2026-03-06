@@ -132,6 +132,44 @@ INSERT INTO `Visitors` (`host_user_id`, `name`, `phone`, `purpose`, `destination
 UNLOCK TABLES;
 
 --
+-- Table structure for table `room_reservation`
+--
+
+DROP TABLE IF EXISTS `room_reservation`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `room_reservation` (
+  `reservation_id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `location_id` int NOT NULL,
+  `reservation_date` date NOT NULL,
+  `start_time` time NOT NULL,
+  `end_time` time NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` enum('PENDING','APPROVED','CHECKED_IN','CANCLE','EXPIRED','VERIFIED') DEFAULT 'PENDING',
+  PRIMARY KEY (`reservation_id`),
+  KEY `user_id` (`user_id`),
+  KEY `location_id` (`location_id`),
+  CONSTRAINT `room_reservation_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `Users` (`user_id`),
+  CONSTRAINT `room_reservation_ibfk_2` FOREIGN KEY (`location_id`) REFERENCES `Locations` (`location_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='회의실 예약 정보';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `room_reservation`
+--
+
+LOCK TABLES `room_reservation` WRITE;
+/*!40000 ALTER TABLE `room_reservation` DISABLE KEYS */;
+INSERT INTO `room_reservation`
+(`user_id`,`location_id`,`reservation_date`,`start_time`,`end_time`,`status`)
+VALUES
+(2,5,CURDATE(),'09:00:00','10:00:00','APPROVED'),
+(3,6,CURDATE(),'14:00:00','15:00:00','PENDING');
+/*!40000 ALTER TABLE `room_reservation` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `Map_Zones`
 --
 

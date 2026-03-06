@@ -87,11 +87,12 @@
                                 <tr>
                                     <th>회의실</th>
                                     <th>예약 날짜</th>
-                                    <th>이용 시간</th> <th>상태</th>
+                                    <th>예약 시간</th>
+                                    <th>종료 시간</th>
+                                    <th>상태/관리</th>
                                 </tr>
                             </thead>
-                            <tbody id="room-table-body">
-                                </tbody>
+                            <tbody id="room-table-body"></tbody>
                         </table>
                     </div>
                 </div>
@@ -537,8 +538,9 @@
             const date = document.getElementById('room-date').value;
             const startTime = document.getElementById('room-start-time').value;
             const endTime = document.getElementById('room-end-time').value;
-            const roomId = document.getElementById('room-location').value;
+            const roomId = document.getElementById('room-location').value; // 이미 가져옴
 
+            // 1. 유효성 검사
             if (!date || !startTime || !endTime || !roomId) {
                 alert("모든 항목(날짜, 시작/종료 시간, 회의실)을 선택해주세요.");
                 return;
@@ -549,16 +551,16 @@
                 return;
             }
 
+            // 2. 데이터 구성 (roomId 변수 재사용 및 정수 변환)
             const payload = {
-                user_id: getCookie('user_id'), // 백엔드 user_id와 매칭
-                location_id: parseInt(document.getElementById('room-location').value),
-                reservation_date: document.getElementById('room-date').value,
-                start_time: document.getElementById('room-start-time').value,
-                end_time: document.getElementById('room-end-time').value
+                user_id: getCookie('user_id'), 
+                location_id: parseInt(roomId),
+                reservation_date: date,
+                start_time: startTime,
+                end_time: endTime
             };
 
             try {
-                // 백엔드에 해당 엔드포인트가 구현되어 있다는 가정 하에 요청
                 const response = await fetch('/api/v1/employee/reservations/room', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -566,18 +568,74 @@
                 });
                 
                 const result = await response.json();
+                
                 if (response.ok) {
                     alert("회의실 예약 신청이 완료되었습니다.");
-                    loadRoomReservations(); // 현황 갱신
+                    // 성공 시 입력 필드 초기화(선택사항)를 원하시면 여기에 추가하세요.
+                    loadRoomReservations(); 
                 } else {
                     alert("예약 실패: " + (result.detail || "오류 발생"));
                 }
             } catch (e) {
+                console.error("Reservation Error:", e);
                 alert("서버 통신 중 오류가 발생했습니다.");
             }
         }
         
-        // 3. 종료 시간 자동 계산 로직
+        //회의실 예약 현황 로드 함수
+        async function loadRoomReservations() {
+            const tbody = document.getElementById('room-table-body');
+            try {
+                const response = await fetch('/api/v1/employee/reservations/room/my');
+                const data = await response.json();
+                tbody.innerHTML = '';
+
+                data.forEach(res => {
+                    const isCancelled = res.status === 'CANCLE';
+                    const row = document.createElement('tr');
+                    
+                    // 시간 포맷 (09:00:00 -> 09:00)
+                    const sTime = res.start_time ? res.start_time.substring(0, 5) : '-';
+                    const eTime = res.end_time ? res.end_time.substring(0, 5) : '-';
+
+                    row.innerHTML = `
+                        <td>${res.room_name}</td>
+                        <td>${res.reservation_date}</td>
+                        <td>${sTime}</td>
+                        <td>${eTime}</td>
+                        <td>
+                            <span class="status-badge ${isCancelled ? 'expired' : 'complete'}">
+                                ${res.status}
+                            </span>
+                            ${!isCancelled ? 
+                                `<button class="btn-cancel" onclick="cancelRoom(${res.reservation_id})" 
+                                        style="margin-left:8px; border-radius:4px; border:1px solid #ff4d4f; color:#ff4d4f; background:#fff; cursor:pointer;">취소</button>` 
+                                : ''}
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">데이터 로드 중 오류가 발생했습니다.</td></tr>';
+            }
+        }
+
+        async function cancelRoom(resId) {
+            if (!confirm("예약을 취소하시겠습니까?")) return;
+            try {
+                const response = await fetch(`/api/v1/employee/reservations/room/${resId}/cancel`, {
+                    method: 'PATCH'
+                });
+                if (response.ok) {
+                    alert("취소 처리가 완료되었습니다.");
+                    loadRoomReservations();
+                }
+            } catch (e) {
+                alert("통신 중 오류 발생");
+            }
+        }
+
+        // 4. 종료 시간 자동 계산 로직
         function calculateEndTime() {
             const startTimeVal = document.getElementById('room-start-time').value;
             const endSelect = document.getElementById('room-end-time');
@@ -773,6 +831,7 @@
                     await loadLocations();
                 }
 
+                await loadRoomReservations();
                 // ⭐ 회의실 날짜/시간 셀렉터 초기화 추가
                 initRoomForm();
 

@@ -173,3 +173,30 @@ class MySQLLocationRepository(BaseRepository):
         """
         # BaseRepository에 정의된 _execute 메서드를 사용하며, 쓰기 작업이므로 is_write=True 설정
         return await self._execute(query, (user_pk, location_id, res_date, start_t, end_t), is_write=True)
+    
+    async def get_room_reservations_by_user(self, user_pk: int):
+        """특정 유저의 회의실 예약 현황 조회 (Locations 조인 및 status 포함)"""
+        query = """
+            SELECT 
+                r.reservation_id,
+                l.name as room_name,
+                r.reservation_date,
+                r.start_time,
+                r.end_time,
+                r.status
+            FROM room_reservation r
+            JOIN Locations l ON r.location_id = l.location_id
+            WHERE r.user_id = %s
+            ORDER BY r.reservation_date DESC, r.start_time DESC
+        """
+        # BaseRepository의 _execute는 결과를 Dict 형태로 반환합니다.
+        return await self._execute(query, (user_pk,))
+
+    async def cancel_room_reservation(self, res_id: int, user_pk: int):
+        """예약 상태를 CANCLE로 변경 (삭제 대신 업데이트)"""
+        query = """
+            UPDATE room_reservation 
+            SET status = 'CANCLE' 
+            WHERE reservation_id = %s AND user_id = %s
+        """
+        return await self._execute(query, (res_id, user_pk), is_write=True)
