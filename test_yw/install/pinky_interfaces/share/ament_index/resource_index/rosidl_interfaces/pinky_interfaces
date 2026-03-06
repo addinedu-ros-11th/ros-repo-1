@@ -1,8 +1,0 @@
-srv/Emotion.idl
-srv/Emotion.srv
-srv/SetBrightness.idl
-srv/SetBrightness.srv
-srv/SetLamp.idl
-srv/SetLamp.srv
-srv/SetLed.idl
-srv/SetLed.srv
