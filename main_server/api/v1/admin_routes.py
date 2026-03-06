@@ -8,6 +8,7 @@ import io
 from fastapi import Response
 import os
 import numpy as np
+import uuid
 
 from main_server.config import config
 from main_server.container import container
@@ -166,17 +167,30 @@ async def get_visitors():
 @router.post("/reservations/decision")
 async def decide_reservation(request_data: Dict[str, Any]):
     try:
-        # 1. ID를 반드시 정수(int)로 변환
         res_id = int(request_data.get("id"))
         status = request_data.get("status")
 
-        # 2. 리포지토리 호출 (status 업데이트)
-        # VisitorRepository는 BaseRepository를 상속하므로 update 메서드 사용 가능
-        await container.visitor_repository.update(res_id, {"status": status})
+        update_data = {"status": status}
+
+        # [추가] 승인(APPROVED)일 경우 QR 코드 생성 로직 실행
+        if status == "APPROVED":
+            # 1. 고유한 식별자 생성 (UUID 활용)
+            # 형식 예시: VISITOR_ID_UUID (v_12_a1b2c3...)
+            unique_token = str(uuid.uuid4())[:13] # 짧고 고유한 토큰 생성
+            qr_payload = f"v_{res_id}_{unique_token}"
+            
+            # 2. 업데이트 데이터에 qr_code 필드 추가
+            update_data["qr_code"] = qr_payload
+
+        # 리포지토리 호출 (status와 필요시 qr_code를 함께 업데이트)
+        await container.visitor_repository.update(res_id, update_data)
         
-        return {"status": "success", "updated_id": res_id}
+        return {
+            "status": "success", 
+            "updated_id": res_id, 
+            "qr_generated": "qr_code" in update_data
+        }
     except Exception as e:
-        # 에러 발생 시 서버 터미널에서 확인 가능하도록 출력
         print(f"!!! DB 업데이트 실패 원인: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
