@@ -550,11 +550,11 @@
             }
 
             const payload = {
-                manager_account: getCookie('user_id'),
-                room_id: parseInt(roomId),
-                date: date,
-                start_time: startTime,
-                end_time: endTime
+                user_id: getCookie('user_id'), // 백엔드 user_id와 매칭
+                location_id: parseInt(document.getElementById('room-location').value),
+                reservation_date: document.getElementById('room-date').value,
+                start_time: document.getElementById('room-start-time').value,
+                end_time: document.getElementById('room-end-time').value
             };
 
             try {

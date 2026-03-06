@@ -162,3 +162,14 @@ class MySQLLocationRepository(BaseRepository):
                 await cur.execute(sql, (zone_id,))
                 await conn.commit()
                 return cur.rowcount > 0
+            
+    #room_reservation을 따로 repository를 만들지않고 추가하였음
+    async def create_room_reservation(self, user_pk: int, location_id: int, res_date: str, start_t: str, end_t: str):
+        """room_reservation 테이블에 예약 기록 저장"""
+        query = """
+            INSERT INTO room_reservation 
+            (user_id, location_id, reservation_date, start_time, end_time)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        # BaseRepository에 정의된 _execute 메서드를 사용하며, 쓰기 작업이므로 is_write=True 설정
+        return await self._execute(query, (user_pk, location_id, res_date, start_t, end_t), is_write=True)

@@ -2,14 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Cookie
 from typing import Dict, Any, Optional
 from main_server.container import container
 from main_server.domains.tasks.schemas import ConfirmTaskRequest
-from datetime import datetime
+from datetime import date, time, datetime
 from pydantic import BaseModel
 import uuid
 import logging
 
 logger = logging.getLogger(__name__)
 
-# 사용자님의 요구사항을 반영한 UserModel (created_at 추가)
 class UserModel(BaseModel):
     user_id: int
     account: str
@@ -18,6 +17,13 @@ class UserModel(BaseModel):
     role: Optional[str] = None
     location_id: Optional[int] = None
     created_at: Optional[datetime] = None # 이제 AttributeError가 나지 않습니다.
+
+class RoomReservationRequest(BaseModel):
+    user_id: str  # 또는 int, 프론트에서 넘어오는 데이터 타입에 맞춤
+    location_id: int
+    reservation_date: date
+    start_time: str # "HH:mm" 형식
+    end_time: str   # "HH:mm" 형식
 
 # ---------------------------------------------------------
 # 1. 직원 권한 확인 및 라우터 설정
@@ -408,3 +414,38 @@ async def get_my_info(user_id: str = Cookie(None)):
         "created_at": formatted_date,
         "role": user.role
     }
+
+# ---------------------------------------------------------
+# 6.회의실 예약
+# ---------------------------------------------------------
+# employee_routes.py
+
+@router.post("/reservations/room")
+async def create_room_reservation(request: RoomReservationRequest):
+    """회의실 예약 데이터 저장"""
+    try:
+        # 1. 쿠키에서 넘어온 계정명(str)으로 유저의 실제 PK(int) 조회
+        user = await container.user_repo.get_user_by_username(request.user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자 정보를 찾을 수 없습니다.")
+        
+        user_pk = user.user_id # DB의 room_reservation.user_id(int)에 들어갈 값
+
+        # 2. location_repo의 새로운 메서드 호출 (execute_query -> _execute 반영된 버전)
+        success = await container.location_repo.create_room_reservation(
+            user_pk=user_pk,
+            location_id=request.location_id,
+            res_date=request.reservation_date,
+            start_t=request.start_time,
+            end_t=request.end_time
+        )
+        
+        # _execute 메서드는 성공 시 보통 rowcount나 lastrowid를 반환합니다.
+        if success is not None:
+            return {"status": "success", "message": "예약이 완료되었습니다."}
+        else:
+            raise HTTPException(status_code=500, detail="DB 저장에 실패했습니다.")
+            
+    except Exception as e:
+        logger.error(f"Error saving room reservation: {e}")
+        raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
