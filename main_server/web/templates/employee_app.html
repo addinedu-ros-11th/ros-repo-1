@@ -11,42 +11,90 @@
 
     <div class="container">
         <div class="panel reservation-panel">
-            <h3>📅 방문 예약 및 현황</h3>
-            <div class="res-form">
-                <input type="text" id="res-name" class="res-input" placeholder="방문객 성함">
-                <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
-                <input type="date" id="res-date" class="res-input">
-                <input type="time" id="res-time" class="res-input"> 
-                <input type="text" id="res-phone" class="res-input" 
-                    placeholder="연락처 (010-0000-0000)" maxlength="13" oninput="autoHyphen(this)">
-                <select id="res-location" class="res-input">
-                    <option value="">목적지 선택 (선택 안함 시 host 위치)</option>
-                </select>
-                <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
+            <div class="tab-menu">
+                <button class="tab-btn active" onclick="switchTab(event, 'visit-section')">방문 예약 및 현황</button>
+                <button class="tab-btn" onclick="switchTab(event, 'room-section')">회의실 예약</button>
             </div>
 
-            <div class="res-list-container">
-                <div class="res-list-header">
-                    <h4>📋 내 예약 현황</h4>
-                    <button type="button" class="btn-refresh" onclick="loadReservationTables()">
-                        조회 🔄
-                    </button>
+            <div id="visit-section" class="tab-content active">
+                <div class="res-form">
+                    <input type="text" id="res-name" class="res-input" placeholder="방문객 성함">
+                    <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
+                    <input type="date" id="res-date" class="res-input">
+                    <input type="time" id="res-time" class="res-input"> 
+                    <input type="text" id="res-phone" class="res-input" 
+                        placeholder="연락처 (010-0000-0000)" maxlength="13" oninput="autoHyphen(this)">
+                    <select id="res-location" class="res-input">
+                        <option value="">목적지 선택 (선택 안함 시 host 위치)</option>
+                    </select>
+                    <button class="btn-submit" onclick="submitReservation()">방문 예약 등록</button>
                 </div>
-                <div class="table-wrapper">
-                    <table class="res-table excel-style">
-                        <thead>
-                            <tr>
-                                <th>방문객</th>
-                                <th>연락처</th> 
-                                <th>방문 목적</th>
-                                <th>방문 날짜</th>
-                                <th>방문 시간</th>
-                                <th>상태</th>
-                            </tr>
-                        </thead>
-                        <tbody id="res-table-body">
+
+                <div class="res-list-container">
+                    <div class="res-list-header">
+                        <h4>📋 내 예약 현황</h4>
+                        <button type="button" class="btn-refresh" onclick="loadReservationTables()">
+                            조회 🔄
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="res-table excel-style">
+                            <thead>
+                                <tr>
+                                    <th>방문객</th>
+                                    <th>연락처</th> 
+                                    <th>방문 목적</th>
+                                    <th>방문 날짜</th>
+                                    <th>방문 시간</th>
+                                    <th>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody id="res-table-body">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="room-section" class="tab-content">
+                <div class="res-form">
+                    <input type="date" id="room-date" class="res-input">
+                    <input type="time" id="room-time" class="res-input">
+                    <select id="room-location" class="res-input">
+                        <option value="">회의실 선택</option>
+                        <option value="room-a">제1 회의실 (대)</option>
+                        <option value="room-b">제2 회의실 (중)</option>
+                        <option value="room-c">소회의실 1</option>
+                    </select>
+                    <button class="btn-submit" onclick="submitRoomReservation()">회의실 예약 등록</button>
+                </div>
+
+                <div class="res-list-container">
+                    <div class="res-list-header">
+                        <h4>📋 내 회의실 예약 현황</h4>
+                        <button type="button" class="btn-refresh" onclick="loadRoomReservations()">
+                            조회 🔄
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="res-table excel-style">
+                            <thead>
+                                <tr>
+                                    <th>회의실</th>
+                                    <th>예약 날짜</th>
+                                    <th>시작 시간</th>
+                                    <th>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody id="room-table-body">
+                                <tr>
+                                    <td colspan="4" style="text-align:center; padding:20px; color:#999;">
+                                        조회 버튼을 눌러 현황을 확인하세요.
+                                    </td>
+                                </tr>
                             </tbody>
-                    </table>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -110,6 +158,20 @@
     </div>
 
     <script>
+        function switchTab(event, sectionId) {
+            // 1. 모든 컨텐츠 숨기기
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+
+            // 2. 모든 버튼 비활성화
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            // 3. 선택된 컨텐츠와 버튼 활성화
+            document.getElementById(sectionId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
         // 1. 모든 함수가 공통으로 사용할 쿠키 함수 (맨 위에 딱 한 번만!)
         function getCookie(name) {
             const value = `; ${document.cookie}`;
@@ -447,6 +509,47 @@
             }
         }
 
+        // # ---------------------------------------------------------
+        // # 3.5 회의실 예약
+        // # ---------------------------------------------------------
+        
+        async function submitRoomReservation() {
+            const date = document.getElementById('room-date').value;
+            const time = document.getElementById('room-time').value;
+            const room = document.getElementById('room-location').value;
+
+            if (!date || !time || !room) {
+                alert("날짜, 시간, 회의실을 모두 선택해주세요.");
+                return;
+            }
+
+            const payload = {
+                date: date,
+                time: time,
+                room_id: room
+            };
+
+            console.log("회의실 예약 시도:", payload);
+            // 여기에 fetch를 이용한 서버 전송 로직을 작성하세요.
+            alert("회의실 예약 신청이 완료되었습니다.");
+        }
+
+        // 회의실 예약 현황 로드 함수 (예시)
+        async function loadRoomReservations() {
+            console.log("회의실 현황 불러오는 중...");
+            const tbody = document.getElementById('room-table-body');
+            
+            // 예시 데이터 삽입 (나중에 fetch 결과로 대체)
+            tbody.innerHTML = `
+                <tr>
+                    <td>제1 회의실 (대)</td>
+                    <td>2024-05-20</td>
+                    <td>14:00</td>
+                    <td><span class="status-badge">승인완료</span></td>
+                </tr>
+            `;
+        }
+        
         // # ---------------------------------------------------------
         // # 4. AI Assistant 통신 및 알림 (정리된 버전)
         // # ---------------------------------------------------------

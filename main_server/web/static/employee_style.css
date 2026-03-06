@@ -197,8 +197,10 @@ body, html {
 
 /* 상태 배지 디자인 */
 .status-badge {
-    padding: 4px 8px;
-    border-radius: 12px;
+    background-color: #e8f0fe;
+    color: var(--ai-blue);
+    padding: 2px 8px;
+    border-radius: 4px;
     font-size: 0.8rem;
     font-weight: bold;
 }
@@ -339,4 +341,55 @@ body, html {
 #chat-messages {
     flex: 1;              /* 입력창을 제외한 영역을 꽉 채움 */
     overflow-y: auto;     /* 내용이 많아지면 내부 스크롤 발생 */
+}
+
+/* # ---------------------------------------------------------
+# 8. 미팅룸 예약을 위한 추가
+# --------------------------------------------------------- */
+/* 탭 메뉴 스타일 */
+.tab-menu {
+    display: flex;
+    gap: 10px;
+    border-bottom: 2px solid #f1f3f4;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    padding: 10px 15px;
+    border: none;
+    background: none;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #5f6368;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--ai-blue);
+}
+
+.tab-btn.active {
+    color: var(--ai-blue);
+    border-bottom: 3px solid var(--ai-blue);
+}
+
+/* 컨텐츠 표시 제어 */
+.tab-content {
+    display: none; /* 기본적으로 숨김 */
+}
+
+.tab-content.active {
+    display: block; /* active 클래스가 있으면 표시 */
+}
+
+/* 공백 화면 스타일 */
+.empty-state {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 200px;
+    color: #999;
+    font-style: italic;
 }
