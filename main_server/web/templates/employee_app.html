@@ -59,13 +59,17 @@
             <div id="room-section" class="tab-content">
                 <div class="res-form">
                     <input type="date" id="room-date" class="res-input">
-                    <div style="display: flex; gap: 10px;">
-                        <input type="time" id="room-start-time" class="res-input" placeholder="시작 시간">
-                        <span style="align-self: center;">~</span>
-                        <input type="time" id="room-end-time" class="res-input" placeholder="종료 시간">
-                    </div>
+                    
+                    <select id="room-start-time" class="res-input" onchange="calculateEndTime()">
+                        <option value="">시작 시간 선택</option>
+                        </select>
+                    
+                    <select id="room-end-time" class="res-input">
+                        <option value="">종료 시간 (시작 시간 먼저 선택)</option>
+                    </select>
+
                     <select id="room-location" class="res-input">
-                        <option value="">회의실 선택 중...</option>
+                        <option value="">회의실 선택</option>
                     </select>
                     <button class="btn-submit" onclick="submitRoomReservation()">회의실 예약 등록</button>
                 </div>
@@ -514,31 +518,17 @@
             if (!select) return;
 
             try {
-                // employee_routes.py의 @router.get("/locations") 엔드포인트 활용
                 const response = await fetch('/api/v1/employee/locations');
                 const locations = await response.json();
                 
-                select.innerHTML = '<option value="">회의실 선택</option>';
-
-                // 타입이 'ROOM'이거나 이름에 '회의실'이 포함된 위치만 필터링 (필요 시 조정)
-                const rooms = locations.filter(loc => 
-                    loc.type === 'CONFERENCE' || loc.name.includes('회의실')
-                );
-
-                if (rooms.length === 0) {
-                    select.innerHTML = '<option value="">가용한 회의실이 없습니다.</option>';
-                    return;
-                }
-
-                rooms.forEach(room => {
+                locations.forEach(loc => {
                     const opt = document.createElement('option');
-                    opt.value = room.location_id;
-                    opt.textContent = `${room.name}`;
+                    opt.value = loc.location_id;
+                    opt.textContent = `${loc.name} (${loc.type})`;
                     select.appendChild(opt);
                 });
             } catch (e) {
-                console.error("회의실 목록 로드 실패:", e);
-                select.innerHTML = '<option value="">목록 로드 오류</option>';
+                console.error("목적지 목록 로드 실패:", e);
             }
         }
 
@@ -587,6 +577,37 @@
             }
         }
         
+        // 3. 종료 시간 자동 계산 로직
+        function calculateEndTime() {
+            const startTimeVal = document.getElementById('room-start-time').value;
+            const endSelect = document.getElementById('room-end-time');
+            
+            if (!startTimeVal) {
+                endSelect.innerHTML = '<option value="">종료 시간 (시작 시간 먼저 선택)</option>';
+                return;
+            }
+
+            endSelect.innerHTML = ''; 
+
+            const [hours, minutes] = startTimeVal.split(':').map(Number);
+            const startObj = new Date();
+            startObj.setHours(hours, minutes, 0);
+
+            // 요청 사항: 30분, 1시간 후 옵션
+            const durations = [30, 60]; 
+            
+            durations.forEach(min => {
+                const endObj = new Date(startObj.getTime() + min * 60000);
+                const h = String(endObj.getHours()).padStart(2, '0');
+                const m = String(endObj.getMinutes()).padStart(2, '0');
+                const timeStr = `${h}:${m}`;
+                
+                const opt = document.createElement('option');
+                opt.value = timeStr;
+                opt.textContent = `${timeStr} (${min}분 이용)`;
+                endSelect.appendChild(opt);
+            });
+        }
         // # ---------------------------------------------------------
         // # 4. AI Assistant 통신 및 알림 (정리된 버전)
         // # ---------------------------------------------------------
@@ -745,8 +766,15 @@
                     await loadLocations();
                 }
 
+                // 회의실 리스트 로드
+                if (typeof loadRoomOptions === 'function') {
+                    await loadRoomOptions();
+                } else if (typeof loadLocations === 'function') {
+                    await loadLocations();
+                }
+
                 // ⭐ 회의실 날짜/시간 셀렉터 초기화 추가
-                initRoomSelectors();
+                initRoomForm();
 
                 console.log("✅ 모든 데이터 로드 완료");
 
@@ -757,34 +785,33 @@
 
 
         // 회의실 날짜 / 시간 설정
-        function initRoomSelectors() {
+        function initRoomForm() {
+            // 1. 과거 날짜 선택 방지 로직
             const dateInput = document.getElementById('room-date');
-            const today = new Date().toISOString().split('T')[0];
+            const now = new Date();
+            const tzOffset = now.getTimezoneOffset() * 60000;
+            const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
+            dateInput.min = localISODate; // 오늘 이전 날짜는 클릭 불가
+            dateInput.value = localISODate; // 기본값을 오늘로 설정
 
-            if (dateInput) {
-                // 과거 날짜 선택 방지
-                dateInput.min = today;
-                dateInput.value = today;
-            }
-
-            const timeInput = document.getElementById('room-time');
-
-            if (timeInput) {
-                timeInput.addEventListener('blur', function () {
-                    const [hours] = this.value.split(':');
-                    const h = parseInt(hours);
-
-                    if (h < 1 || h > 12) {
-                        alert("시간은 01시에서 12시 사이로 선택해주세요.");
-                        this.value = "09:00";
-                    }
-                });
+            // 2. 시작 시간 30분 단위 옵션 생성 (09:00 ~ 18:00)
+            const startSelect = document.getElementById('room-start-time');
+            startSelect.innerHTML = '<option value="">시작 시간 선택</option>';
+            
+            for (let h = 9; h <= 18; h++) {
+                for (let m of ['00', '30']) {
+                    const time = `${String(h).padStart(2, '0')}:${m}`;
+                    const opt = document.createElement('option');
+                    opt.value = time;
+                    opt.textContent = time;
+                    startSelect.appendChild(opt);
+                }
             }
         }
 
 
         // 페이지 로드 시 initPage 실행
-        document.addEventListener('DOMContentLoaded', initPage);
+        document.addEventListener('DOMContentLoaded', initPage, function() {initRoomForm();});
     </script>
 </body>
 </html>
