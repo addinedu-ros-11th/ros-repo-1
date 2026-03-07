@@ -52,6 +52,14 @@ office_robot_executor:
     startup_localization_bootstrap_delay_sec: 2.0
     startup_localization_bootstrap_recheck_sec: 6.0
     startup_localization_bootstrap_max_cycles: 3
+    startup_initial_pose_enabled: false
+    startup_initial_pose_topic: initialpose
+    startup_initial_pose_delay_sec: 1.0
+    startup_initial_pose_x: 0.0
+    startup_initial_pose_y: 0.0
+    startup_initial_pose_yaw: 0.0
+    startup_initial_pose_covariance_xy: 0.25
+    startup_initial_pose_covariance_yaw: 0.5
     nav2_lifecycle_check_enabled: true
     nav2_required_active_nodes: planner_server,controller_server,bt_navigator,behavior_server
     nav2_lifecycle_get_state_timeout_sec: 0.15
