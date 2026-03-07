@@ -99,7 +99,7 @@ async def process_command(request: Dict[str, Any]):
             task_data = {
                 "requester_id": requester_pk,
                 "task_type": "MANUAL_MOVE",
-                "priority": "HIGH",
+                "priority": 1,
                 "status": "ASSIGNED",
                 "assigned_robot_id": robot.id,
                 "destination_id": loc['location_id'],
@@ -191,7 +191,7 @@ async def process_command(request: Dict[str, Any]):
             task_data = {
                 "requester_id": requester_pk,
                 "task_type": "GUEST_CHECK",
-                "priority": "HIGH",
+                "priority": 1,
                 "status": "ASSIGNED",
                 "assigned_robot_id": robot.id,
                 "details": {"purpose": "VISITOR_SCAN", "reason": "manual_test"}
