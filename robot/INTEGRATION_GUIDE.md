@@ -45,6 +45,10 @@ This guide documents the integration contract for the robot runtime in
     - no-motion update
     - in-place spin for scan acquisition
     - re-check lifecycle/covariance before allowing stable GOTO path
+  - if the robot always starts from the same dock/mark, fixed startup pose can be enabled:
+    - `startup_initial_pose_enabled=true`
+    - `startup_initial_pose_{x,y,yaw}` set to the known map pose
+    - executor publishes `/{robot_ns}/initialpose` once and emits `STARTUP_INITIAL_POSE_PUBLISHED`
   - if not ready, recovery cycle can run:
     - call `/{robot_ns}/reinitialize_global_localization` (service name configurable)
     - rotate in place (`cmd_vel`) for active scan
@@ -151,3 +155,14 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
   - `obstacle_distance`
   - `obstacle_box`
   - `obstacle_reason`
+- Battery observability keys:
+  - `battery_valid`
+  - `battery_source_topic`
+  - `battery_error` (`battery_topic_unavailable` when no battery message has been received)
+
+## Localization Recovery
+- If RViz `Global Status` is `Error` and `map->odom` is missing:
+  - check `/{robot_ns}/amcl_pose`
+  - if `amcl_pose` is absent, use RViz `2D Pose Estimate` on the robot's real pose
+  - AMCL subscribes to `/{robot_ns}/initialpose`
+  - after pose is accepted, `map->odom` should appear and RViz should recover

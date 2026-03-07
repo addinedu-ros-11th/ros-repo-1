@@ -47,6 +47,11 @@
     - `obstacle_distance`
     - `obstacle_box`
     - `obstacle_reason`
+  - Battery fields:
+    - `battery`
+    - `battery_valid`
+    - `battery_source_topic`
+    - `battery_error` (`battery_topic_unavailable` if `/battery/present` has no publisher/data)
   - Nav2 recovery behavior (`office_robot_executor`):
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
     - validates required Nav2 lifecycle nodes are `active` before goal send
@@ -54,6 +59,8 @@
     - startup bootstrap (`startup_localization_bootstrap_*`) runs from idle:
       - global relocalization + nomotion update + slow in-place spin
       - periodic readiness re-check before first stable GOTO
+    - optional fixed startup pose (`startup_initial_pose_*`) can publish one-shot
+      `/{robot_ns}/initialpose` when the robot always starts from the same known map pose.
     - when blocked, emits `LOCALIZATION_NOT_READY` event with `reason`, `reason_code`, and `operator_hint`.
     - on `localization_not_ready`, recovery cycle can call global relocalization service + in-place spin.
     - if lifecycle is inactive, recovery also requests lifecycle manager `STARTUP`/`RESUME`.
@@ -78,6 +85,9 @@
 - `amcl_pose_topic` (default `amcl_pose`)
 - `localization_recovery_enabled` (default `true`)
 - `localization_recovery_max_cycles` (default `2`)
+- `startup_initial_pose_enabled` (default `false`)
+- `startup_initial_pose_topic` (default `initialpose`)
+- `startup_initial_pose_x/y/yaw` (default `0.0`)
 
 ## Standard Run
 ```bash
@@ -120,6 +130,11 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
   - Upstream bbox (`box.x/y/width/height`) is preserved into `safety_state` and `/status`.
   - Full distance-aware yield can be layered later if upstream starts sending `distance_m`
     or if robot-side box + LiDAR fusion is added.
+- Localization:
+  - If `amcl_pose_missing` persists after global relocalization + spin, the operator must set
+    `2D Pose Estimate` once in RViz unless fixed startup pose is enabled.
+  - `AMCL cannot publish a pose or update the transform. Please set the initial pose...`
+    means `map->odom` will stay missing and RViz `Global Status` will remain `Error`.
 - Video stream tuning defaults (battery/network friendly):
   - `max_fps=8.0`, `resize_width=640`, `resize_height=360`, `jpeg_quality=70`
 - If AI vision is down:

@@ -62,6 +62,14 @@ def generate_launch_description() -> LaunchDescription:
                 "amcl_nomotion_update_service_name", default_value="request_nomotion_update"
             ),
             DeclareLaunchArgument("amcl_nomotion_wait_sec", default_value="0.3"),
+            DeclareLaunchArgument("startup_initial_pose_enabled", default_value="false"),
+            DeclareLaunchArgument("startup_initial_pose_topic", default_value="initialpose"),
+            DeclareLaunchArgument("startup_initial_pose_delay_sec", default_value="1.0"),
+            DeclareLaunchArgument("startup_initial_pose_x", default_value="0.0"),
+            DeclareLaunchArgument("startup_initial_pose_y", default_value="0.0"),
+            DeclareLaunchArgument("startup_initial_pose_yaw", default_value="0.0"),
+            DeclareLaunchArgument("startup_initial_pose_covariance_xy", default_value="0.25"),
+            DeclareLaunchArgument("startup_initial_pose_covariance_yaw", default_value="0.5"),
             DeclareLaunchArgument("nav2_lifecycle_check_enabled", default_value="true"),
             DeclareLaunchArgument(
                 "nav2_required_active_nodes",
@@ -173,6 +181,26 @@ def generate_launch_description() -> LaunchDescription:
                             "amcl_nomotion_update_service_name"
                         ),
                         "amcl_nomotion_wait_sec": LaunchConfiguration("amcl_nomotion_wait_sec"),
+                        "startup_initial_pose_enabled": LaunchConfiguration(
+                            "startup_initial_pose_enabled"
+                        ),
+                        "startup_initial_pose_topic": LaunchConfiguration(
+                            "startup_initial_pose_topic"
+                        ),
+                        "startup_initial_pose_delay_sec": LaunchConfiguration(
+                            "startup_initial_pose_delay_sec"
+                        ),
+                        "startup_initial_pose_x": LaunchConfiguration("startup_initial_pose_x"),
+                        "startup_initial_pose_y": LaunchConfiguration("startup_initial_pose_y"),
+                        "startup_initial_pose_yaw": LaunchConfiguration(
+                            "startup_initial_pose_yaw"
+                        ),
+                        "startup_initial_pose_covariance_xy": LaunchConfiguration(
+                            "startup_initial_pose_covariance_xy"
+                        ),
+                        "startup_initial_pose_covariance_yaw": LaunchConfiguration(
+                            "startup_initial_pose_covariance_yaw"
+                        ),
                         "nav2_lifecycle_check_enabled": LaunchConfiguration(
                             "nav2_lifecycle_check_enabled"
                         ),

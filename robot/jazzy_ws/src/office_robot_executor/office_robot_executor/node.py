@@ -119,6 +119,14 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("startup_localization_bootstrap_delay_sec", 2.0)
         self.declare_parameter("startup_localization_bootstrap_recheck_sec", 6.0)
         self.declare_parameter("startup_localization_bootstrap_max_cycles", 3)
+        self.declare_parameter("startup_initial_pose_enabled", False)
+        self.declare_parameter("startup_initial_pose_topic", "initialpose")
+        self.declare_parameter("startup_initial_pose_delay_sec", 1.0)
+        self.declare_parameter("startup_initial_pose_x", 0.0)
+        self.declare_parameter("startup_initial_pose_y", 0.0)
+        self.declare_parameter("startup_initial_pose_yaw", 0.0)
+        self.declare_parameter("startup_initial_pose_covariance_xy", 0.25)
+        self.declare_parameter("startup_initial_pose_covariance_yaw", 0.5)
         self.declare_parameter("nav2_lifecycle_check_enabled", True)
         self.declare_parameter(
             "nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"
@@ -349,6 +357,45 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .integer_value,
         )
+        self.startup_initial_pose_enabled = (
+            self.get_parameter("startup_initial_pose_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.startup_initial_pose_topic = (
+            self.get_parameter("startup_initial_pose_topic")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "initialpose"
+        )
+        self.startup_initial_pose_delay_sec = max(
+            0.0,
+            self.get_parameter("startup_initial_pose_delay_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.startup_initial_pose_x = (
+            self.get_parameter("startup_initial_pose_x").get_parameter_value().double_value
+        )
+        self.startup_initial_pose_y = (
+            self.get_parameter("startup_initial_pose_y").get_parameter_value().double_value
+        )
+        self.startup_initial_pose_yaw = (
+            self.get_parameter("startup_initial_pose_yaw").get_parameter_value().double_value
+        )
+        self.startup_initial_pose_covariance_xy = max(
+            1e-6,
+            self.get_parameter("startup_initial_pose_covariance_xy")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.startup_initial_pose_covariance_yaw = max(
+            1e-6,
+            self.get_parameter("startup_initial_pose_covariance_yaw")
+            .get_parameter_value()
+            .double_value,
+        )
         self.nav2_lifecycle_check_enabled = (
             self.get_parameter("nav2_lifecycle_check_enabled")
             .get_parameter_value()
@@ -496,6 +543,10 @@ class OfficeRobotExecutor(Node):
         self._startup_localization_bootstrap_next_mono = (
             time.monotonic() + self.startup_localization_bootstrap_delay_sec
         )
+        self._startup_initial_pose_sent = False
+        self._startup_initial_pose_next_mono = (
+            time.monotonic() + self.startup_initial_pose_delay_sec
+        )
         self._latest_qr_image: Optional[bytes] = None
         self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
@@ -541,6 +592,9 @@ class OfficeRobotExecutor(Node):
         self.event_pub = self.create_publisher(String, "event", 10)
         self.display_pub = self.create_publisher(String, self.display_topic, 10)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
+        self.initial_pose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, self.startup_initial_pose_topic, 10
+        )
         self.amcl_pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, self.amcl_pose_topic, self._on_amcl_pose, 10
         )
@@ -1845,6 +1899,19 @@ class OfficeRobotExecutor(Node):
         if self._current_action is not None or self._action_queue:
             return
 
+        if (
+            self.startup_initial_pose_enabled
+            and not self._startup_initial_pose_sent
+            and now >= self._startup_initial_pose_next_mono
+            and self._last_amcl_pose_mono <= 0.0
+        ):
+            self._publish_startup_initial_pose()
+            self._startup_initial_pose_sent = True
+            self._startup_localization_bootstrap_next_mono = (
+                now + self.startup_localization_bootstrap_recheck_sec
+            )
+            return
+
         ready, reason = self._is_localization_ready()
         if ready:
             self._startup_localization_bootstrap_done = True
@@ -1886,6 +1953,40 @@ class OfficeRobotExecutor(Node):
             self._start_localization_spin(
                 cycle, bootstrap_reason, allow_without_action=True
             )
+
+    def _publish_startup_initial_pose(self) -> None:
+        message = PoseWithCovarianceStamped()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = self.frame_id or "map"
+        message.pose.pose.position.x = float(self.startup_initial_pose_x)
+        message.pose.pose.position.y = float(self.startup_initial_pose_y)
+        message.pose.pose.position.z = 0.0
+        half_yaw = float(self.startup_initial_pose_yaw) * 0.5
+        message.pose.pose.orientation.z = math.sin(half_yaw)
+        message.pose.pose.orientation.w = math.cos(half_yaw)
+        covariance = [0.0] * 36
+        covariance[0] = float(self.startup_initial_pose_covariance_xy)
+        covariance[7] = float(self.startup_initial_pose_covariance_xy)
+        covariance[35] = float(self.startup_initial_pose_covariance_yaw)
+        message.pose.covariance = covariance
+
+        for _ in range(3):
+            self.initial_pose_pub.publish(message)
+
+        payload = {
+            "x": float(self.startup_initial_pose_x),
+            "y": float(self.startup_initial_pose_y),
+            "yaw": float(self.startup_initial_pose_yaw),
+            "topic": self.startup_initial_pose_topic,
+            "source": "startup_initial_pose",
+        }
+        self._publish_event("STARTUP_INITIAL_POSE_PUBLISHED", self._task_id_payload(payload))
+        self.get_logger().warn(
+            "Published startup initial pose "
+            f"(x={self.startup_initial_pose_x:.3f}, y={self.startup_initial_pose_y:.3f}, "
+            f"yaw={self.startup_initial_pose_yaw:.3f}, topic={self.startup_initial_pose_topic})."
+        )
+        self._call_nomotion_update(0, "startup_initial_pose")
 
     def _on_nav_goal_feedback(self, feedback_msg: Any) -> None:
         feedback = getattr(feedback_msg, "feedback", None)
@@ -2674,8 +2775,12 @@ class OfficeRobotExecutor(Node):
             "safety_lock": bool(self._safety_locked),
             "location": [float(self.location[0]), float(self.location[1])],
             "battery": float(self.battery),
+            "battery_valid": bool(self._battery_received),
+            "battery_source_topic": self.battery_topic,
             **extra,
         }
+        if not self._battery_received:
+            data["battery_error"] = "battery_topic_unavailable"
         data.update(self._build_safety_status_fields())
         if self.include_ai_link_in_status and self._ai_link_alive is not None:
             data["ai_link_alive"] = bool(self._ai_link_alive)
