@@ -9,6 +9,8 @@ from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage
@@ -83,6 +85,14 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("nav2_abort_success_error_codes", "103,106,208")
         self.declare_parameter("nav2_retry_attempts", 1)
         self.declare_parameter("nav2_retry_delay_sec", 1.0)
+        self.declare_parameter("forward_first_enabled", True)
+        self.declare_parameter("forward_first_max_sec", 5.0)
+        self.declare_parameter("forward_first_stuck_timeout_sec", 2.5)
+        self.declare_parameter("forward_first_min_progress_m", 0.08)
+        self.declare_parameter("forward_first_controller_node", "controller_server")
+        self.declare_parameter(
+            "forward_first_allow_reversing_param", "FollowPath.allow_reversing"
+        )
         self.declare_parameter("localization_required", True)
         self.declare_parameter("amcl_pose_topic", "amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
@@ -198,6 +208,36 @@ class OfficeRobotExecutor(Node):
         )
         self.nav2_retry_delay_sec = max(
             0.2, self.get_parameter("nav2_retry_delay_sec").get_parameter_value().double_value
+        )
+        self.forward_first_enabled = (
+            self.get_parameter("forward_first_enabled").get_parameter_value().bool_value
+        )
+        self.forward_first_max_sec = max(
+            1.0, self.get_parameter("forward_first_max_sec").get_parameter_value().double_value
+        )
+        self.forward_first_stuck_timeout_sec = max(
+            0.5,
+            self.get_parameter("forward_first_stuck_timeout_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.forward_first_min_progress_m = max(
+            0.01,
+            self.get_parameter("forward_first_min_progress_m").get_parameter_value().double_value,
+        )
+        self.forward_first_controller_node = (
+            self.get_parameter("forward_first_controller_node")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "controller_server"
+        )
+        self.forward_first_allow_reversing_param = (
+            self.get_parameter("forward_first_allow_reversing_param")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "FollowPath.allow_reversing"
         )
         self.localization_required = (
             self.get_parameter("localization_required").get_parameter_value().bool_value
@@ -460,6 +500,21 @@ class OfficeRobotExecutor(Node):
         self._nav2_lifecycle_states: Dict[str, Tuple[int, str, float]] = {}
         self._nav2_lifecycle_pending: Dict[str, bool] = {}
         self._nav2_lifecycle_poll_timer = None
+        self._forward_first_started_mono = 0.0
+        self._forward_first_last_progress_mono = 0.0
+        self._forward_first_best_distance: Optional[float] = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+        self._forward_first_last_applied: Optional[bool] = None
+        self._forward_first_pending_request = False
+        self._forward_first_pending_target: Optional[bool] = None
+        self._forward_first_deferred_target: Optional[bool] = None
+        self._forward_first_deferred_reason = ""
+        self._forward_first_controller_full_name = self._resolve_full_node_name(
+            self.forward_first_controller_node
+        )
+        self._forward_first_param_client = None
         self._qr_detector = (
             cv2.QRCodeDetector()
             if (
@@ -521,6 +576,10 @@ class OfficeRobotExecutor(Node):
                 self.get_logger().error("nav2_msgs not available; real GOTO execution disabled.")
             else:
                 self.nav_client = ActionClient(self, NavigateToPose, self.nav2_action_name)
+                if self.forward_first_enabled:
+                    self._forward_first_param_client = AsyncParameterClient(
+                        self, self._forward_first_controller_full_name
+                    )
         self.tf_buffer = None
         self.tf_listener = None
         if Buffer is not None and TransformListener is not None:
@@ -575,6 +634,11 @@ class OfficeRobotExecutor(Node):
             f"nav_retry_attempts={self.nav2_retry_attempts}, localization_required={self.localization_required}, "
             f"amcl_pose_topic={self.amcl_pose_topic}, amcl_stale_check={self.amcl_pose_stale_check_enabled}, "
             f"allow_degraded_cov={self.localization_allow_degraded_covariance}, "
+            f"forward_first_enabled={self.forward_first_enabled}, "
+            f"forward_first_max_sec={self.forward_first_max_sec}, "
+            f"forward_first_stuck_timeout_sec={self.forward_first_stuck_timeout_sec}, "
+            f"forward_first_min_progress_m={self.forward_first_min_progress_m}, "
+            f"forward_first_controller={self._forward_first_controller_full_name}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
             f"recovery_cycles={self.localization_recovery_max_cycles}, "
             f"lifecycle_check_enabled={self.nav2_lifecycle_check_enabled}, "
@@ -1083,6 +1147,7 @@ class OfficeRobotExecutor(Node):
         self._cancel_reason = None
         self._goal_started_at = time.time()
         self._goal_response_started_at = self._goal_started_at
+        self._begin_forward_first_mode()
         self.get_logger().info(
             f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
             f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), send_ts={send_ts:.3f})"
@@ -1735,6 +1800,7 @@ class OfficeRobotExecutor(Node):
             snapshot["current_y"] = float(pose.position.y)
 
         self._last_nav_feedback = snapshot
+        self._handle_forward_first_feedback(snapshot)
         now = time.time()
         if (now - self._last_feedback_log_at) < self.nav2_feedback_log_period_sec:
             return
@@ -2020,10 +2086,189 @@ class OfficeRobotExecutor(Node):
         )
 
     def _clear_nav_goal_context(self) -> None:
+        self._end_forward_first_mode("clear_nav_goal_context")
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._goal_response_started_at = None
+
+    def _begin_forward_first_mode(self) -> None:
+        if not self.forward_first_enabled:
+            return
+        if self._forward_first_param_client is None:
+            return
+
+        now_mono = time.monotonic()
+        self._forward_first_started_mono = now_mono
+        self._forward_first_last_progress_mono = now_mono
+        self._forward_first_best_distance = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+        self._forward_first_deferred_target = None
+        self._forward_first_deferred_reason = ""
+        self._request_allow_reversing(False, "forward_first_start")
+
+    def _handle_forward_first_feedback(self, snapshot: Dict[str, Any]) -> None:
+        if not self.forward_first_enabled:
+            return
+        if self._forward_first_started_mono <= 0.0:
+            return
+
+        now_mono = time.monotonic()
+        distance_remaining = snapshot.get("distance_remaining")
+        if isinstance(distance_remaining, (int, float)):
+            distance_remaining = float(distance_remaining)
+            if self._forward_first_best_distance is None:
+                self._forward_first_best_distance = distance_remaining
+                self._forward_first_last_progress_mono = now_mono
+            elif distance_remaining < self._forward_first_best_distance:
+                progress_delta = self._forward_first_best_distance - distance_remaining
+                if progress_delta >= self.forward_first_min_progress_m:
+                    self._forward_first_last_progress_mono = now_mono
+                self._forward_first_best_distance = distance_remaining
+
+        recoveries = snapshot.get("number_of_recoveries")
+        if isinstance(recoveries, (int, float)):
+            recoveries_int = int(recoveries)
+            if (
+                self._forward_first_override_active
+                and recoveries_int > self._forward_first_last_recoveries
+            ):
+                self._forward_first_last_recoveries = recoveries_int
+                self._enable_forward_first_escape(f"recoveries:{recoveries_int}")
+                return
+            self._forward_first_last_recoveries = max(
+                self._forward_first_last_recoveries, recoveries_int
+            )
+
+        if not self._forward_first_override_active:
+            return
+        if (now_mono - self._forward_first_started_mono) >= self.forward_first_max_sec:
+            self._enable_forward_first_escape("window_expired")
+            return
+        if (
+            now_mono - self._forward_first_last_progress_mono
+        ) >= self.forward_first_stuck_timeout_sec:
+            self._enable_forward_first_escape("no_progress")
+
+    def _enable_forward_first_escape(self, reason: str) -> None:
+        if self._forward_first_escape_enabled:
+            return
+        self._request_allow_reversing(True, f"escape:{reason}")
+
+    def _end_forward_first_mode(self, reason: str) -> None:
+        if not self.forward_first_enabled:
+            return
+
+        need_restore = self._forward_first_override_active or (
+            self._forward_first_last_applied is False
+        )
+        if need_restore:
+            self._request_allow_reversing(True, f"restore:{reason}")
+
+        self._forward_first_started_mono = 0.0
+        self._forward_first_last_progress_mono = 0.0
+        self._forward_first_best_distance = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+
+    def _request_allow_reversing(self, allow_reversing: bool, reason: str) -> None:
+        if self._forward_first_param_client is None:
+            return
+        target = bool(allow_reversing)
+
+        if self._forward_first_pending_request:
+            self._forward_first_deferred_target = target
+            self._forward_first_deferred_reason = reason
+            return
+
+        if self._forward_first_last_applied is not None and self._forward_first_last_applied == target:
+            return
+
+        if not self._forward_first_param_client.wait_for_services(timeout_sec=0.1):
+            self.get_logger().warn(
+                f"Forward-first toggle skipped: parameter service unavailable "
+                f"(node={self._forward_first_controller_full_name}, "
+                f"param={self.forward_first_allow_reversing_param}, target={target}, reason={reason})."
+            )
+            return
+
+        try:
+            param = Parameter(self.forward_first_allow_reversing_param, value=target)
+            future = self._forward_first_param_client.set_parameters_atomically([param])
+            self._forward_first_pending_request = True
+            self._forward_first_pending_target = target
+            future.add_done_callback(
+                lambda f, t=target, r=reason: self._on_allow_reversing_set_result(f, t, r)
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Forward-first toggle request failed "
+                f"(node={self._forward_first_controller_full_name}, target={target}, "
+                f"reason={reason}, error={exc})."
+            )
+
+    def _on_allow_reversing_set_result(self, future: Any, target: bool, reason: str) -> None:
+        self._forward_first_pending_request = False
+        self._forward_first_pending_target = None
+
+        success = False
+        failure_reason = ""
+        try:
+            result = future.result()
+            success = bool(getattr(result, "successful", False))
+            failure_reason = str(getattr(result, "reason", ""))
+        except Exception as exc:
+            failure_reason = str(exc)
+
+        if success:
+            self._forward_first_last_applied = target
+            if target:
+                self._forward_first_override_active = False
+                if reason.startswith("escape:"):
+                    self._forward_first_escape_enabled = True
+                    self._publish_event(
+                        "FORWARD_FIRST_ESCAPE",
+                        self._task_id_payload(
+                            {
+                                "reason": reason,
+                                "reason_code": self._normalize_reason_code(reason),
+                            }
+                        ),
+                    )
+                elif reason.startswith("restore:"):
+                    self._publish_event(
+                        "FORWARD_FIRST_RESTORE",
+                        self._task_id_payload(
+                            {
+                                "reason": reason,
+                                "reason_code": self._normalize_reason_code(reason),
+                            }
+                        ),
+                    )
+            else:
+                self._forward_first_override_active = True
+                self._forward_first_escape_enabled = False
+                self._publish_event("FORWARD_FIRST_ON", self._task_id_payload({"reason": reason}))
+        else:
+            self.get_logger().warn(
+                f"Forward-first toggle rejected "
+                f"(node={self._forward_first_controller_full_name}, target={target}, "
+                f"reason={reason}, detail={failure_reason})."
+            )
+
+        if self._forward_first_deferred_target is None:
+            return
+
+        deferred_target = self._forward_first_deferred_target
+        deferred_reason = self._forward_first_deferred_reason or "deferred_toggle"
+        self._forward_first_deferred_target = None
+        self._forward_first_deferred_reason = ""
+        if success and deferred_target == target:
+            return
+        self._request_allow_reversing(deferred_target, deferred_reason)
 
     def _start_guide_display(self) -> None:
         self._stop_guide_display()

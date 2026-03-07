@@ -27,6 +27,14 @@ def generate_launch_description() -> LaunchDescription:
     include_ai_link_in_status = LaunchConfiguration("include_ai_link_in_status")
     nav2_retry_attempts = LaunchConfiguration("nav2_retry_attempts")
     nav2_retry_delay_sec = LaunchConfiguration("nav2_retry_delay_sec")
+    forward_first_enabled = LaunchConfiguration("forward_first_enabled")
+    forward_first_max_sec = LaunchConfiguration("forward_first_max_sec")
+    forward_first_stuck_timeout_sec = LaunchConfiguration("forward_first_stuck_timeout_sec")
+    forward_first_min_progress_m = LaunchConfiguration("forward_first_min_progress_m")
+    forward_first_controller_node = LaunchConfiguration("forward_first_controller_node")
+    forward_first_allow_reversing_param = LaunchConfiguration(
+        "forward_first_allow_reversing_param"
+    )
     localization_required = LaunchConfiguration("localization_required")
     amcl_pose_topic = LaunchConfiguration("amcl_pose_topic")
     odom_topic = LaunchConfiguration("odom_topic")
@@ -108,6 +116,15 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("include_ai_link_in_status", default_value="true"),
             DeclareLaunchArgument("nav2_retry_attempts", default_value="8"),
             DeclareLaunchArgument("nav2_retry_delay_sec", default_value="1.0"),
+            DeclareLaunchArgument("forward_first_enabled", default_value="true"),
+            DeclareLaunchArgument("forward_first_max_sec", default_value="5.0"),
+            DeclareLaunchArgument("forward_first_stuck_timeout_sec", default_value="2.5"),
+            DeclareLaunchArgument("forward_first_min_progress_m", default_value="0.08"),
+            DeclareLaunchArgument("forward_first_controller_node", default_value="controller_server"),
+            DeclareLaunchArgument(
+                "forward_first_allow_reversing_param",
+                default_value="FollowPath.allow_reversing",
+            ),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
             DeclareLaunchArgument("odom_topic", default_value="/odom"),
@@ -221,6 +238,12 @@ def generate_launch_description() -> LaunchDescription:
                             "include_ai_link_in_status": include_ai_link_in_status,
                             "nav2_retry_attempts": nav2_retry_attempts,
                             "nav2_retry_delay_sec": nav2_retry_delay_sec,
+                            "forward_first_enabled": forward_first_enabled,
+                            "forward_first_max_sec": forward_first_max_sec,
+                            "forward_first_stuck_timeout_sec": forward_first_stuck_timeout_sec,
+                            "forward_first_min_progress_m": forward_first_min_progress_m,
+                            "forward_first_controller_node": forward_first_controller_node,
+                            "forward_first_allow_reversing_param": forward_first_allow_reversing_param,
                             "localization_required": localization_required,
                             "amcl_pose_topic": amcl_pose_topic,
                             "odom_topic": odom_topic,
