@@ -36,6 +36,9 @@ This guide documents the integration contract for the robot runtime in
   - if upstream later provides `distance_m` (or equivalent keys), class-based stop/slow thresholds are applied on the same path.
   - current runtime behavior: `STOP` triggers safety lock; `SLOW` remains observability/log state only.
   - final lock is `command_lock OR obstacle_lock` to keep STOP/PAUSE semantics deterministic.
+  - `SAFETY_STOPPED` / `SAFETY_RESUMED` are emitted only on actual lock transitions.
+    Latched `/{robot_ns}/safety_state` snapshots (`CLEAR` / `STOP`) update status context but do not
+    produce transition events by themselves.
 - Nav2 startup recovery in `office_robot_executor`:
   - executor validates localization readiness (`amcl_pose` freshness/covariance, optional `map->odom` TF) before Nav2 goal send.
   - executor also gates by Nav2 lifecycle state (`planner/controller/bt/behavior` must be `active`).

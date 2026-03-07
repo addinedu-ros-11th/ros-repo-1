@@ -47,6 +47,9 @@
     - `obstacle_distance`
     - `obstacle_box`
     - `obstacle_reason`
+  - `SAFETY_STOPPED` / `SAFETY_RESUMED` are transition events only.
+    A latched `/{robot_ns}/safety_state` snapshot may refresh status metadata, but it must not be
+    treated as a new resume/stop transition unless the safety lock actually changed.
   - Battery fields:
     - `battery`
     - `battery_valid`
