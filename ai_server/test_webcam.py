@@ -72,7 +72,7 @@ class SingleModelWebcamTest:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
                 # 라벨 텍스트
-                label = f"{label_prefix}:{class_name} {confidence:.2f}"
+                label = f"{class_name} {confidence:.2f}"
 
                 # 라벨 배경
                 (text_width, text_height), _ = cv2.getTextSize(
@@ -131,7 +131,7 @@ class SingleModelWebcamTest:
 
                 # 결과를 프레임에 그리기
                 frame = self.draw_detections(
-                    frame, obstacle_results, self.obstacle_color, "장애물"
+                    frame, obstacle_results, self.obstacle_color, "OBS"
                 )
 
                 # 감지된 객체 수 표시

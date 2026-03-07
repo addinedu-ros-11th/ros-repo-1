@@ -1,7 +1,7 @@
 """
 AI Server - Main Entry Point
 LLM 서비스와 Vision 서비스를 개별 포트에서 동시 실행
-Vision은 상태 기반 추론 엔진 포함 (UDP 영상 수신 + YOLO + face_recognition)
+Vision은 상태 기반 추론 엔진 포함 (UDP 영상 수신 + YOLO + InsightFace ArcFace)
 """
 
 import asyncio
