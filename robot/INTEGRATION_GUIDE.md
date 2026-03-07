@@ -16,7 +16,8 @@ This guide documents the integration contract for the robot runtime in
   - `/{robot_ns}/status`
   - `/{robot_ns}/event`
   - `/{robot_ns}/ai_link` (`std_msgs/msg/Bool`)
-  - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, optional AI obstacle relay)
+  - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, AI obstacle relay)
+  - `/{robot_ns}/safety_state` (`std_msgs/msg/String`, latched safety snapshot)
 
 ## Command Model
 - Message type: `std_msgs/msg/String` with JSON payload.
@@ -30,8 +31,10 @@ This guide documents the integration contract for the robot runtime in
   - `STOP`/`PAUSE`: safety lock on + active goal cancel + zero velocity hold
   - `RESUME`: safety lock off + next action sequence allowed
 - Optional obstacle policy in `office_robot_safety`:
-  - when `obstacle_enabled=true`, class-based stop/slow thresholds are evaluated from `/{robot_ns}/obstacles`.
-  - current runtime behavior: `STOP` threshold triggers safety lock; `SLOW` threshold is observability/log state only.
+  - when `obstacle_enabled=true`, obstacle policy is evaluated from `/{robot_ns}/obstacles`.
+  - `person` / `robot` are `presence-based STOP` by default even without distance.
+  - if upstream later provides `distance_m` (or equivalent keys), class-based stop/slow thresholds are applied on the same path.
+  - current runtime behavior: `STOP` triggers safety lock; `SLOW` remains observability/log state only.
   - final lock is `command_lock OR obstacle_lock` to keep STOP/PAUSE semantics deterministic.
 - Nav2 startup recovery in `office_robot_executor`:
   - executor validates localization readiness (`amcl_pose` freshness/covariance, optional `map->odom` TF) before Nav2 goal send.
@@ -47,7 +50,8 @@ This guide documents the integration contract for the robot runtime in
     - rotate in place (`cmd_vel`) for active scan
     - request Nav2 lifecycle manager `STARTUP/RESUME` if lifecycle nodes are inactive
     - retry with bounded attempts (`nav2_retry_*`, `localization_recovery_*`, `amcl_*` params).
-- Obstacle and other-robot avoidance is handled by Nav2 costmap/controller policy.
+- `SR-003` static obstacle avoidance remains Nav2 costmap/controller responsibility.
+- `SR-004 v1` dynamic obstacle handling is `safe stop / resume`, not full detour.
 - AI dependency split:
   - AI-independent actions can still execute while AI is down.
   - For AI-dependent actions, upper layer should check `/{robot_ns}/ai_link` or
@@ -138,3 +142,11 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
 - Keep topic/port contract stable; downstream services depend on it.
 - Any schema/key changes must be documented in `HANDOFF.md` and communicated before rollout.
 - For Nav2 startup, always pin `params_file` in service/launch chain.
+- `/{robot_ns}/status` may include safety metadata keys:
+  - `event`
+  - `safety_source`
+  - `obstacle_state`
+  - `obstacle_class`
+  - `obstacle_confidence`
+  - `obstacle_distance`
+  - `obstacle_reason`

@@ -76,6 +76,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("safety_lock_topic", "safety_lock")
+        self.declare_parameter("safety_state_topic", "safety_state")
         self.declare_parameter("ai_link_topic", "ai_link")
         self.declare_parameter("include_ai_link_in_status", True)
         self.declare_parameter("nav2_success_status_code", 4)
@@ -176,6 +177,9 @@ class OfficeRobotExecutor(Node):
         )
         self.safety_lock_topic = (
             self.get_parameter("safety_lock_topic").get_parameter_value().string_value
+        )
+        self.safety_state_topic = (
+            self.get_parameter("safety_state_topic").get_parameter_value().string_value
         )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
         self.battery_topic = self.get_parameter("battery_topic").get_parameter_value().string_value
@@ -466,6 +470,12 @@ class OfficeRobotExecutor(Node):
         self._guide_display_timer = None
         self._guide_display_toggle = False
         self._safety_locked = False
+        self._last_safety_source = ""
+        self._last_safety_state = "CLEAR"
+        self._last_obstacle_class: Optional[str] = None
+        self._last_obstacle_confidence: Optional[float] = None
+        self._last_obstacle_distance: Optional[float] = None
+        self._last_obstacle_reason = ""
         self._ai_link_alive: Optional[bool] = None
         self._battery_received = False
         self._nav_retry_timer = None
@@ -542,6 +552,9 @@ class OfficeRobotExecutor(Node):
         )
         self.safety_sub = self.create_subscription(
             Bool, self.safety_lock_topic, self._on_safety_lock, safety_qos
+        )
+        self.safety_state_sub = self.create_subscription(
+            String, self.safety_state_topic, self._on_safety_state, safety_qos
         )
         self.ai_link_sub = self.create_subscription(
             Bool, self.ai_link_topic, self._on_ai_link, safety_qos
@@ -629,7 +642,8 @@ class OfficeRobotExecutor(Node):
 
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
-            f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
+            f"safety_lock_topic={self.safety_lock_topic}, safety_state_topic={self.safety_state_topic}, "
+            f"ai_link_topic={self.ai_link_topic}, "
             f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event}, "
             f"nav_retry_attempts={self.nav2_retry_attempts}, localization_required={self.localization_required}, "
             f"amcl_pose_topic={self.amcl_pose_topic}, amcl_stale_check={self.amcl_pose_stale_check_enabled}, "
@@ -667,9 +681,19 @@ class OfficeRobotExecutor(Node):
         self._publish_command_received(payload, command_type, actions)
 
         if command_type in {"STOP", "PAUSE"}:
+            self._update_safety_context(
+                source="command",
+                state="STOP",
+                reason=f"command:{command_type}",
+            )
             self._set_safety_lock(True, source=f"command:{command_type}")
             return
         if command_type == "RESUME":
+            self._update_safety_context(
+                source="command",
+                state="CLEAR",
+                reason="command:RESUME",
+            )
             self._set_safety_lock(False, source="command:RESUME")
             return
         if command_type == "CANCEL":
@@ -719,7 +743,81 @@ class OfficeRobotExecutor(Node):
         self._run_next_action()
 
     def _on_safety_lock(self, msg: Bool) -> None:
+        if bool(msg.data):
+            if not (
+                self._last_safety_state == "STOP" and self._last_safety_source in {"command", "obstacle"}
+            ):
+                self._update_safety_context(
+                    source="obstacle",
+                    state="STOP",
+                    reason="safety_lock_topic",
+                )
+        elif self._last_safety_source != "command":
+            self._update_safety_context(
+                source="obstacle",
+                state="CLEAR",
+                reason="safety_lock_cleared",
+            )
         self._set_safety_lock(bool(msg.data), source="topic")
+        if bool(msg.data) and self._last_safety_state == "STOP":
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                        "source": "safety_lock_topic",
+                    }
+                ),
+                event="SAFETY_STOPPED",
+            )
+        elif (not bool(msg.data)) and self._last_safety_state == "CLEAR":
+            self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
+            self._publish_status(
+                self.current_status,
+                self._task_id_payload(
+                    {
+                        "reason": "safety_resume",
+                        "reason_code": "safety_resumed",
+                        "source": "safety_lock_topic",
+                    }
+                ),
+                event="SAFETY_RESUMED",
+            )
+
+    def _on_safety_state(self, msg: String) -> None:
+        payload = self._parse_payload(msg.data)
+        if not self._is_for_this_robot(payload):
+            return
+        self._update_safety_context_from_payload(payload)
+        state = str(payload.get("state", "")).strip().upper()
+        if state == "STOP" and self._safety_locked:
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                        "source": "safety_state",
+                    }
+                ),
+                event="SAFETY_STOPPED",
+            )
+        elif state == "CLEAR" and not self._safety_locked:
+            self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
+            self._publish_status(
+                self.current_status,
+                self._task_id_payload(
+                    {
+                        "reason": "safety_resume",
+                        "reason_code": "safety_resumed",
+                        "source": "safety_state",
+                    }
+                ),
+                event="SAFETY_RESUMED",
+            )
 
     def _on_ai_link(self, msg: Bool) -> None:
         previous = self._ai_link_alive
@@ -807,7 +905,7 @@ class OfficeRobotExecutor(Node):
             }
         )
         self._publish_event("SAFETY_STOPPED", payload)
-        self._publish_status("WAITING", payload)
+        self._publish_status("WAITING", payload, event="SAFETY_STOPPED")
         self._publish_display("일시정지", "pause")
 
     def _exit_safety_lock(self, source: str) -> None:
@@ -828,7 +926,7 @@ class OfficeRobotExecutor(Node):
             }
         )
         self._publish_event("SAFETY_RESUMED", payload)
-        self._publish_status("IDLE", payload)
+        self._publish_status("IDLE", payload, event="SAFETY_RESUMED")
         self._publish_display("대기", "idle")
         self._current_task_id = None
 
@@ -903,9 +1001,19 @@ class OfficeRobotExecutor(Node):
                 self._publish_display("대기", "idle")
 
         if action in {"PAUSE", "STOP"}:
+            self._update_safety_context(
+                source="command",
+                state="STOP",
+                reason=f"action:{action}",
+            )
             self._set_safety_lock(True, source=f"action:{action}")
             return
         if action == "RESUME":
+            self._update_safety_context(
+                source="command",
+                state="CLEAR",
+                reason="action:RESUME",
+            )
             self._set_safety_lock(False, source="action:RESUME")
             self._finish_action_once(on_success)
             return
@@ -2567,6 +2675,7 @@ class OfficeRobotExecutor(Node):
             "battery": float(self.battery),
             **extra,
         }
+        data.update(self._build_safety_status_fields())
         if self.include_ai_link_in_status and self._ai_link_alive is not None:
             data["ai_link_alive"] = bool(self._ai_link_alive)
         if event:
@@ -2602,6 +2711,78 @@ class OfficeRobotExecutor(Node):
             event_data["sequence_id"] = incoming_task_id
         self._publish_event("COMMAND_RECEIVED", event_data)
 
+    def _update_safety_context_from_payload(self, payload: Dict[str, Any]) -> None:
+        source = str(payload.get("source", "")).strip() or "obstacle"
+        state = str(payload.get("state", "")).strip().upper() or "CLEAR"
+        reason = str(payload.get("reason", "")).strip()
+        class_name = payload.get("class_name")
+        confidence = self._to_float(payload.get("confidence"))
+        distance = self._to_float(payload.get("distance"))
+        self._update_safety_context(
+            source=source,
+            state=state,
+            reason=reason,
+            obstacle_class=str(class_name).strip() if class_name is not None else None,
+            obstacle_confidence=confidence,
+            obstacle_distance=distance,
+        )
+
+    def _update_safety_context(
+        self,
+        *,
+        source: str,
+        state: str,
+        reason: str,
+        obstacle_class: Optional[str] = None,
+        obstacle_confidence: Optional[float] = None,
+        obstacle_distance: Optional[float] = None,
+    ) -> None:
+        self._last_safety_source = source.strip() or "obstacle"
+        self._last_safety_state = state.strip().upper() or "CLEAR"
+        self._last_obstacle_reason = reason.strip()
+
+        if obstacle_class is not None:
+            cleaned = obstacle_class.strip()
+            self._last_obstacle_class = cleaned or None
+        elif self._last_safety_source == "command":
+            self._last_obstacle_class = None
+
+        if obstacle_confidence is not None:
+            self._last_obstacle_confidence = obstacle_confidence
+        elif self._last_safety_source == "command":
+            self._last_obstacle_confidence = None
+
+        if obstacle_distance is not None:
+            self._last_obstacle_distance = obstacle_distance
+        elif self._last_safety_source == "command":
+            self._last_obstacle_distance = None
+
+    def _build_safety_status_fields(self) -> Dict[str, Any]:
+        if not any(
+            [
+                self._last_safety_source,
+                self._last_obstacle_reason,
+                self._last_obstacle_class,
+                self._last_obstacle_confidence is not None,
+                self._last_obstacle_distance is not None,
+                self._last_safety_state != "CLEAR",
+            ]
+        ):
+            return {}
+
+        data: Dict[str, Any] = {
+            "safety_source": self._last_safety_source or "obstacle",
+            "obstacle_state": self._last_safety_state or "CLEAR",
+            "obstacle_reason": self._last_obstacle_reason,
+        }
+        if self._last_obstacle_class is not None:
+            data["obstacle_class"] = self._last_obstacle_class
+        if self._last_obstacle_confidence is not None:
+            data["obstacle_confidence"] = float(self._last_obstacle_confidence)
+        if self._last_obstacle_distance is not None:
+            data["obstacle_distance"] = float(self._last_obstacle_distance)
+        return data
+
     def _publish_display(self, text: str, icon: str = "info") -> None:
         if not self.enable_display:
             return
@@ -2631,6 +2812,15 @@ class OfficeRobotExecutor(Node):
                 }
             ]
         return []
+
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _parse_payload(raw: str) -> Dict[str, Any]:

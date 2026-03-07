@@ -12,7 +12,8 @@
   - `/{robot_ns}/status` (`std_msgs/msg/String`)
   - `/{robot_ns}/event` (`std_msgs/msg/String`)
   - `/{robot_ns}/ai_link` (`std_msgs/msg/Bool`, AI link health)
-  - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, optional obstacle relay input)
+  - `/{robot_ns}/obstacles` (`std_msgs/msg/String`, obstacle relay input)
+  - `/{robot_ns}/safety_state` (`std_msgs/msg/String`, latched safety snapshot)
 
 ## Namespace / Multi-Robot
 - Default namespace: `robot01`
@@ -32,9 +33,19 @@
     - `STOP`/`PAUSE` => lock enabled, `cmd_vel` zero hold, running goal canceled.
     - `RESUME` => lock released, new action sequence can run.
   - Optional obstacle policy (`office_robot_safety`):
-    - subscribes `/{robot_ns}/obstacles` and evaluates class-based slow/stop thresholds.
+    - subscribes `/{robot_ns}/obstacles` and evaluates dynamic obstacle policy.
+    - `person` / `robot`: presence-only `STOP` by default even when upstream distance is missing.
+    - `chair` / `plant` / `bag`: distance-based threshold only; without distance they fall back to Nav2 static avoidance.
     - runtime today: `STOP` threshold enforces lock/zero-velocity, `SLOW` threshold is state/log only.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
+  - `/{robot_ns}/status` may carry latest safety metadata:
+    - `event`
+    - `safety_source`
+    - `obstacle_state`
+    - `obstacle_class`
+    - `obstacle_confidence`
+    - `obstacle_distance`
+    - `obstacle_reason`
   - Nav2 recovery behavior (`office_robot_executor`):
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
     - validates required Nav2 lifecycle nodes are `active` before goal send
@@ -56,8 +67,10 @@
 - `nav2_action_name`
 - `goal_response_timeout_sec` (default `8.0`)
 - `mock_mode` (default `false`)
-- `obstacle_enabled` (default `false`)
+- `obstacle_enabled` (default `true`)
 - `obstacle_topic` (default `obstacles`)
+- `obstacle_presence_stop_classes` (default `person,robot`)
+- `safety_state_topic` (default `safety_state`)
 - `nav2_retry_attempts` (default `8`)
 - `nav2_retry_delay_sec` (default `1.0`)
 - `localization_required` (default `true`)
@@ -100,6 +113,10 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
 - AI link health:
   - `communication_node` publishes `/{robot_ns}/ai_link` (`true`/`false`)
   - `office_robot_executor` mirrors this as `ai_link_alive` key in `/{robot_ns}/status`
+- Dynamic obstacle handling:
+  - `SR-003` static obstacle avoidance remains Nav2 costmap/controller behavior.
+  - `SR-004 v1` is `safe stop / resume` for dynamic `person` / `robot`.
+  - Full distance-aware yield can be layered later if upstream starts sending `distance_m`.
 - Video stream tuning defaults (battery/network friendly):
   - `max_fps=8.0`, `resize_width=640`, `resize_height=360`, `jpeg_quality=70`
 - If AI vision is down:

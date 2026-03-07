@@ -23,6 +23,7 @@ def generate_launch_description() -> LaunchDescription:
     stop_publish_count = LaunchConfiguration("stop_publish_count")
     stop_publish_hz = LaunchConfiguration("stop_publish_hz")
     safety_lock_topic = LaunchConfiguration("safety_lock_topic")
+    safety_state_topic = LaunchConfiguration("safety_state_topic")
     ai_link_topic = LaunchConfiguration("ai_link_topic")
     include_ai_link_in_status = LaunchConfiguration("include_ai_link_in_status")
     nav2_retry_attempts = LaunchConfiguration("nav2_retry_attempts")
@@ -89,6 +90,7 @@ def generate_launch_description() -> LaunchDescription:
     safety_stop_publish_count = LaunchConfiguration("safety_stop_publish_count")
     obstacle_enabled = LaunchConfiguration("obstacle_enabled")
     obstacle_topic = LaunchConfiguration("obstacle_topic")
+    obstacle_presence_stop_classes = LaunchConfiguration("obstacle_presence_stop_classes")
     safety_params_file = PathJoinSubstitution(
         [FindPackageShare("office_robot_bringup"), "config", "safety.yaml"]
     )
@@ -112,6 +114,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("stop_publish_count", default_value="10"),
             DeclareLaunchArgument("stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_topic", default_value="safety_lock"),
+            DeclareLaunchArgument("safety_state_topic", default_value="safety_state"),
             DeclareLaunchArgument("ai_link_topic", default_value="ai_link"),
             DeclareLaunchArgument("include_ai_link_in_status", default_value="true"),
             DeclareLaunchArgument("nav2_retry_attempts", default_value="8"),
@@ -183,8 +186,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("safety_stop_publish_hz", default_value="20.0"),
             DeclareLaunchArgument("safety_lock_keepalive_hz", default_value="2.0"),
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
-            DeclareLaunchArgument("obstacle_enabled", default_value="false"),
+            DeclareLaunchArgument("obstacle_enabled", default_value="true"),
             DeclareLaunchArgument("obstacle_topic", default_value="obstacles"),
+            DeclareLaunchArgument("obstacle_presence_stop_classes", default_value="person,robot"),
             GroupAction(
                 [
                     PushRosNamespace(robot_ns),
@@ -199,12 +203,14 @@ def generate_launch_description() -> LaunchDescription:
                                 "robot_id": robot_id,
                                 "cmd_topic": "commands",
                                 "lock_topic": safety_lock_topic,
+                                "safety_state_topic": safety_state_topic,
                                 "stop_cmd_vel_topic": stop_cmd_vel_topic,
                                 "stop_publish_hz": safety_stop_publish_hz,
                                 "lock_keepalive_hz": safety_lock_keepalive_hz,
                                 "stop_publish_count": safety_stop_publish_count,
                                 "obstacle_enabled": obstacle_enabled,
                                 "obstacle_topic": obstacle_topic,
+                                "obstacle_presence_stop_classes": obstacle_presence_stop_classes,
                             },
                         ],
                     ),
@@ -234,6 +240,7 @@ def generate_launch_description() -> LaunchDescription:
                             "stop_publish_count": stop_publish_count,
                             "stop_publish_hz": stop_publish_hz,
                             "safety_lock_topic": safety_lock_topic,
+                            "safety_state_topic": safety_state_topic,
                             "ai_link_topic": ai_link_topic,
                             "include_ai_link_in_status": include_ai_link_in_status,
                             "nav2_retry_attempts": nav2_retry_attempts,

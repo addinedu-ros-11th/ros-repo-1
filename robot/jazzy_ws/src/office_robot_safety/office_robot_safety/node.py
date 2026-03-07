@@ -59,12 +59,14 @@ class OfficeRobotSafety(Node):
         self.declare_parameter("robot_id", 1)
         self.declare_parameter("cmd_topic", "commands")
         self.declare_parameter("lock_topic", "safety_lock")
+        self.declare_parameter("safety_state_topic", "safety_state")
         self.declare_parameter("stop_cmd_vel_topic", "cmd_vel")
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("lock_keepalive_hz", 2.0)
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("obstacle_enabled", False)
         self.declare_parameter("obstacle_topic", "obstacles")
+        self.declare_parameter("obstacle_presence_stop_classes", "person,robot")
         self.declare_parameter("obstacle_confidence_threshold", 0.6)
         self.declare_parameter("obstacle_timeout_sec", 1.5)
         self.declare_parameter("obstacle_clear_hold_sec", 1.0)
@@ -84,6 +86,9 @@ class OfficeRobotSafety(Node):
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
         self.cmd_topic = self.get_parameter("cmd_topic").get_parameter_value().string_value
         self.lock_topic = self.get_parameter("lock_topic").get_parameter_value().string_value
+        self.safety_state_topic = (
+            self.get_parameter("safety_state_topic").get_parameter_value().string_value
+        )
         self.stop_cmd_vel_topic = (
             self.get_parameter("stop_cmd_vel_topic").get_parameter_value().string_value
         )
@@ -101,6 +106,11 @@ class OfficeRobotSafety(Node):
         )
         self.obstacle_topic = (
             self.get_parameter("obstacle_topic").get_parameter_value().string_value
+        )
+        self._presence_stop_class_ids = self._parse_presence_stop_classes(
+            self.get_parameter("obstacle_presence_stop_classes")
+            .get_parameter_value()
+            .string_value
         )
         self.obstacle_confidence_threshold = max(
             0.0,
@@ -145,6 +155,8 @@ class OfficeRobotSafety(Node):
         self._last_obstacle_msg_mono = 0.0
         self._last_stop_trigger_mono = 0.0
         self._obstacle_state = "CLEAR"
+        self._last_command_reason = "command_clear"
+        self._last_obstacle_detail: Optional[Dict[str, Any]] = None
 
         lock_qos = QoSProfile(
             depth=1,
@@ -152,6 +164,7 @@ class OfficeRobotSafety(Node):
             reliability=ReliabilityPolicy.RELIABLE,
         )
         self.lock_pub = self.create_publisher(Bool, self.lock_topic, lock_qos)
+        self.safety_state_pub = self.create_publisher(String, self.safety_state_topic, lock_qos)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
         self.command_sub = self.create_subscription(String, self.cmd_topic, self._on_command, 10)
         self.obstacle_sub = None
@@ -169,8 +182,8 @@ class OfficeRobotSafety(Node):
         self.get_logger().info(
             f"Safety node ready (robot_name={self.robot_name}, robot_id={self.robot_id}, "
             f"cmd_topic={self.cmd_topic}, lock_topic={self.lock_topic}, "
-            f"stop_cmd_vel_topic={self.stop_cmd_vel_topic}, obstacle_enabled={self.obstacle_enabled}, "
-            f"obstacle_topic={self.obstacle_topic})."
+            f"safety_state_topic={self.safety_state_topic}, stop_cmd_vel_topic={self.stop_cmd_vel_topic}, "
+            f"obstacle_enabled={self.obstacle_enabled}, obstacle_topic={self.obstacle_topic})."
         )
 
     def _on_command(self, msg: String) -> None:
@@ -201,23 +214,36 @@ class OfficeRobotSafety(Node):
                 return
 
     def _set_command_lock(self, enabled: bool, source: str) -> None:
+        self._last_command_reason = source
         if self._command_lock_enabled == enabled:
+            self._publish_safety_state_snapshot(source_hint="command", reason_override=source)
             return
         self._command_lock_enabled = enabled
         self._refresh_lock_state(f"command:{source}")
 
     def _set_obstacle_lock(self, enabled: bool, source: str) -> None:
         if self._obstacle_lock_enabled == enabled:
+            self._publish_safety_state_snapshot(source_hint="obstacle", reason_override=source)
             return
         self._obstacle_lock_enabled = enabled
         self._refresh_lock_state(f"obstacle:{source}")
 
     def _refresh_lock_state(self, source: str) -> None:
         enabled = self._command_lock_enabled or self._obstacle_lock_enabled
+        source_hint = "command" if str(source).startswith("command:") else "obstacle"
+        reason_override = str(source).split(":", 1)[1] if ":" in str(source) else str(source)
         if self._lock_enabled == enabled:
+            self._publish_safety_state_snapshot(
+                source_hint=source_hint,
+                reason_override=reason_override,
+            )
             return
         self._lock_enabled = enabled
         self._publish_lock_state()
+        self._publish_safety_state_snapshot(
+            source_hint=source_hint,
+            reason_override=reason_override,
+        )
 
         if enabled:
             self._publish_zero_burst()
@@ -295,17 +321,24 @@ class OfficeRobotSafety(Node):
         if slow_hit is not None:
             self._set_obstacle_state("SLOW", slow_hit)
         else:
+            if self._obstacle_lock_enabled and (
+                now - self._last_stop_trigger_mono >= self.obstacle_clear_hold_sec
+            ):
+                self._set_obstacle_lock(False, "clear_hold_elapsed")
             self._set_obstacle_state("CLEAR", None)
 
-        if self._obstacle_lock_enabled and (
+        if self._obstacle_lock_enabled and slow_hit is not None and (
             now - self._last_stop_trigger_mono >= self.obstacle_clear_hold_sec
         ):
             self._set_obstacle_lock(False, "clear_hold_elapsed")
 
     def _set_obstacle_state(self, state: str, detail: Optional[Dict[str, Any]]) -> None:
+        if detail is not None:
+            self._last_obstacle_detail = dict(detail)
         if self._obstacle_state == state:
             return
         self._obstacle_state = state
+        self._publish_safety_state_snapshot(source_hint="obstacle")
 
         if state == "STOP" and detail is not None:
             self.get_logger().warn(
@@ -355,6 +388,23 @@ class OfficeRobotSafety(Node):
             stop_threshold = self._stop_thresholds.get(class_id)
             slow_threshold = self._slow_thresholds.get(class_id)
             class_name = self._CLASS_ID_TO_NAME.get(class_id, str(class_id))
+
+            if (
+                distance is None
+                and class_id in self._presence_stop_class_ids
+            ):
+                hit = {
+                    "class_id": class_id,
+                    "class_name": class_name,
+                    "confidence": confidence,
+                    "distance": None,
+                    "stop_threshold": stop_threshold,
+                    "slow_threshold": slow_threshold,
+                    "reason": f"class_{class_id}_presence_stop",
+                }
+                if best_stop is None:
+                    best_stop = hit
+                continue
 
             if (
                 distance is None
@@ -466,6 +516,66 @@ class OfficeRobotSafety(Node):
             if value is not None:
                 return value
         return None
+
+    def _publish_safety_state_snapshot(
+        self, source_hint: Optional[str] = None, reason_override: Optional[str] = None
+    ) -> None:
+        source = "obstacle"
+        state = "CLEAR"
+        reason = reason_override or "clear"
+        detail: Dict[str, Any] = {}
+
+        if self._command_lock_enabled:
+            source = "command"
+            state = "STOP"
+            reason = reason_override or self._last_command_reason or "command_lock"
+        elif self._obstacle_lock_enabled:
+            source = "obstacle"
+            state = "STOP" if self._obstacle_state == "CLEAR" else self._obstacle_state
+            if self._last_obstacle_detail is not None:
+                detail = dict(self._last_obstacle_detail)
+            reason = reason_override or str(detail.get("reason") or "obstacle_lock")
+        elif self._obstacle_state == "SLOW":
+            source = "obstacle"
+            state = "SLOW"
+            if self._last_obstacle_detail is not None:
+                detail = dict(self._last_obstacle_detail)
+            reason = reason_override or str(detail.get("reason") or "obstacle_slow")
+        else:
+            source = source_hint if source_hint in {"command", "obstacle"} else "obstacle"
+            if source == "obstacle" and self._last_obstacle_detail is not None:
+                detail = dict(self._last_obstacle_detail)
+            reason = reason_override or ("command_clear" if source == "command" else "clear")
+
+        payload = {
+            "robot_name": self.robot_name,
+            "robot_id": int(self.robot_id),
+            "source": source,
+            "state": state,
+            "reason": reason,
+            "class_id": detail.get("class_id"),
+            "class_name": detail.get("class_name"),
+            "confidence": detail.get("confidence"),
+            "distance": detail.get("distance"),
+            "stop_threshold": detail.get("stop_threshold"),
+            "slow_threshold": detail.get("slow_threshold"),
+            "ts": time.time(),
+        }
+        self.safety_state_pub.publish(String(data=json.dumps(payload)))
+
+    def _parse_presence_stop_classes(self, raw: str) -> set[int]:
+        class_ids: set[int] = set()
+        for token in str(raw or "").split(","):
+            normalized = token.strip().lower().replace(" ", "_")
+            if not normalized:
+                continue
+            if normalized in self._CLASS_NAME_TO_ID:
+                class_ids.add(self._CLASS_NAME_TO_ID[normalized])
+                continue
+            parsed = self._to_int(normalized)
+            if parsed is not None and parsed in self._CLASS_ID_TO_NAME:
+                class_ids.add(parsed)
+        return class_ids
 
     @staticmethod
     def _to_float(value: Any) -> Optional[float]:
