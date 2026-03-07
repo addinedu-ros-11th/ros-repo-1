@@ -9,6 +9,8 @@ from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage
@@ -74,6 +76,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("stop_publish_count", 10)
         self.declare_parameter("stop_publish_hz", 20.0)
         self.declare_parameter("safety_lock_topic", "safety_lock")
+        self.declare_parameter("safety_state_topic", "safety_state")
         self.declare_parameter("ai_link_topic", "ai_link")
         self.declare_parameter("include_ai_link_in_status", True)
         self.declare_parameter("nav2_success_status_code", 4)
@@ -83,6 +86,14 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("nav2_abort_success_error_codes", "103,106,208")
         self.declare_parameter("nav2_retry_attempts", 1)
         self.declare_parameter("nav2_retry_delay_sec", 1.0)
+        self.declare_parameter("forward_first_enabled", True)
+        self.declare_parameter("forward_first_max_sec", 5.0)
+        self.declare_parameter("forward_first_stuck_timeout_sec", 2.5)
+        self.declare_parameter("forward_first_min_progress_m", 0.08)
+        self.declare_parameter("forward_first_controller_node", "controller_server")
+        self.declare_parameter(
+            "forward_first_allow_reversing_param", "FollowPath.allow_reversing"
+        )
         self.declare_parameter("localization_required", True)
         self.declare_parameter("amcl_pose_topic", "amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
@@ -167,6 +178,9 @@ class OfficeRobotExecutor(Node):
         self.safety_lock_topic = (
             self.get_parameter("safety_lock_topic").get_parameter_value().string_value
         )
+        self.safety_state_topic = (
+            self.get_parameter("safety_state_topic").get_parameter_value().string_value
+        )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
         self.battery_topic = self.get_parameter("battery_topic").get_parameter_value().string_value
         self.include_ai_link_in_status = (
@@ -198,6 +212,36 @@ class OfficeRobotExecutor(Node):
         )
         self.nav2_retry_delay_sec = max(
             0.2, self.get_parameter("nav2_retry_delay_sec").get_parameter_value().double_value
+        )
+        self.forward_first_enabled = (
+            self.get_parameter("forward_first_enabled").get_parameter_value().bool_value
+        )
+        self.forward_first_max_sec = max(
+            1.0, self.get_parameter("forward_first_max_sec").get_parameter_value().double_value
+        )
+        self.forward_first_stuck_timeout_sec = max(
+            0.5,
+            self.get_parameter("forward_first_stuck_timeout_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.forward_first_min_progress_m = max(
+            0.01,
+            self.get_parameter("forward_first_min_progress_m").get_parameter_value().double_value,
+        )
+        self.forward_first_controller_node = (
+            self.get_parameter("forward_first_controller_node")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "controller_server"
+        )
+        self.forward_first_allow_reversing_param = (
+            self.get_parameter("forward_first_allow_reversing_param")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "FollowPath.allow_reversing"
         )
         self.localization_required = (
             self.get_parameter("localization_required").get_parameter_value().bool_value
@@ -426,6 +470,13 @@ class OfficeRobotExecutor(Node):
         self._guide_display_timer = None
         self._guide_display_toggle = False
         self._safety_locked = False
+        self._last_safety_source = ""
+        self._last_safety_state = "CLEAR"
+        self._last_obstacle_class: Optional[str] = None
+        self._last_obstacle_confidence: Optional[float] = None
+        self._last_obstacle_distance: Optional[float] = None
+        self._last_obstacle_box: Optional[Dict[str, float]] = None
+        self._last_obstacle_reason = ""
         self._ai_link_alive: Optional[bool] = None
         self._battery_received = False
         self._nav_retry_timer = None
@@ -460,6 +511,21 @@ class OfficeRobotExecutor(Node):
         self._nav2_lifecycle_states: Dict[str, Tuple[int, str, float]] = {}
         self._nav2_lifecycle_pending: Dict[str, bool] = {}
         self._nav2_lifecycle_poll_timer = None
+        self._forward_first_started_mono = 0.0
+        self._forward_first_last_progress_mono = 0.0
+        self._forward_first_best_distance: Optional[float] = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+        self._forward_first_last_applied: Optional[bool] = None
+        self._forward_first_pending_request = False
+        self._forward_first_pending_target: Optional[bool] = None
+        self._forward_first_deferred_target: Optional[bool] = None
+        self._forward_first_deferred_reason = ""
+        self._forward_first_controller_full_name = self._resolve_full_node_name(
+            self.forward_first_controller_node
+        )
+        self._forward_first_param_client = None
         self._qr_detector = (
             cv2.QRCodeDetector()
             if (
@@ -487,6 +553,9 @@ class OfficeRobotExecutor(Node):
         )
         self.safety_sub = self.create_subscription(
             Bool, self.safety_lock_topic, self._on_safety_lock, safety_qos
+        )
+        self.safety_state_sub = self.create_subscription(
+            String, self.safety_state_topic, self._on_safety_state, safety_qos
         )
         self.ai_link_sub = self.create_subscription(
             Bool, self.ai_link_topic, self._on_ai_link, safety_qos
@@ -521,6 +590,10 @@ class OfficeRobotExecutor(Node):
                 self.get_logger().error("nav2_msgs not available; real GOTO execution disabled.")
             else:
                 self.nav_client = ActionClient(self, NavigateToPose, self.nav2_action_name)
+                if self.forward_first_enabled:
+                    self._forward_first_param_client = AsyncParameterClient(
+                        self, self._forward_first_controller_full_name
+                    )
         self.tf_buffer = None
         self.tf_listener = None
         if Buffer is not None and TransformListener is not None:
@@ -570,11 +643,17 @@ class OfficeRobotExecutor(Node):
 
         self.get_logger().info(
             f"Executor ready (robot_name={self.robot_name}, mock_mode={self.mock_mode}, use_nav2={self.use_nav2}, "
-            f"safety_lock_topic={self.safety_lock_topic}, ai_link_topic={self.ai_link_topic}, "
+            f"safety_lock_topic={self.safety_lock_topic}, safety_state_topic={self.safety_state_topic}, "
+            f"ai_link_topic={self.ai_link_topic}, "
             f"display_topic={self.display_topic}, command_received_event={self.emit_command_received_event}, "
             f"nav_retry_attempts={self.nav2_retry_attempts}, localization_required={self.localization_required}, "
             f"amcl_pose_topic={self.amcl_pose_topic}, amcl_stale_check={self.amcl_pose_stale_check_enabled}, "
             f"allow_degraded_cov={self.localization_allow_degraded_covariance}, "
+            f"forward_first_enabled={self.forward_first_enabled}, "
+            f"forward_first_max_sec={self.forward_first_max_sec}, "
+            f"forward_first_stuck_timeout_sec={self.forward_first_stuck_timeout_sec}, "
+            f"forward_first_min_progress_m={self.forward_first_min_progress_m}, "
+            f"forward_first_controller={self._forward_first_controller_full_name}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
             f"recovery_cycles={self.localization_recovery_max_cycles}, "
             f"lifecycle_check_enabled={self.nav2_lifecycle_check_enabled}, "
@@ -603,9 +682,19 @@ class OfficeRobotExecutor(Node):
         self._publish_command_received(payload, command_type, actions)
 
         if command_type in {"STOP", "PAUSE"}:
+            self._update_safety_context(
+                source="command",
+                state="STOP",
+                reason=f"command:{command_type}",
+            )
             self._set_safety_lock(True, source=f"command:{command_type}")
             return
         if command_type == "RESUME":
+            self._update_safety_context(
+                source="command",
+                state="CLEAR",
+                reason="command:RESUME",
+            )
             self._set_safety_lock(False, source="command:RESUME")
             return
         if command_type == "CANCEL":
@@ -655,7 +744,81 @@ class OfficeRobotExecutor(Node):
         self._run_next_action()
 
     def _on_safety_lock(self, msg: Bool) -> None:
+        if bool(msg.data):
+            if not (
+                self._last_safety_state == "STOP" and self._last_safety_source in {"command", "obstacle"}
+            ):
+                self._update_safety_context(
+                    source="obstacle",
+                    state="STOP",
+                    reason="safety_lock_topic",
+                )
+        elif self._last_safety_source != "command":
+            self._update_safety_context(
+                source="obstacle",
+                state="CLEAR",
+                reason="safety_lock_cleared",
+            )
         self._set_safety_lock(bool(msg.data), source="topic")
+        if bool(msg.data) and self._last_safety_state == "STOP":
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                        "source": "safety_lock_topic",
+                    }
+                ),
+                event="SAFETY_STOPPED",
+            )
+        elif (not bool(msg.data)) and self._last_safety_state == "CLEAR":
+            self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
+            self._publish_status(
+                self.current_status,
+                self._task_id_payload(
+                    {
+                        "reason": "safety_resume",
+                        "reason_code": "safety_resumed",
+                        "source": "safety_lock_topic",
+                    }
+                ),
+                event="SAFETY_RESUMED",
+            )
+
+    def _on_safety_state(self, msg: String) -> None:
+        payload = self._parse_payload(msg.data)
+        if not self._is_for_this_robot(payload):
+            return
+        self._update_safety_context_from_payload(payload)
+        state = str(payload.get("state", "")).strip().upper()
+        if state == "STOP" and self._safety_locked:
+            self.current_status = "WAITING"
+            self._publish_status(
+                "WAITING",
+                self._task_id_payload(
+                    {
+                        "reason": "safety_stop",
+                        "reason_code": "safety_locked",
+                        "source": "safety_state",
+                    }
+                ),
+                event="SAFETY_STOPPED",
+            )
+        elif state == "CLEAR" and not self._safety_locked:
+            self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
+            self._publish_status(
+                self.current_status,
+                self._task_id_payload(
+                    {
+                        "reason": "safety_resume",
+                        "reason_code": "safety_resumed",
+                        "source": "safety_state",
+                    }
+                ),
+                event="SAFETY_RESUMED",
+            )
 
     def _on_ai_link(self, msg: Bool) -> None:
         previous = self._ai_link_alive
@@ -743,7 +906,7 @@ class OfficeRobotExecutor(Node):
             }
         )
         self._publish_event("SAFETY_STOPPED", payload)
-        self._publish_status("WAITING", payload)
+        self._publish_status("WAITING", payload, event="SAFETY_STOPPED")
         self._publish_display("일시정지", "pause")
 
     def _exit_safety_lock(self, source: str) -> None:
@@ -764,7 +927,7 @@ class OfficeRobotExecutor(Node):
             }
         )
         self._publish_event("SAFETY_RESUMED", payload)
-        self._publish_status("IDLE", payload)
+        self._publish_status("IDLE", payload, event="SAFETY_RESUMED")
         self._publish_display("대기", "idle")
         self._current_task_id = None
 
@@ -839,9 +1002,19 @@ class OfficeRobotExecutor(Node):
                 self._publish_display("대기", "idle")
 
         if action in {"PAUSE", "STOP"}:
+            self._update_safety_context(
+                source="command",
+                state="STOP",
+                reason=f"action:{action}",
+            )
             self._set_safety_lock(True, source=f"action:{action}")
             return
         if action == "RESUME":
+            self._update_safety_context(
+                source="command",
+                state="CLEAR",
+                reason="action:RESUME",
+            )
             self._set_safety_lock(False, source="action:RESUME")
             self._finish_action_once(on_success)
             return
@@ -1083,6 +1256,7 @@ class OfficeRobotExecutor(Node):
         self._cancel_reason = None
         self._goal_started_at = time.time()
         self._goal_response_started_at = self._goal_started_at
+        self._begin_forward_first_mode()
         self.get_logger().info(
             f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
             f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), send_ts={send_ts:.3f})"
@@ -1735,6 +1909,7 @@ class OfficeRobotExecutor(Node):
             snapshot["current_y"] = float(pose.position.y)
 
         self._last_nav_feedback = snapshot
+        self._handle_forward_first_feedback(snapshot)
         now = time.time()
         if (now - self._last_feedback_log_at) < self.nav2_feedback_log_period_sec:
             return
@@ -2020,10 +2195,189 @@ class OfficeRobotExecutor(Node):
         )
 
     def _clear_nav_goal_context(self) -> None:
+        self._end_forward_first_mode("clear_nav_goal_context")
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._goal_response_started_at = None
+
+    def _begin_forward_first_mode(self) -> None:
+        if not self.forward_first_enabled:
+            return
+        if self._forward_first_param_client is None:
+            return
+
+        now_mono = time.monotonic()
+        self._forward_first_started_mono = now_mono
+        self._forward_first_last_progress_mono = now_mono
+        self._forward_first_best_distance = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+        self._forward_first_deferred_target = None
+        self._forward_first_deferred_reason = ""
+        self._request_allow_reversing(False, "forward_first_start")
+
+    def _handle_forward_first_feedback(self, snapshot: Dict[str, Any]) -> None:
+        if not self.forward_first_enabled:
+            return
+        if self._forward_first_started_mono <= 0.0:
+            return
+
+        now_mono = time.monotonic()
+        distance_remaining = snapshot.get("distance_remaining")
+        if isinstance(distance_remaining, (int, float)):
+            distance_remaining = float(distance_remaining)
+            if self._forward_first_best_distance is None:
+                self._forward_first_best_distance = distance_remaining
+                self._forward_first_last_progress_mono = now_mono
+            elif distance_remaining < self._forward_first_best_distance:
+                progress_delta = self._forward_first_best_distance - distance_remaining
+                if progress_delta >= self.forward_first_min_progress_m:
+                    self._forward_first_last_progress_mono = now_mono
+                self._forward_first_best_distance = distance_remaining
+
+        recoveries = snapshot.get("number_of_recoveries")
+        if isinstance(recoveries, (int, float)):
+            recoveries_int = int(recoveries)
+            if (
+                self._forward_first_override_active
+                and recoveries_int > self._forward_first_last_recoveries
+            ):
+                self._forward_first_last_recoveries = recoveries_int
+                self._enable_forward_first_escape(f"recoveries:{recoveries_int}")
+                return
+            self._forward_first_last_recoveries = max(
+                self._forward_first_last_recoveries, recoveries_int
+            )
+
+        if not self._forward_first_override_active:
+            return
+        if (now_mono - self._forward_first_started_mono) >= self.forward_first_max_sec:
+            self._enable_forward_first_escape("window_expired")
+            return
+        if (
+            now_mono - self._forward_first_last_progress_mono
+        ) >= self.forward_first_stuck_timeout_sec:
+            self._enable_forward_first_escape("no_progress")
+
+    def _enable_forward_first_escape(self, reason: str) -> None:
+        if self._forward_first_escape_enabled:
+            return
+        self._request_allow_reversing(True, f"escape:{reason}")
+
+    def _end_forward_first_mode(self, reason: str) -> None:
+        if not self.forward_first_enabled:
+            return
+
+        need_restore = self._forward_first_override_active or (
+            self._forward_first_last_applied is False
+        )
+        if need_restore:
+            self._request_allow_reversing(True, f"restore:{reason}")
+
+        self._forward_first_started_mono = 0.0
+        self._forward_first_last_progress_mono = 0.0
+        self._forward_first_best_distance = None
+        self._forward_first_last_recoveries = 0
+        self._forward_first_override_active = False
+        self._forward_first_escape_enabled = False
+
+    def _request_allow_reversing(self, allow_reversing: bool, reason: str) -> None:
+        if self._forward_first_param_client is None:
+            return
+        target = bool(allow_reversing)
+
+        if self._forward_first_pending_request:
+            self._forward_first_deferred_target = target
+            self._forward_first_deferred_reason = reason
+            return
+
+        if self._forward_first_last_applied is not None and self._forward_first_last_applied == target:
+            return
+
+        if not self._forward_first_param_client.wait_for_services(timeout_sec=0.1):
+            self.get_logger().warn(
+                f"Forward-first toggle skipped: parameter service unavailable "
+                f"(node={self._forward_first_controller_full_name}, "
+                f"param={self.forward_first_allow_reversing_param}, target={target}, reason={reason})."
+            )
+            return
+
+        try:
+            param = Parameter(self.forward_first_allow_reversing_param, value=target)
+            future = self._forward_first_param_client.set_parameters_atomically([param])
+            self._forward_first_pending_request = True
+            self._forward_first_pending_target = target
+            future.add_done_callback(
+                lambda f, t=target, r=reason: self._on_allow_reversing_set_result(f, t, r)
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Forward-first toggle request failed "
+                f"(node={self._forward_first_controller_full_name}, target={target}, "
+                f"reason={reason}, error={exc})."
+            )
+
+    def _on_allow_reversing_set_result(self, future: Any, target: bool, reason: str) -> None:
+        self._forward_first_pending_request = False
+        self._forward_first_pending_target = None
+
+        success = False
+        failure_reason = ""
+        try:
+            result = future.result()
+            success = bool(getattr(result, "successful", False))
+            failure_reason = str(getattr(result, "reason", ""))
+        except Exception as exc:
+            failure_reason = str(exc)
+
+        if success:
+            self._forward_first_last_applied = target
+            if target:
+                self._forward_first_override_active = False
+                if reason.startswith("escape:"):
+                    self._forward_first_escape_enabled = True
+                    self._publish_event(
+                        "FORWARD_FIRST_ESCAPE",
+                        self._task_id_payload(
+                            {
+                                "reason": reason,
+                                "reason_code": self._normalize_reason_code(reason),
+                            }
+                        ),
+                    )
+                elif reason.startswith("restore:"):
+                    self._publish_event(
+                        "FORWARD_FIRST_RESTORE",
+                        self._task_id_payload(
+                            {
+                                "reason": reason,
+                                "reason_code": self._normalize_reason_code(reason),
+                            }
+                        ),
+                    )
+            else:
+                self._forward_first_override_active = True
+                self._forward_first_escape_enabled = False
+                self._publish_event("FORWARD_FIRST_ON", self._task_id_payload({"reason": reason}))
+        else:
+            self.get_logger().warn(
+                f"Forward-first toggle rejected "
+                f"(node={self._forward_first_controller_full_name}, target={target}, "
+                f"reason={reason}, detail={failure_reason})."
+            )
+
+        if self._forward_first_deferred_target is None:
+            return
+
+        deferred_target = self._forward_first_deferred_target
+        deferred_reason = self._forward_first_deferred_reason or "deferred_toggle"
+        self._forward_first_deferred_target = None
+        self._forward_first_deferred_reason = ""
+        if success and deferred_target == target:
+            return
+        self._request_allow_reversing(deferred_target, deferred_reason)
 
     def _start_guide_display(self) -> None:
         self._stop_guide_display()
@@ -2322,6 +2676,7 @@ class OfficeRobotExecutor(Node):
             "battery": float(self.battery),
             **extra,
         }
+        data.update(self._build_safety_status_fields())
         if self.include_ai_link_in_status and self._ai_link_alive is not None:
             data["ai_link_alive"] = bool(self._ai_link_alive)
         if event:
@@ -2357,6 +2712,105 @@ class OfficeRobotExecutor(Node):
             event_data["sequence_id"] = incoming_task_id
         self._publish_event("COMMAND_RECEIVED", event_data)
 
+    def _update_safety_context_from_payload(self, payload: Dict[str, Any]) -> None:
+        source = str(payload.get("source", "")).strip() or "obstacle"
+        state = str(payload.get("state", "")).strip().upper() or "CLEAR"
+        reason = str(payload.get("reason", "")).strip()
+        class_name = payload.get("class_name")
+        confidence = self._to_float(payload.get("confidence"))
+        distance = self._to_float(payload.get("distance"))
+        box = self._normalize_box(payload.get("box"))
+        self._update_safety_context(
+            source=source,
+            state=state,
+            reason=reason,
+            obstacle_class=str(class_name).strip() if class_name is not None else None,
+            obstacle_confidence=confidence,
+            obstacle_distance=distance,
+            obstacle_box=box,
+        )
+
+    def _update_safety_context(
+        self,
+        *,
+        source: str,
+        state: str,
+        reason: str,
+        obstacle_class: Optional[str] = None,
+        obstacle_confidence: Optional[float] = None,
+        obstacle_distance: Optional[float] = None,
+        obstacle_box: Optional[Dict[str, float]] = None,
+    ) -> None:
+        self._last_safety_source = source.strip() or "obstacle"
+        self._last_safety_state = state.strip().upper() or "CLEAR"
+        self._last_obstacle_reason = reason.strip()
+
+        if obstacle_class is not None:
+            cleaned = obstacle_class.strip()
+            self._last_obstacle_class = cleaned or None
+        elif self._last_safety_source == "command":
+            self._last_obstacle_class = None
+
+        if obstacle_confidence is not None:
+            self._last_obstacle_confidence = obstacle_confidence
+        elif self._last_safety_source == "command":
+            self._last_obstacle_confidence = None
+
+        if obstacle_distance is not None:
+            self._last_obstacle_distance = obstacle_distance
+        elif self._last_safety_source == "command":
+            self._last_obstacle_distance = None
+
+        if obstacle_box is not None:
+            self._last_obstacle_box = dict(obstacle_box)
+        elif self._last_safety_source == "command":
+            self._last_obstacle_box = None
+
+    def _build_safety_status_fields(self) -> Dict[str, Any]:
+        if not any(
+            [
+                self._last_safety_source,
+                self._last_obstacle_reason,
+                self._last_obstacle_class,
+                self._last_obstacle_confidence is not None,
+                self._last_obstacle_distance is not None,
+                self._last_obstacle_box is not None,
+                self._last_safety_state != "CLEAR",
+            ]
+        ):
+            return {}
+
+        data: Dict[str, Any] = {
+            "safety_source": self._last_safety_source or "obstacle",
+            "obstacle_state": self._last_safety_state or "CLEAR",
+            "obstacle_reason": self._last_obstacle_reason,
+        }
+        if self._last_obstacle_class is not None:
+            data["obstacle_class"] = self._last_obstacle_class
+        if self._last_obstacle_confidence is not None:
+            data["obstacle_confidence"] = float(self._last_obstacle_confidence)
+        if self._last_obstacle_distance is not None:
+            data["obstacle_distance"] = float(self._last_obstacle_distance)
+        if self._last_obstacle_box is not None:
+            data["obstacle_box"] = dict(self._last_obstacle_box)
+        return data
+
+    def _normalize_box(self, value: Any) -> Optional[Dict[str, float]]:
+        if not isinstance(value, dict):
+            return None
+        x = self._to_float(value.get("x"))
+        y = self._to_float(value.get("y"))
+        width = self._to_float(value.get("width"))
+        height = self._to_float(value.get("height"))
+        if any(component is None for component in (x, y, width, height)):
+            return None
+        return {
+            "x": float(x),
+            "y": float(y),
+            "width": float(width),
+            "height": float(height),
+        }
+
     def _publish_display(self, text: str, icon: str = "info") -> None:
         if not self.enable_display:
             return
@@ -2386,6 +2840,15 @@ class OfficeRobotExecutor(Node):
                 }
             ]
         return []
+
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _parse_payload(raw: str) -> Dict[str, Any]:

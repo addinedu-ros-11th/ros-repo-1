@@ -4,12 +4,14 @@ office_robot_safety:
     robot_id: 1
     cmd_topic: commands
     lock_topic: safety_lock
+    safety_state_topic: safety_state
     stop_cmd_vel_topic: cmd_vel
     stop_publish_hz: 20.0
     lock_keepalive_hz: 2.0
     stop_publish_count: 10
-    obstacle_enabled: false
+    obstacle_enabled: true
     obstacle_topic: obstacles
+    obstacle_presence_stop_classes: person,robot
     obstacle_confidence_threshold: 0.6
     obstacle_timeout_sec: 1.5
     obstacle_clear_hold_sec: 1.0

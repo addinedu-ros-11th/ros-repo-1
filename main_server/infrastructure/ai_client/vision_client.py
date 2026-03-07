@@ -35,14 +35,18 @@ class VisionServiceClient(IVisionService):
                 if state == grpc.ChannelConnectivity.READY:
                     logger.info(f"Vision gRPC 서버에 연결되었습니다. (State: {state})")
                 elif state == grpc.ChannelConnectivity.TRANSIENT_FAILURE:
-                    logger.warning(f"Vision gRPC 서버 연결 실패 - 재시도 중... (State: {state})")
+                    logger.warning(
+                        f"Vision gRPC 서버 연결 실패 - 재시도 중... (State: {state})"
+                    )
                 elif state == grpc.ChannelConnectivity.IDLE:
-                    logger.info(f"Vision gRPC 서버 연결이 유휴 상태입니다. (State: {state})")
+                    logger.info(
+                        f"Vision gRPC 서버 연결이 유휴 상태입니다. (State: {state})"
+                    )
                 elif state == grpc.ChannelConnectivity.CONNECTING:
                     logger.info(f"Vision gRPC 서버에 연결 시도 중... (State: {state})")
-                
+
                 last_state = state
-            
+
             # 상태가 변경될 때까지 대기
             try:
                 await self.channel.wait_for_state_change(last_state)
@@ -125,6 +129,12 @@ class VisionServiceClient(IVisionService):
                     data["content"] = {
                         "object_name": det.object_name,
                         "confidence": det.confidence,
+                        "box": {
+                            "x": det.box.x,
+                            "y": det.box.y,
+                            "width": det.box.width,
+                            "height": det.box.height,
+                        },
                     }
                 elif result.HasField("face_recognition"):
                     face = result.face_recognition
@@ -143,6 +153,12 @@ class VisionServiceClient(IVisionService):
                             {
                                 "object_name": obj.object_name,
                                 "confidence": obj.confidence,
+                                "box": {
+                                    "x": obj.box.x,
+                                    "y": obj.box.y,
+                                    "width": obj.box.width,
+                                    "height": obj.box.height,
+                                },
                             }
                         )
                     data["content"] = objects

@@ -35,7 +35,7 @@ async def serve():
     # 1. 추론 상태 매니저 초기화
     state_manager = InferenceStateManager()
 
-    # 2. Vision 서비스 초기화 (YOLO + face_recognition)
+    # 2. Vision 서비스 초기화 (YOLO + InsightFace ArcFace)
     logger.info("Vision 서비스 초기화 중...")
     vision_service = VisionService(
         obstacle_model_path=config.OBSTACLE_MODEL_PATH,
