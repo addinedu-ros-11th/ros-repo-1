@@ -475,6 +475,7 @@ class OfficeRobotExecutor(Node):
         self._last_obstacle_class: Optional[str] = None
         self._last_obstacle_confidence: Optional[float] = None
         self._last_obstacle_distance: Optional[float] = None
+        self._last_obstacle_box: Optional[Dict[str, float]] = None
         self._last_obstacle_reason = ""
         self._ai_link_alive: Optional[bool] = None
         self._battery_received = False
@@ -2718,6 +2719,7 @@ class OfficeRobotExecutor(Node):
         class_name = payload.get("class_name")
         confidence = self._to_float(payload.get("confidence"))
         distance = self._to_float(payload.get("distance"))
+        box = self._normalize_box(payload.get("box"))
         self._update_safety_context(
             source=source,
             state=state,
@@ -2725,6 +2727,7 @@ class OfficeRobotExecutor(Node):
             obstacle_class=str(class_name).strip() if class_name is not None else None,
             obstacle_confidence=confidence,
             obstacle_distance=distance,
+            obstacle_box=box,
         )
 
     def _update_safety_context(
@@ -2736,6 +2739,7 @@ class OfficeRobotExecutor(Node):
         obstacle_class: Optional[str] = None,
         obstacle_confidence: Optional[float] = None,
         obstacle_distance: Optional[float] = None,
+        obstacle_box: Optional[Dict[str, float]] = None,
     ) -> None:
         self._last_safety_source = source.strip() or "obstacle"
         self._last_safety_state = state.strip().upper() or "CLEAR"
@@ -2757,6 +2761,11 @@ class OfficeRobotExecutor(Node):
         elif self._last_safety_source == "command":
             self._last_obstacle_distance = None
 
+        if obstacle_box is not None:
+            self._last_obstacle_box = dict(obstacle_box)
+        elif self._last_safety_source == "command":
+            self._last_obstacle_box = None
+
     def _build_safety_status_fields(self) -> Dict[str, Any]:
         if not any(
             [
@@ -2765,6 +2774,7 @@ class OfficeRobotExecutor(Node):
                 self._last_obstacle_class,
                 self._last_obstacle_confidence is not None,
                 self._last_obstacle_distance is not None,
+                self._last_obstacle_box is not None,
                 self._last_safety_state != "CLEAR",
             ]
         ):
@@ -2781,7 +2791,25 @@ class OfficeRobotExecutor(Node):
             data["obstacle_confidence"] = float(self._last_obstacle_confidence)
         if self._last_obstacle_distance is not None:
             data["obstacle_distance"] = float(self._last_obstacle_distance)
+        if self._last_obstacle_box is not None:
+            data["obstacle_box"] = dict(self._last_obstacle_box)
         return data
+
+    def _normalize_box(self, value: Any) -> Optional[Dict[str, float]]:
+        if not isinstance(value, dict):
+            return None
+        x = self._to_float(value.get("x"))
+        y = self._to_float(value.get("y"))
+        width = self._to_float(value.get("width"))
+        height = self._to_float(value.get("height"))
+        if any(component is None for component in (x, y, width, height)):
+            return None
+        return {
+            "x": float(x),
+            "y": float(y),
+            "width": float(width),
+            "height": float(height),
+        }
 
     def _publish_display(self, text: str, icon: str = "info") -> None:
         if not self.enable_display:

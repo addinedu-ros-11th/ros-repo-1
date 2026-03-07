@@ -51,6 +51,11 @@ class OfficeRobotSafety(Node):
         "depth",
         "estimated_distance",
     )
+    _BOX_KEYS = (
+        "box",
+        "bbox",
+        "bounding_box",
+    )
 
     def __init__(self) -> None:
         super().__init__("office_robot_safety")
@@ -393,6 +398,7 @@ class OfficeRobotSafety(Node):
                 distance is None
                 and class_id in self._presence_stop_class_ids
             ):
+                box = self._extract_box(det)
                 hit = {
                     "class_id": class_id,
                     "class_name": class_name,
@@ -402,6 +408,8 @@ class OfficeRobotSafety(Node):
                     "slow_threshold": slow_threshold,
                     "reason": f"class_{class_id}_presence_stop",
                 }
+                if box is not None:
+                    hit["box"] = box
                 if best_stop is None:
                     best_stop = hit
                 continue
@@ -411,6 +419,7 @@ class OfficeRobotSafety(Node):
                 and class_id == 0
                 and self.obstacle_person_stop_without_distance
             ):
+                box = self._extract_box(det)
                 hit = {
                     "class_id": class_id,
                     "class_name": class_name,
@@ -420,6 +429,8 @@ class OfficeRobotSafety(Node):
                     "slow_threshold": slow_threshold,
                     "reason": "person_without_distance",
                 }
+                if box is not None:
+                    hit["box"] = box
                 if best_stop is None:
                     best_stop = hit
                 continue
@@ -427,6 +438,7 @@ class OfficeRobotSafety(Node):
             if distance is None:
                 continue
 
+            box = self._extract_box(det)
             if stop_threshold is not None and distance <= stop_threshold:
                 hit = {
                     "class_id": class_id,
@@ -437,6 +449,8 @@ class OfficeRobotSafety(Node):
                     "slow_threshold": slow_threshold,
                     "reason": f"class_{class_id}_stop",
                 }
+                if box is not None:
+                    hit["box"] = box
                 if best_stop is None or distance < float(best_stop.get("distance", 999.0)):
                     best_stop = hit
                 continue
@@ -451,6 +465,8 @@ class OfficeRobotSafety(Node):
                     "slow_threshold": slow_threshold,
                     "reason": f"class_{class_id}_slow",
                 }
+                if box is not None:
+                    hit["box"] = box
                 if best_slow is None or distance < float(best_slow.get("distance", 999.0)):
                     best_slow = hit
 
@@ -492,6 +508,8 @@ class OfficeRobotSafety(Node):
                 "label",
                 "name",
                 "box",
+                "bbox",
+                "bounding_box",
             )
         )
 
@@ -516,6 +534,30 @@ class OfficeRobotSafety(Node):
             if value is not None:
                 return value
         return None
+
+    def _extract_box(self, detection: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        for key in self._BOX_KEYS:
+            raw_box = detection.get(key)
+            box = self._normalize_box(raw_box)
+            if box is not None:
+                return box
+        return None
+
+    def _normalize_box(self, value: Any) -> Optional[Dict[str, float]]:
+        if not isinstance(value, dict):
+            return None
+        x = self._to_float(value.get("x"))
+        y = self._to_float(value.get("y"))
+        width = self._to_float(value.get("width"))
+        height = self._to_float(value.get("height"))
+        if any(component is None for component in (x, y, width, height)):
+            return None
+        return {
+            "x": float(x),
+            "y": float(y),
+            "width": float(width),
+            "height": float(height),
+        }
 
     def _publish_safety_state_snapshot(
         self, source_hint: Optional[str] = None, reason_override: Optional[str] = None
@@ -557,6 +599,7 @@ class OfficeRobotSafety(Node):
             "class_name": detail.get("class_name"),
             "confidence": detail.get("confidence"),
             "distance": detail.get("distance"),
+            "box": detail.get("box"),
             "stop_threshold": detail.get("stop_threshold"),
             "slow_threshold": detail.get("slow_threshold"),
             "ts": time.time(),

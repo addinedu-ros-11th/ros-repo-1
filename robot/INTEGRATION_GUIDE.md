@@ -149,4 +149,5 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
   - `obstacle_class`
   - `obstacle_confidence`
   - `obstacle_distance`
+  - `obstacle_box`
   - `obstacle_reason`

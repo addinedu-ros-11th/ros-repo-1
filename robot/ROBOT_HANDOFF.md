@@ -45,6 +45,7 @@
     - `obstacle_class`
     - `obstacle_confidence`
     - `obstacle_distance`
+    - `obstacle_box`
     - `obstacle_reason`
   - Nav2 recovery behavior (`office_robot_executor`):
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
@@ -116,7 +117,9 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
 - Dynamic obstacle handling:
   - `SR-003` static obstacle avoidance remains Nav2 costmap/controller behavior.
   - `SR-004 v1` is `safe stop / resume` for dynamic `person` / `robot`.
-  - Full distance-aware yield can be layered later if upstream starts sending `distance_m`.
+  - Upstream bbox (`box.x/y/width/height`) is preserved into `safety_state` and `/status`.
+  - Full distance-aware yield can be layered later if upstream starts sending `distance_m`
+    or if robot-side box + LiDAR fusion is added.
 - Video stream tuning defaults (battery/network friendly):
   - `max_fps=8.0`, `resize_width=640`, `resize_height=360`, `jpeg_quality=70`
 - If AI vision is down:
