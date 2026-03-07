@@ -21,20 +21,32 @@ body, html {
 # --------------------------------------------------------- */
 .container {
     display: grid;
-    grid-template-columns: 1fr 1.2fr; /* 좌측 : 우측 비율 */
-    grid-template-rows: 1fr 1fr;    /* 좌측 상단 : 좌측 하단 (5:5) */
+    grid-template-columns: 1fr 1.2fr; 
+    /* 상단 패널과 하단 패널의 비율을 1:1로 균형 있게 조정 */
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); 
     height: 100vh;
+    max-height: 100vh; /* 화면을 절대 벗어나지 않음 */
     gap: 15px;
     padding: 15px;
     box-sizing: border-box;
+    overflow: hidden; 
 }
 
-/* 우측 전체 컨테이너 (2:8 분할용) */
+/* 그리드 셀 자체의 높이 제한 */
+.container > div {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 우측 전체 컨테이너 */
 .right-container {
     grid-area: 1 / 2 / 3 / 3;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
 }
 
 .panel {
@@ -42,33 +54,43 @@ body, html {
     border-radius: 20px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    height: 100%; 
+    min-height: 0; /* 중요: 자식이 부모를 늘리지 못하게 함 */
+    overflow: hidden; 
 }
 
 /* # ---------------------------------------------------------
 # 2. 구역별 높이 및 배치 설정
 # --------------------------------------------------------- */
-/* 좌상단 패널 */
 .reservation-panel { 
     grid-area: 1 / 1 / 2 / 2; 
-    padding: 20px; 
-    overflow-y: auto; 
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
-/* 좌하단 패널 */
 .combined-control-panel { 
     grid-area: 2 / 1 / 3 / 2; 
-    padding: 20px; 
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
-/* 우측 전체 (가로 바 + AI 패널) */
-.right-container {
-    grid-area: 1 / 2 / 3 / 3;
+/* 테이블/리스트를 감싸는 영역은 무조건 남은 공간을 차지하고 스크롤되어야 함 */
+.table-wrapper {
+    flex: 1;
+    min-height: 0; /* 중요: flex 내부에서 스크롤 작동을 위한 필수 조건 */
+    overflow-y: auto;
+    margin-top: 10px;
+}
+
+.res-list-container {
+    flex: 1;
     display: flex;
-    flex-direction: column; /* 세로로 쌓기 */
-    gap: 10px;
-    padding: 15px;
-    box-sizing: border-box;
-    height: 100%;
+    flex-direction: column;
+    min-height: 0;
 }
 
 /* # ---------------------------------------------------------
@@ -87,14 +109,14 @@ body, html {
 
 /* 로봇 현황 전용 버튼 공통 스타일 */
 .robot-btn {
-    width: 70px;             /* 버튼 너비 고정 */
-    height: 28px;            /* 버튼 높이 고정 */
+    padding: 6px 12px;
     border: none;
     border-radius: 4px;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
 /* 수령 확인 전용 (초록) */
@@ -104,36 +126,27 @@ body, html {
 }
 .btn-robot-confirm:hover { background-color: #218838; }
 
-/* 취소 전용 (빨강 - 기존 btn-task-cancel 활용 또는 신규) */
+/* 취소 전용 (빨강) */
 .btn-robot-cancel {
     background-color: #dc3545;
     color: white;
 }
 .btn-robot-cancel:hover { background-color: #c82333; }
 
-/* 테이블 레이아웃 및 상세정보 너비 제어 */
-.task-table {
-    table-layout: fixed;     /* 컬럼 너비 강제 고정 */
+/* 테이블 레이아웃 최적화 */
+#robot-task-table {
+    table-layout: fixed;
     width: 100%;
 }
 
-/* 상세정보 칸: 너비를 제한하고 넘치면 줄임표(...) 표시 */
-.col-details {
-    width: 35%;             /* 상세정보 너비 비율 축소 */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+.col-type { width: 40%; text-align: left !important; padding-left: 20px !important; }
+.col-status { width: 25%; }
+.col-action { width: 35%; }
 
-.col-type { width: 20%; }
-.col-status { width: 15%; }
-.col-action { width: 30%; } /* 버튼 2개가 들어갈 충분한 공간 */
-
-/* 테이블 컬럼 비율 조정 */
-#robot-task-table th:nth-child(1) { width: 20%; } /* 업무 유형 */
-#robot-task-table th:nth-child(2) { width: 45%; } /* 상세 정보 */
-#robot-task-table th:nth-child(3) { width: 20%; } /* 상태 */
-#robot-task-table th:nth-child(4) { width: 15%; } /* 관리(버튼) */
+/* 테이블 컬럼 비율 조정 (TH 기준) */
+#robot-task-table th:nth-child(1) { width: 40%; } /* 업무 유형 */
+#robot-task-table th:nth-child(2) { width: 25%; } /* 상태 */
+#robot-task-table th:nth-child(3) { width: 35%; } /* 관리(버튼) */
 
 /* 패널 내부 레이아웃 최적화 */
 .combined-control-panel {
@@ -351,7 +364,8 @@ body, html {
     display: flex;
     gap: 10px;
     border-bottom: 2px solid #f1f3f4;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
+    flex-shrink: 0;
 }
 
 .tab-btn {
@@ -375,13 +389,18 @@ body, html {
     border-bottom: 3px solid var(--ai-blue);
 }
 
-/* 컨텐츠 표시 제어 */
+/* 컨텐츠 표시 및 스크롤 제어 */
 .tab-content {
-    display: none; /* 기본적으로 숨김 */
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0; /* 중요: flex 컨테이너 내에서 자식이 부모보다 커지는 것 방지 */
+    padding-right: 5px;
 }
 
 .tab-content.active {
-    display: block; /* active 클래스가 있으면 표시 */
+    display: flex;
+    flex-direction: column;
 }
 
 /* 공백 화면 스타일 */
