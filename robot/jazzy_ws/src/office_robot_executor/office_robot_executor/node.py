@@ -814,32 +814,6 @@ class OfficeRobotExecutor(Node):
                 reason="safety_lock_cleared",
             )
         self._set_safety_lock(bool(msg.data), source="topic")
-        if bool(msg.data) and self._last_safety_state == "STOP":
-            self.current_status = "WAITING"
-            self._publish_status(
-                "WAITING",
-                self._task_id_payload(
-                    {
-                        "reason": "safety_stop",
-                        "reason_code": "safety_locked",
-                        "source": "safety_lock_topic",
-                    }
-                ),
-                event="SAFETY_STOPPED",
-            )
-        elif (not bool(msg.data)) and self._last_safety_state == "CLEAR":
-            self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
-            self._publish_status(
-                self.current_status,
-                self._task_id_payload(
-                    {
-                        "reason": "safety_resume",
-                        "reason_code": "safety_resumed",
-                        "source": "safety_lock_topic",
-                    }
-                ),
-                event="SAFETY_RESUMED",
-            )
 
     def _on_safety_state(self, msg: String) -> None:
         payload = self._parse_payload(msg.data)
@@ -853,12 +827,11 @@ class OfficeRobotExecutor(Node):
                 "WAITING",
                 self._task_id_payload(
                     {
-                        "reason": "safety_stop",
-                        "reason_code": "safety_locked",
+                        "reason": "safety_state_sync",
+                        "reason_code": "safety_state_locked",
                         "source": "safety_state",
                     }
                 ),
-                event="SAFETY_STOPPED",
             )
         elif state == "CLEAR" and not self._safety_locked:
             self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
@@ -866,12 +839,11 @@ class OfficeRobotExecutor(Node):
                 self.current_status,
                 self._task_id_payload(
                     {
-                        "reason": "safety_resume",
-                        "reason_code": "safety_resumed",
+                        "reason": "safety_state_sync",
+                        "reason_code": "safety_state_clear",
                         "source": "safety_state",
                     }
                 ),
-                event="SAFETY_RESUMED",
             )
 
     def _on_ai_link(self, msg: Bool) -> None:
