@@ -4,19 +4,19 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from main_server.domains.tasks.schemas import Task, TaskType, TaskStatus
-from main_server.domains.robots.schemas import RobotStatus
-from common.robot_task_events import RobotEvent
+from main_server.domains.robots.schemas import RobotStatus, RobotEvent
 
 logger = logging.getLogger(__name__)
 
 class BaseTaskProcessor(ABC):
     """모든 작업 처리기의 기본 인터페이스"""
-    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager):
+    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo=None):
         self.fleet_manager = fleet_manager
         self.location_repo = location_repo
         self.task_repo = task_repo
         self.ai_processing_service = ai_processing_service
         self.connection_manager = connection_manager
+        self.product_repo = product_repo
 
     @abstractmethod
     async def get_initial_actions(self, task: Task) -> List[Dict[str, Any]]:
@@ -107,7 +107,7 @@ class SnackProcessor(BaseTaskProcessor):
             await self.broadcast_task_update("간식 진열대에 도착했습니다. QR 코드를 스캔합니다.")
             commands = [{
                 "action": "QR_SCAN", 
-                "params": {}, 
+                "params": {"purpose": "SNACK_SCAN"}, 
                 "on_success": RobotEvent.QR_SCANNED 
             }]
             self.fleet_manager.send_action_commands(robot.name, commands)
@@ -125,20 +125,31 @@ class SnackProcessor(BaseTaskProcessor):
                 await self.broadcast_task_update("QR 인식이 되지 않았습니다. 재시도합니다.")
                 self.fleet_manager.send_action_commands(robot.name, [{
                     "action": "QR_SCAN", 
-                    "params": {}, 
+                    "params": {"purpose": "SNACK_SCAN"}, 
                     "on_success": RobotEvent.QR_SCANNED 
                 }])
                 return
 
-            if target_item_name in scanned_data:
-                logger.info("[SnackProcessor] QR 검증 성공. 목적지 이동 시작.")
-                await self.broadcast_task_update(f"물품({target_item_name}) 확인 완료. 배달을 시작합니다.")
+            qr_content = scanned_data[0] if isinstance(scanned_data, list) and scanned_data else str(scanned_data)
+            
+            # DB에서 상품 정보 조회 (이름 일치 여부 확인)
+            product = await self.product_repo.find_by_name(target_item_name)
+            
+            is_valid = False
+            if product:
+                # 상품명이 QR 내용에 포함되어 있는지 확인 (실제 운영 환경에서는 전용 코드를 사용하겠지만 여기서는 이름으로 비교)
+                if product['name'].lower() in qr_content.lower() or target_item_name.lower() in qr_content.lower():
+                    is_valid = True
+
+            if is_valid:
+                result_msg = f"물품 확인 성공: {target_item_name} (DB 확인 완료)"
+                logger.info(f"[SnackProcessor] {result_msg}")
+                await self.broadcast_task_update(f"[QR 데이터] {qr_content} -> {result_msg}")
                 await asyncio.sleep(1) 
                 
                 dest_name = task.target_location_name
                 dest = await self.location_repo.find_by_name(dest_name)
                 if dest:
-                    logger.info(f"[SnackProcessor] 목적지 좌표 확인: {dest_name} ({dest['coordinate_x']}, {dest['coordinate_y']})")
                     commands = [{
                         "action": "GOTO", 
                         "params": {
@@ -149,16 +160,18 @@ class SnackProcessor(BaseTaskProcessor):
                         "on_success": RobotEvent.ARRIVED_AT_DESTINATION
                     }]
                     self.fleet_manager.send_action_commands(robot.name, commands)
-                    logger.info(f"[SnackProcessor] GOTO 명령(목적지) 전송 완료.")
                 else:
                     logger.error(f"[SnackProcessor] 목적지 '{dest_name}'를 찾을 수 없습니다.")
             else:
-                logger.warning(f"[SnackProcessor] QR 검증 실패. 불일치: {scanned_data}")
-                await self.broadcast_task_update("잘못된 물품이 감지되었습니다.")
-                self.fleet_manager.send_action_commands(robot.name, [{
-                    "action": "DISPLAY_TEXT", 
-                    "params": {"text": "Wrong Item!", "duration": 3}
-                }])
+                result_msg = f"물품 불일치: {target_item_name}가 아닙니다."
+                logger.warning(f"[SnackProcessor] {result_msg}. 스캔된 내용: {qr_content}")
+                await self.broadcast_task_update(f"[QR 데이터] {qr_content} -> {result_msg}")
+                
+                self.fleet_manager.send_action_commands(robot.name, [
+                    {"action": "QR_SCAN_FAILED", "params": {"reason": "wrong_item"}},
+                    {"action": "DISPLAY_TEXT", "params": {"text": "Wrong Item!", "duration": 3}},
+                    {"action": "QR_SCAN", "params": {"purpose": "SNACK_SCAN"}, "on_success": RobotEvent.QR_SCANNED}
+                ])
 
         elif event == RobotEvent.ARRIVED_AT_DESTINATION:
             logger.info(f"[SnackProcessor] 목적지 도착 완료. 수령 확인 요청 대기.")
@@ -333,17 +346,18 @@ class ManualMoveProcessor(BaseTaskProcessor):
 
 class GuestCheckProcessor(BaseTaskProcessor):
     """외부인 감지 시 QR 인증 및 가이드 전환 처리기"""
-    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo):
-        super().__init__(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager)
+    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo=None):
+        super().__init__(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo)
         self.visitor_repo = visitor_repo
 
     async def get_initial_actions(self, task: Task) -> List[Dict[str, Any]]:
         # 초기 동작: 빨간색 LED, 안내 문구, QR 스캔 시작
         logger.info("[GuestCheckProcessor] 외부인 감지 대응 시작.")
+        purpose = task.details.get("purpose", "VISITOR_SCAN")
         return [
             {"action": "SET_LED", "params": {"color": "RED", "mode": "BLINK", "rate": 1.0}},
-            {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}}, # 0=무한 유지
-            {"action": "QR_SCAN", "params": {}, "on_success": RobotEvent.QR_SCANNED}
+            {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}},
+            {"action": "QR_SCAN", "params": {"purpose": purpose}, "on_success": RobotEvent.QR_SCANNED}
         ]
 
     async def handle_event(self, task: Task, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
@@ -352,64 +366,42 @@ class GuestCheckProcessor(BaseTaskProcessor):
 
         if event == RobotEvent.QR_SCANNED:
             scanned_data = data.get("scanned_data") if data else None
-            # scanned_data가 문자열(QR 내용) 리스트이거나 단일 문자열일 수 있음
             if not scanned_data:
                 logger.warning("[GuestCheckProcessor] QR 데이터 없음. 재시도.")
-                # 재시도 로직 (단순 반복)
-                self.fleet_manager.send_action_commands(robot.name, [{"action": "QR_SCAN", "params": {}, "on_success": RobotEvent.QR_SCANNED}])
+                self.fleet_manager.send_action_commands(robot.name, [{"action": "QR_SCAN", "params": {"purpose": "VISITOR_SCAN"}, "on_success": RobotEvent.QR_SCANNED}])
                 return
             
-            # scanned_data가 리스트라면 첫 번째 값 사용 (간단화)
-            qr_code = scanned_data[0] if isinstance(scanned_data, list) and scanned_data else str(scanned_data)
+            qr_content = scanned_data[0] if isinstance(scanned_data, list) and scanned_data else str(scanned_data)
+            logger.info(f"[GuestCheckProcessor] QR 코드 확인 중: {qr_content}")
             
-            logger.info(f"[GuestCheckProcessor] QR 코드 확인 중: {qr_code}")
-            visitor = await self.visitor_repo.get_by_qr_code(qr_code)
+            # DB 비교 (Visitors 테이블의 qr_code 필드와 비교)
+            visitor = await self.visitor_repo.get_by_qr_code(qr_content)
             
-            if visitor and visitor.status in ["PENDING", "VERIFIED", "APPROVED"]: # APPROVED 상태도 허용 (예약 승인 시)
-                logger.info(f"[GuestCheckProcessor] 방문객 확인됨: {visitor.name}")
+            result_msg = ""
+            if visitor:
+                result_msg = f"인증 성공: {visitor.name}님 확인되었습니다."
+                await self.broadcast_task_update(f"[QR 데이터] {qr_content} -> {result_msg}")
                 
-                # 1. 방문객 상태 업데이트 (DB)
-                await self.visitor_repo.update(visitor.visitor_id, {"status": "CHECKED_IN"}) # 입장 처리
-                
-                # 2. 안내 메시지 및 LED 변경
+                # 1. 상태 업데이트 및 환영 표시
+                await self.visitor_repo.update(visitor.visitor_id, {"status": "CHECKED_IN"})
                 self.fleet_manager.send_action_commands(robot.name, [
                     {"action": "SET_LED", "params": {"color": "GREEN", "mode": "SOLID"}},
-                    {"action": "DISPLAY_TEXT", "params": {"text": f"Welcome {visitor.name}. Guiding...", "duration": 3}}
+                    {"action": "DISPLAY_TEXT", "params": {"text": f"Welcome {visitor.name}", "duration": 3}}
                 ])
                 
-                # 3. 현재 GUEST_CHECK 태스크 완료 처리
+                # 2. 태스크 전환 (GUIDING 명령 전송)
                 await self._complete_task(task, robot_id)
                 
-                # 4. GUIDE_GUEST 태스크 생성 및 즉시 할당
-                # 목적지 결정 로직: 
-                # 1순위: 방문객 정보에 명시된 destination_id
-                # 2순위: 담당자(host_user_id)의 근무 위치
-                # 3순위: 기본값 (large_meeting_room)
-                
-                target_loc_name = "large_meeting_room" # 기본값
-                target_loc_id = None
-
-                if visitor.destination_id:
-                    loc = await self.location_repo.get_by_id(visitor.destination_id)
-                    if loc:
-                        target_loc_name = loc.name
-                        target_loc_id = loc.location_id
-                        logger.info(f"[GuestCheckProcessor] 방문객 목적지(ID:{target_loc_id}) 사용: {target_loc_name}")
-                elif visitor.host_user_id:
-                    # 담당자 정보 조회 (user_repo 접근 필요)
-                    # TaskManager가 user_repo를 가지고 있으므로 fleet_manager.task_manager를 통해 접근 시도
-                    if self.fleet_manager.task_manager and self.fleet_manager.task_manager.user_repo:
-                        host_user = await self.fleet_manager.task_manager.user_repo.get_by_id(visitor.host_user_id)
-                        if host_user and host_user.location_id:
-                            loc = await self.location_repo.get_by_id(host_user.location_id)
-                            if loc:
-                                target_loc_name = loc.name
-                                target_loc_id = loc.location_id
-                                logger.info(f"[GuestCheckProcessor] 담당자({host_user.name}) 위치 사용: {target_loc_name}")
+                # 목적지 설정
+                target_loc_name = "large_meeting_room"
+                target_loc_id = visitor.destination_id
+                if target_loc_id:
+                    loc = await self.location_repo.get_by_id(target_loc_id)
+                    if loc: target_loc_name = loc.name
 
                 new_task_data = {
                     "task_type": "GUIDE_GUEST",
-                    "requester_id": 1, # System
+                    "requester_id": 1,
                     "status": "ASSIGNED",
                     "assigned_robot_id": robot.id,
                     "visitor_id": visitor.visitor_id,
@@ -421,13 +413,16 @@ class GuestCheckProcessor(BaseTaskProcessor):
                 if self.fleet_manager.task_manager:
                     new_task = await self.task_repo.create(new_task_data)
                     if new_task:
-                        logger.info(f"[GuestCheckProcessor] GUIDE_GUEST 태스크(ID:{new_task.id}) 자동 생성 및 전환.")
                         await self.fleet_manager.task_manager.assign_and_dispatch(robot, new_task)
             else:
-                logger.warning(f"[GuestCheckProcessor] 유효하지 않은 방문객 QR: {qr_code}")
+                result_msg = "인증 실패: 등록되지 않은 QR 코드입니다."
+                await self.broadcast_task_update(f"[QR 데이터] {qr_content} -> {result_msg}")
+                
+                # 실패 명령 전송
                 self.fleet_manager.send_action_commands(robot.name, [
+                    {"action": "QR_SCAN_FAILED", "params": {"reason": "invalid_qr"}},
                     {"action": "DISPLAY_TEXT", "params": {"text": "Invalid QR. Try again.", "duration": 3}},
-                    {"action": "QR_SCAN", "params": {}, "on_success": RobotEvent.QR_SCANNED} # 재시도
+                    {"action": "QR_SCAN", "params": {"purpose": "VISITOR_SCAN"}, "on_success": RobotEvent.QR_SCANNED}
                 ])
                 # 무한 재시도 대신 카운트를 셀 수도 있음.
 

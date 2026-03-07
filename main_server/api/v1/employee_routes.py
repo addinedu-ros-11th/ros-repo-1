@@ -60,16 +60,76 @@ async def process_command(request: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="Message is required")
     
     # ---------------------------------------------------------
-    # [TEST ONLY] go:(x,y,theta) 또는 go:(location_name) 수동 명령 가로채기
+    # [TEST ONLY] go:(...) 및 QR_SCAN:(...) 명령 처리
     # ---------------------------------------------------------
+    
+    # 1. 로그인한 유저 정보 조회 (Task 생성을 위해 필요)
+    user_info = None
+    if caller_id:
+        user_info = await container.user_repo.get_user_by_username(caller_id)
+    
+    requester_pk = user_info.user_id if user_info else None
+
+    # [CASE A] go: 명령어 처리
     if message.startswith("go:"):
         import re
-        # 1. 좌표 직접 입력: go:(5,5,0)
+        
+        # 패턴 0: 특정 로봇 지정 이동 -> go:(robot_1, 3)
+        match_specific = re.match(r"go:\(([^,]+),\s*(\d+)\)", message.strip())
+        
+        # 패턴 1: 좌표 직접 입력 -> go:(5.0, 5.0, 0.0)
         match_coord = re.match(r"go:\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)", message.strip())
         
-        # 2. 장소 이름 입력: go:(office_1)
+        # 패턴 2: 장소 이름 입력 (자동 배차) -> go:(office_1)
         match_name = re.match(r"go:\(([^)]+)\)", message.strip())
 
+        if match_specific:
+            # [수동 배차] 특정 로봇을 지정된 위치 ID로 이동
+            robot_name = match_specific.group(1).strip()
+            location_id = int(match_specific.group(2).strip())
+            
+            robot = await container.robot_repo.get_by_name(robot_name)
+            if not robot:
+                return {"status": "error", "message": f"로봇 '{robot_name}'을(를) 찾을 수 없습니다."}
+            
+            loc = await container.location_repo.find_by_id(location_id)
+            if not loc:
+                return {"status": "error", "message": f"위치 ID {location_id}를 찾을 수 없습니다."}
+
+            task_data = {
+                "requester_id": requester_pk,
+                "task_type": "MANUAL_MOVE",
+                "priority": "HIGH",
+                "status": "ASSIGNED",
+                "assigned_robot_id": robot.id,
+                "destination_id": loc['location_id'],
+                "target_location_name": loc['name'],
+                "details": {
+                    "x": loc["coordinate_x"],
+                    "y": loc["coordinate_y"],
+                    "theta": loc.get("theta", 0.0),
+                    "requester_name": caller_id
+                }
+            }
+            
+            # 직접 Task 생성 및 할당
+            task = await container.task_repo.create(task_data)
+            if task:
+                await container.task_manager.assign_and_dispatch(robot, task)
+                return {
+                    "status": "success",
+                    "message": f"'{robot_name}'이(가) '{loc['name']}'(으)로 이동합니다.",
+                    "robot_info": {
+                        "robot_id": robot.id,
+                        "name": robot.name,
+                        "status": robot.status,
+                        "battery": robot.battery_level
+                    }
+                }
+            else:
+                return {"status": "error", "message": "태스크 생성 실패"}
+
+        # [자동 배차] 기존 로직 유지 (MANUAL_MOVE Task 생성 후 TaskManager에 위임)
         manual_result = None
         target_name = None
 
@@ -86,7 +146,6 @@ async def process_command(request: Dict[str, Any]):
 
         elif match_name:
             loc_name = match_name.group(1).strip()
-            # DB에서 장소 검색
             location_data = await container.location_repo.find_by_name(loc_name)
             
             if location_data:
@@ -117,6 +176,42 @@ async def process_command(request: Dict[str, Any]):
                 "task_id": task.id,
                 "ai_fields": manual_result["fields"]
             }
+
+    # [CASE B] QR_SCAN 명령어 처리
+    elif message.startswith("QR_SCAN:"):
+        import re
+        match_qr = re.match(r"QR_SCAN:\(([^)]+)\)", message.strip())
+        if match_qr:
+            robot_name = match_qr.group(1).strip()
+            robot = await container.robot_repo.get_by_name(robot_name)
+            if not robot:
+                 return {"status": "error", "message": f"로봇 '{robot_name}'을(를) 찾을 수 없습니다."}
+            
+            # GUEST_CHECK 태스크를 생성하여 프로세서가 응답을 처리하게 함
+            task_data = {
+                "requester_id": requester_pk,
+                "task_type": "GUEST_CHECK",
+                "priority": "HIGH",
+                "status": "ASSIGNED",
+                "assigned_robot_id": robot.id,
+                "details": {"purpose": "VISITOR_SCAN", "reason": "manual_test"}
+            }
+            
+            task = await container.task_repo.create(task_data)
+            if task:
+                await container.task_manager.assign_and_dispatch(robot, task)
+                return {
+                    "status": "success",
+                    "message": f"'{robot_name}'에게 방문객 QR 스캔 태스크를 할당했습니다.",
+                    "robot_info": {
+                        "robot_id": robot.id,
+                        "name": robot.name,
+                        "status": robot.status,
+                        "battery": robot.battery_level
+                    }
+                }
+            else:
+                return {"status": "error", "message": "태스크 생성 실패"}
 
     # ---------------------------------------------------------
     # [TEST ONLY] cancle:(robot_id) 작업 취소 명령 가로채기

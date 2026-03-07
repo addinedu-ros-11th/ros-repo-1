@@ -32,18 +32,27 @@ class TaskStatus(str, Enum):
 # ==========================================
 
 class RobotActionType(str, Enum):
-    """로봇에게 내리는 개별 명령 명령어 (SR-013)"""
-    GOTO = "GOTO"                       # 좌표로 이동
-    LEAD_GUEST = "LEAD_GUEST"           # 게스트와 함께 이동
-    PICKUP = "PICKUP"                   # 물품 집기/적재 대기
-    DROPOFF = "DROPOFF"                 # 물품 내려놓기/수령 대기
-    QR_SCAN = "QR_SCAN"                 # QR 코드 스캔 요청
-    DISPLAY_TEXT = "DISPLAY_TEXT"       # LCD 텍스트 표시
-    PLAY_SOUND = "PLAY_SOUND"           # 부저/음성 출력
-    SET_LED = "SET_LED"                 # LED 색상 변경
-    STOP = "STOP"                       # 긴급 정지
-    PAUSE = "PAUSE"                     # 일시 정지 (교차로 대기 등)
+    """
+    서버가 로봇에게 내리는 개별 제어 명령 (SR-013)
+    """
+    # 주행 및 내비게이션
+    GOTO = "GOTO"                       # 지정 좌표로 이동 (x, y, theta)
+    LEAD_GUEST = "LEAD_GUEST"           # 게스트 가이드 주행 (속도 조절 및 후방 감시 포함)
+    STOP = "STOP"                       # 즉시 정지
+    PAUSE = "PAUSE"                     # 주행 일시 정지
     RESUME = "RESUME"                   # 주행 재개
+    CANCEL = "CANCEL"                   # 현재 작업 취소 및 초기화
+
+    # 하드웨어 제어 및 상호작용
+    QR_SCAN = "QR_SCAN"                 # QR 코드 스캔 시작 (params: purpose)
+    SET_LED = "SET_LED"                 # LED 제어 (params: color, mode, rate)
+    DISPLAY_TEXT = "DISPLAY_TEXT"       # 디스플레이 텍스트 출력 (params: text, duration)
+    PLAY_SOUND = "PLAY_SOUND"           # 음성/부저 출력 (params: name, volume)
+
+    # 시나리오 특화 알림 (로봇 UI용)
+    QR_SCAN_SUCCESS = "QR_SCAN_SUCCESS" # 인증 성공 알림
+    QR_SCAN_FAILED = "QR_SCAN_FAILED"   # 인증 실패 알림
+    WAIT_FOR_USER = "WAIT_FOR_USER"     # 사용자 확인 대기 모드 진입 (적재/수령 등)
 
 # ==========================================
 # 3. 데이터 스키마 (Pydantic Models)

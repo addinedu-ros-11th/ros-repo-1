@@ -703,6 +703,9 @@
                     if (result.ai_fields) {
                         aiMsg += `\n[분석 결과] 목적지: ${result.ai_fields.location || result.ai_fields.dest_location || '없음'}`;
                     }
+                    if (result.robot_info) {
+                        aiMsg += `\n[로봇 정보] 이름: ${result.robot_info.name}, 상태: ${result.robot_info.status}, 배터리: ${result.robot_info.battery}%`;
+                    }
                     aiSpeak(aiMsg);
                 } else {
                     // 서버에서 반환한 구체적인 에러 메시지 출력

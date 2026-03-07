@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from main_server.domains.robots.schemas import RobotStatus
+from main_server.domains.robots.schemas import RobotStatus, RobotEvent
 from main_server.domains.tasks.schemas import Task, TaskType
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
@@ -45,11 +45,11 @@ class TaskManager:
 
         # Processor 등록 (시나리오 확장 시 여기에 추가)
         self.processors = {
-            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
-            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
-            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
-            TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager),
-            TaskType.GUEST_CHECK: GuestCheckProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo),
+            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
+            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
+            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
+            TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
+            TaskType.GUEST_CHECK: GuestCheckProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo),
         }
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any], caller_name: Optional[str] = None) -> Optional[Task]:
@@ -185,7 +185,7 @@ class TaskManager:
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""
-        from common.robot_task_events import RobotEvent
+        
 
         task = await self.task_repo.get_by_id(task_id)
         if not task:
