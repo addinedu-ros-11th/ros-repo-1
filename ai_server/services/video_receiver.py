@@ -17,6 +17,8 @@ from typing import Optional, Callable, Dict, Any, List
 from queue import Queue, Empty
 import threading
 
+from ai_server import config
+
 logger = logging.getLogger(__name__)
 
 # GUI ↔ 서버 프로세스 간 테스트 모드 IPC 파일
@@ -283,14 +285,10 @@ class UDPVideoReceiver:
     def get_robot_id(self, robot_ip: str) -> str:
         """
         IP → 논리적 robot_id 변환.
-        메인서버가 사용하는 robot_id 형식과 일치시키기 위해
-        'robot_1', 'robot_2' 형태로 반환.
+        config.ROBOT_IP_MAP에 등록된 IP면 고정 robot_id 반환.
         미등록 IP면 IP 그대로 반환.
         """
-        idx = self.get_robot_index(robot_ip)
-        if idx >= 0:
-            return f"robot_{idx + 1}"
-        return robot_ip
+        return config.ROBOT_IP_MAP.get(robot_ip, robot_ip)
 
     def _save_robots_info(self):
         """연결된 로봇 정보를 JSON 파일로 저장 (GUI에서 읽기 위함)"""
@@ -424,7 +422,7 @@ class VideoStreamProcessor:
 
                 # 활성 추론 모델 결정
                 if test_mode:
-                    active_models = {"EMPLOYEE", "OBSTACLE"}
+                    active_models = {"FACE", "OBJECT"}
                 else:
                     active_models = self.state_manager.get_active_models(robot_id)
                     if not active_models:
@@ -480,7 +478,7 @@ class VideoStreamProcessor:
         Returns:
             추론 결과 dict (테스트 모드용) 또는 None
         """
-        if model_type == "EMPLOYEE":
+        if model_type == "FACE":
             result = self.vision_service.recognize_face_from_frame(frame)
             if result["person_type"] != "Unknown":
                 entry = {
@@ -493,7 +491,7 @@ class VideoStreamProcessor:
                 return entry
             return None
 
-        elif model_type == "OBSTACLE":
+        elif model_type == "OBJECT":
             detections = self.vision_service.detect_obstacles_from_frame(frame)
             if detections:
                 entry = {
