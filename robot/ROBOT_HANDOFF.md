@@ -47,6 +47,11 @@
     - `obstacle_distance`
     - `obstacle_box`
     - `obstacle_reason`
+  - Battery fields:
+    - `battery`
+    - `battery_valid`
+    - `battery_source_topic`
+    - `battery_error` (`battery_topic_unavailable` if `/battery/present` has no publisher/data)
   - Nav2 recovery behavior (`office_robot_executor`):
     - validates localization readiness (`amcl_pose`, covariance, optional `map->odom` TF) before goal send.
     - validates required Nav2 lifecycle nodes are `active` before goal send

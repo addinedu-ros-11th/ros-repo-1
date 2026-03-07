@@ -155,6 +155,10 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
   - `obstacle_distance`
   - `obstacle_box`
   - `obstacle_reason`
+- Battery observability keys:
+  - `battery_valid`
+  - `battery_source_topic`
+  - `battery_error` (`battery_topic_unavailable` when no battery message has been received)
 
 ## Localization Recovery
 - If RViz `Global Status` is `Error` and `map->odom` is missing:

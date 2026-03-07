@@ -2775,8 +2775,12 @@ class OfficeRobotExecutor(Node):
             "safety_lock": bool(self._safety_locked),
             "location": [float(self.location[0]), float(self.location[1])],
             "battery": float(self.battery),
+            "battery_valid": bool(self._battery_received),
+            "battery_source_topic": self.battery_topic,
             **extra,
         }
+        if not self._battery_received:
+            data["battery_error"] = "battery_topic_unavailable"
         data.update(self._build_safety_status_fields())
         if self.include_ai_link_in_status and self._ai_link_alive is not None:
             data["ai_link_alive"] = bool(self._ai_link_alive)
