@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import rclpy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import Odometry
+from rcl_interfaces.msg import ParameterType
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -15,6 +16,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Bool, Float32, String
+
+from .nav_profile.manager import DynamicNavProfileManager, DynamicNavProfileSettings
 
 try:
     from std_srvs.srv import Empty
@@ -99,6 +102,27 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("robot_yield_right_forward_m", 0.20)
         self.declare_parameter("robot_yield_right_cooldown_sec", 5.0)
         self.declare_parameter("robot_yield_right_max_attempts_per_action", 1)
+        self.declare_parameter("obstacle_slow_enabled", True)
+        self.declare_parameter("obstacle_slow_controller_node", "controller_server")
+        self.declare_parameter(
+            "obstacle_slow_linear_vel_param", "FollowPath.desired_linear_vel"
+        )
+        self.declare_parameter("obstacle_slow_linear_vel", 0.06)
+        self.declare_parameter("dynamic_nav_profile_enabled", False)
+        self.declare_parameter("dynamic_nav_profile_scan_topic", "/scan")
+        self.declare_parameter("dynamic_nav_profile_robot_width_m", 0.12)
+        self.declare_parameter("dynamic_nav_profile_wide_width_enter_m", 0.38)
+        self.declare_parameter("dynamic_nav_profile_wide_width_exit_m", 0.32)
+        self.declare_parameter("dynamic_nav_profile_forward_enter_m", 0.55)
+        self.declare_parameter("dynamic_nav_profile_forward_exit_m", 0.40)
+        self.declare_parameter("dynamic_nav_profile_enter_samples", 3)
+        self.declare_parameter("dynamic_nav_profile_exit_samples", 2)
+        self.declare_parameter("dynamic_nav_profile_wide_lookahead_dist", 0.32)
+        self.declare_parameter("dynamic_nav_profile_wide_min_lookahead_dist", 0.15)
+        self.declare_parameter("dynamic_nav_profile_wide_max_lookahead_dist", 0.40)
+        self.declare_parameter(
+            "dynamic_nav_profile_wide_rotate_to_heading_min_angle", 0.45
+        )
         self.declare_parameter("localization_required", True)
         self.declare_parameter("amcl_pose_topic", "amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
@@ -155,16 +179,24 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("employee_verification_greeting_text", "Hello, employee")
         self.declare_parameter("employee_verification_feedback_hold_sec", 5.0)
         self.declare_parameter("employee_verification_cooldown_sec", 5.0)
+        self.declare_parameter("employee_verification_qr_fallback_enabled", True)
+        self.declare_parameter("employee_verification_qr_prompt_text", "QR 코드를 인증해주세요")
+        self.declare_parameter("employee_verification_qr_on_success_event", "QR_SCANNED")
+        self.declare_parameter("employee_verification_qr_purpose", "VISITOR_SCAN")
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
         self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
         self.declare_parameter("qr_scan_local_enabled", True)
         self.declare_parameter("qr_scan_image_topic", "/camera/image_raw/compressed")
-        self.declare_parameter("qr_scan_timeout_sec", 8.0)
+        self.declare_parameter("qr_scan_timeout_sec", 15.0)
         self.declare_parameter("qr_scan_poll_period_sec", 0.2)
         self.declare_parameter("qr_scan_min_dwell_sec", 1.5)
-        self.declare_parameter("qr_scan_confirm_count", 3)
+        self.declare_parameter("qr_scan_confirm_count", 2)
         self.declare_parameter("qr_scan_ignore_commands_while_active", True)
+        self.declare_parameter("qr_scan_failure_display_text", "인증 실패")
+        self.declare_parameter("qr_scan_failure_display_hold_sec", 2.0)
+        self.declare_parameter("qr_scan_not_detected_display_text", "QR 코드가 보이지 않습니다")
+        self.declare_parameter("qr_scan_decode_failed_display_text", "QR 코드를 읽지 못했습니다")
         self.declare_parameter("qr_always_scan_enabled", False)
         self.declare_parameter("qr_always_scan_event_name", "QR_DETECTED")
         self.declare_parameter("qr_always_scan_poll_period_sec", 0.5)
@@ -293,6 +325,107 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("robot_yield_right_max_attempts_per_action")
             .get_parameter_value()
             .integer_value,
+        )
+        self.obstacle_slow_enabled = (
+            self.get_parameter("obstacle_slow_enabled").get_parameter_value().bool_value
+        )
+        self.obstacle_slow_controller_node = (
+            self.get_parameter("obstacle_slow_controller_node")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "controller_server"
+        )
+        self.obstacle_slow_linear_vel_param = (
+            self.get_parameter("obstacle_slow_linear_vel_param")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "FollowPath.desired_linear_vel"
+        )
+        self.obstacle_slow_linear_vel = max(
+            0.01,
+            self.get_parameter("obstacle_slow_linear_vel")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_enabled = (
+            self.get_parameter("dynamic_nav_profile_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.dynamic_nav_profile_scan_topic = (
+            self.get_parameter("dynamic_nav_profile_scan_topic")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "/scan"
+        )
+        self.dynamic_nav_profile_robot_width_m = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_robot_width_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_width_enter_m = max(
+            0.05,
+            self.get_parameter("dynamic_nav_profile_wide_width_enter_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_width_exit_m = max(
+            0.05,
+            self.get_parameter("dynamic_nav_profile_wide_width_exit_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_forward_enter_m = max(
+            0.05,
+            self.get_parameter("dynamic_nav_profile_forward_enter_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_forward_exit_m = max(
+            0.05,
+            self.get_parameter("dynamic_nav_profile_forward_exit_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_enter_samples = max(
+            1,
+            self.get_parameter("dynamic_nav_profile_enter_samples")
+            .get_parameter_value()
+            .integer_value,
+        )
+        self.dynamic_nav_profile_exit_samples = max(
+            1,
+            self.get_parameter("dynamic_nav_profile_exit_samples")
+            .get_parameter_value()
+            .integer_value,
+        )
+        self.dynamic_nav_profile_wide_lookahead_dist = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_lookahead_dist")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_min_lookahead_dist = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_min_lookahead_dist")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_max_lookahead_dist = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_max_lookahead_dist")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_rotate_to_heading_min_angle = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_rotate_to_heading_min_angle")
+            .get_parameter_value()
+            .double_value,
         )
         self.localization_required = (
             self.get_parameter("localization_required").get_parameter_value().bool_value
@@ -537,6 +670,32 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.employee_verification_qr_fallback_enabled = (
+            self.get_parameter("employee_verification_qr_fallback_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.employee_verification_qr_prompt_text = (
+            self.get_parameter("employee_verification_qr_prompt_text")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "QR 코드를 인증해주세요"
+        )
+        self.employee_verification_qr_on_success_event = (
+            self.get_parameter("employee_verification_qr_on_success_event")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "QR_SCANNED"
+        )
+        self.employee_verification_qr_purpose = (
+            self.get_parameter("employee_verification_qr_purpose")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "VISITOR_SCAN"
+        )
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
         )
@@ -573,6 +732,30 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("qr_scan_ignore_commands_while_active")
             .get_parameter_value()
             .bool_value
+        )
+        self.qr_scan_failure_display_text = (
+            self.get_parameter("qr_scan_failure_display_text")
+            .get_parameter_value()
+            .string_value
+            or "인증 실패"
+        )
+        self.qr_scan_failure_display_hold_sec = max(
+            0.0,
+            self.get_parameter("qr_scan_failure_display_hold_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.qr_scan_not_detected_display_text = (
+            self.get_parameter("qr_scan_not_detected_display_text")
+            .get_parameter_value()
+            .string_value
+            or "QR 코드가 보이지 않습니다"
+        )
+        self.qr_scan_decode_failed_display_text = (
+            self.get_parameter("qr_scan_decode_failed_display_text")
+            .get_parameter_value()
+            .string_value
+            or "QR 코드를 읽지 못했습니다"
         )
         self.qr_always_scan_enabled = (
             self.get_parameter("qr_always_scan_enabled").get_parameter_value().bool_value
@@ -657,6 +840,8 @@ class OfficeRobotExecutor(Node):
         self._qr_scan_started_mono = 0.0
         self._qr_scan_candidate_data = ""
         self._qr_scan_candidate_count = 0
+        self._qr_scan_last_observation = "not_detected"
+        self._qr_scan_decode_failed_seen = False
         self._qr_always_scan_timer = None
         self._qr_always_last_data = ""
         self._qr_always_last_emit_mono = 0.0
@@ -683,6 +868,20 @@ class OfficeRobotExecutor(Node):
             self.forward_first_controller_node
         )
         self._forward_first_param_client = None
+        self._obstacle_slow_active = False
+        self._obstacle_slow_last_applied: Optional[float] = None
+        self._obstacle_slow_baseline_linear_vel: Optional[float] = None
+        self._obstacle_slow_pending_request = False
+        self._obstacle_slow_pending_target: Optional[float] = None
+        self._obstacle_slow_pending_get = False
+        self._obstacle_slow_desired_enabled = False
+        self._obstacle_slow_deferred_enabled: Optional[bool] = None
+        self._obstacle_slow_deferred_reason = ""
+        self._obstacle_slow_controller_full_name = self._resolve_full_node_name(
+            self.obstacle_slow_controller_node
+        )
+        self._obstacle_slow_param_client = None
+        self._dynamic_nav_profile_manager: Optional[DynamicNavProfileManager] = None
         self._yield_right_active = False
         self._yield_right_phase = ""
         self._yield_right_attempt_count = 0
@@ -770,6 +969,31 @@ class OfficeRobotExecutor(Node):
                     self._forward_first_param_client = AsyncParameterClient(
                         self, self._forward_first_controller_full_name
                     )
+                if self.obstacle_slow_enabled:
+                    self._obstacle_slow_param_client = AsyncParameterClient(
+                        self, self._obstacle_slow_controller_full_name
+                    )
+                if self.dynamic_nav_profile_enabled:
+                    self._dynamic_nav_profile_manager = DynamicNavProfileManager(
+                        node=self,
+                        settings=DynamicNavProfileSettings(
+                            enabled=True,
+                            scan_topic=self.dynamic_nav_profile_scan_topic,
+                            robot_width_m=self.dynamic_nav_profile_robot_width_m,
+                            wide_width_enter_m=self.dynamic_nav_profile_wide_width_enter_m,
+                            wide_width_exit_m=self.dynamic_nav_profile_wide_width_exit_m,
+                            forward_enter_m=self.dynamic_nav_profile_forward_enter_m,
+                            forward_exit_m=self.dynamic_nav_profile_forward_exit_m,
+                            enter_samples=self.dynamic_nav_profile_enter_samples,
+                            exit_samples=self.dynamic_nav_profile_exit_samples,
+                            wide_lookahead_dist=self.dynamic_nav_profile_wide_lookahead_dist,
+                            wide_min_lookahead_dist=self.dynamic_nav_profile_wide_min_lookahead_dist,
+                            wide_max_lookahead_dist=self.dynamic_nav_profile_wide_max_lookahead_dist,
+                            wide_rotate_to_heading_min_angle=self.dynamic_nav_profile_wide_rotate_to_heading_min_angle,
+                        ),
+                        controller_node_full_name=self._resolve_full_node_name("controller_server"),
+                        publish_event_cb=self._publish_nav_profile_event,
+                    )
         self.tf_buffer = None
         self.tf_listener = None
         if Buffer is not None and TransformListener is not None:
@@ -832,6 +1056,10 @@ class OfficeRobotExecutor(Node):
             f"robot_yield_right_enabled={self.robot_yield_right_enabled}, "
             f"robot_yield_right_offset_m={self.robot_yield_right_offset_m}, "
             f"robot_yield_right_forward_m={self.robot_yield_right_forward_m}, "
+            f"obstacle_slow_enabled={self.obstacle_slow_enabled}, "
+            f"obstacle_slow_linear_vel={self.obstacle_slow_linear_vel:.3f}, "
+            f"dynamic_nav_profile_enabled={self.dynamic_nav_profile_enabled}, "
+            f"dynamic_nav_profile_scan_topic={self.dynamic_nav_profile_scan_topic}, "
             f"forward_first_controller={self._forward_first_controller_full_name}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
             f"recovery_cycles={self.localization_recovery_max_cycles}, "
@@ -889,6 +1117,10 @@ class OfficeRobotExecutor(Node):
 
         if not actions:
             self.get_logger().warn("Received command message without executable actions.")
+            return
+
+        if self._is_immediate_ui_sequence(actions):
+            self._apply_immediate_ui_sequence(payload, actions)
             return
 
         if self._safety_locked:
@@ -949,11 +1181,19 @@ class OfficeRobotExecutor(Node):
         person_type = str(content.get("person_type", "")).strip().lower()
         confidence = self._to_float(content.get("confidence")) or 0.0
         if person_type != "employee":
+            self._handle_employee_verification_non_employee(
+                person_type=person_type or "unknown",
+                confidence=confidence,
+            )
             return
         if confidence < self.employee_verification_min_confidence:
             self.get_logger().info(
-                f"Ignoring employee verification below threshold ({confidence:.2f} < "
-                f"{self.employee_verification_min_confidence:.2f})."
+                f"Employee verification below threshold; falling back to QR "
+                f"({confidence:.2f} < {self.employee_verification_min_confidence:.2f})."
+            )
+            self._handle_employee_verification_non_employee(
+                person_type="employee_low_confidence",
+                confidence=confidence,
             )
             return
 
@@ -990,6 +1230,8 @@ class OfficeRobotExecutor(Node):
             return
         self._update_safety_context_from_payload(payload)
         state = str(payload.get("state", "")).strip().upper()
+        if state == "STOP":
+            self._set_obstacle_slow_mode(False, "safety_stop")
         if state == "STOP" and self._safety_locked:
             self.current_status = "WAITING"
             self._publish_status(
@@ -1003,8 +1245,12 @@ class OfficeRobotExecutor(Node):
                 ),
             )
         elif state == "YIELD_RIGHT":
+            self._set_obstacle_slow_mode(False, "yield_right")
             self._maybe_start_robot_yield_right(payload)
+        elif state == "SLOW":
+            self._set_obstacle_slow_mode(True, "safety_slow")
         elif state == "CLEAR" and not self._safety_locked:
+            self._set_obstacle_slow_mode(False, "safety_clear")
             self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
             self._publish_status(
                 self.current_status,
@@ -1316,9 +1562,10 @@ class OfficeRobotExecutor(Node):
         event_extra: Dict[str, Any] = {}
         if action_name == "QR_SCAN":
             params = current_action.get("params", {}) or {}
-            scanned_data = params.get("scanned_data")
-            if scanned_data is not None:
-                event_extra["scanned_data"] = scanned_data
+            for key in ("scanned_data", "purpose", "source", "person_type", "confidence"):
+                value = params.get(key)
+                if value is not None:
+                    event_extra[key] = value
 
         if self._action_timer is not None:
             self._action_timer.cancel()
@@ -1495,6 +1742,7 @@ class OfficeRobotExecutor(Node):
         self._goal_started_at = time.time()
         self._goal_response_started_at = self._goal_started_at
         self._begin_forward_first_mode()
+        self._set_nav_profile_active(True, f"goal_start:{goal_tag}")
         self.get_logger().info(
             f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
             f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), "
@@ -2565,6 +2813,8 @@ class OfficeRobotExecutor(Node):
 
     def _clear_nav_goal_context(self) -> None:
         self._end_forward_first_mode("clear_nav_goal_context")
+        self._set_obstacle_slow_mode(False, "clear_nav_goal_context")
+        self._set_nav_profile_active(False, "clear_nav_goal_context")
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
@@ -2945,6 +3195,223 @@ class OfficeRobotExecutor(Node):
             return
         self._request_allow_reversing(deferred_target, deferred_reason)
 
+    def _set_obstacle_slow_mode(self, enabled: bool, reason: str) -> None:
+        if not self.obstacle_slow_enabled or self._obstacle_slow_param_client is None:
+            return
+
+        self._obstacle_slow_desired_enabled = bool(enabled)
+
+        if self._obstacle_slow_pending_request:
+            self._obstacle_slow_deferred_enabled = bool(enabled)
+            self._obstacle_slow_deferred_reason = reason
+            return
+
+        if self._obstacle_slow_baseline_linear_vel is None:
+            if self._obstacle_slow_pending_get:
+                self._obstacle_slow_deferred_enabled = bool(enabled)
+                self._obstacle_slow_deferred_reason = reason
+                return
+            self._request_obstacle_slow_baseline(reason)
+            self._obstacle_slow_deferred_enabled = bool(enabled)
+            self._obstacle_slow_deferred_reason = reason
+            return
+
+        target = self._obstacle_slow_target_linear_vel(enabled)
+        if target is None:
+            return
+        if (
+            self._obstacle_slow_last_applied is not None
+            and abs(self._obstacle_slow_last_applied - target) < 1.0e-6
+            and self._obstacle_slow_active == bool(enabled)
+        ):
+            return
+
+        if not self._obstacle_slow_param_client.wait_for_services(timeout_sec=0.1):
+            self.get_logger().warn(
+                "Obstacle slow toggle skipped: parameter service unavailable "
+                f"(node={self._obstacle_slow_controller_full_name}, "
+                f"param={self.obstacle_slow_linear_vel_param}, reason={reason})."
+            )
+            return
+
+        try:
+            param = Parameter(self.obstacle_slow_linear_vel_param, value=float(target))
+            future = self._obstacle_slow_param_client.set_parameters([param])
+            self._obstacle_slow_pending_request = True
+            self._obstacle_slow_pending_target = target
+            future.add_done_callback(
+                lambda f, e=bool(enabled), t=float(target), r=reason: self._on_obstacle_slow_set_result(
+                    f, e, t, r
+                )
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                "Obstacle slow toggle request failed "
+                f"(node={self._obstacle_slow_controller_full_name}, target={target:.3f}, "
+                f"reason={reason}, error={exc})."
+            )
+
+    def _request_obstacle_slow_baseline(self, reason: str) -> None:
+        if self._obstacle_slow_param_client is None:
+            return
+        if not self._obstacle_slow_param_client.wait_for_services(timeout_sec=0.1):
+            self.get_logger().warn(
+                "Obstacle slow baseline read skipped: parameter service unavailable "
+                f"(node={self._obstacle_slow_controller_full_name}, "
+                f"param={self.obstacle_slow_linear_vel_param}, reason={reason})."
+            )
+            return
+        try:
+            future = self._obstacle_slow_param_client.get_parameters(
+                [self.obstacle_slow_linear_vel_param]
+            )
+            self._obstacle_slow_pending_get = True
+            future.add_done_callback(
+                lambda f, r=reason: self._on_obstacle_slow_baseline_result(f, r)
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                "Obstacle slow baseline request failed "
+                f"(node={self._obstacle_slow_controller_full_name}, "
+                f"param={self.obstacle_slow_linear_vel_param}, reason={reason}, error={exc})."
+            )
+
+    def _on_obstacle_slow_baseline_result(self, future: Any, reason: str) -> None:
+        self._obstacle_slow_pending_get = False
+        baseline: Optional[float] = None
+        try:
+            result = future.result()
+            values = list(getattr(result, "values", []))
+            if values:
+                value = self._parameter_value_to_python(values[0])
+                if isinstance(value, (int, float)):
+                    baseline = float(value)
+        except Exception as exc:
+            self.get_logger().warn(
+                "Obstacle slow baseline read failed "
+                f"(node={self._obstacle_slow_controller_full_name}, "
+                f"param={self.obstacle_slow_linear_vel_param}, reason={reason}, error={exc})."
+            )
+
+        if baseline is None or baseline <= 0.0:
+            self.get_logger().warn(
+                "Obstacle slow baseline unavailable; runtime slow toggle will stay disabled "
+                f"(node={self._obstacle_slow_controller_full_name}, "
+                f"param={self.obstacle_slow_linear_vel_param}, reason={reason})."
+            )
+            return
+
+        self._obstacle_slow_baseline_linear_vel = baseline
+        self.get_logger().info(
+            "Obstacle slow baseline captured "
+            f"(node={self._obstacle_slow_controller_full_name}, "
+            f"param={self.obstacle_slow_linear_vel_param}, baseline={baseline:.3f})."
+        )
+
+        if self._obstacle_slow_deferred_enabled is None:
+            if self._obstacle_slow_desired_enabled:
+                self._set_obstacle_slow_mode(True, reason)
+            return
+
+        deferred_enabled = bool(self._obstacle_slow_deferred_enabled)
+        deferred_reason = self._obstacle_slow_deferred_reason or reason
+        self._obstacle_slow_deferred_enabled = None
+        self._obstacle_slow_deferred_reason = ""
+        self._set_obstacle_slow_mode(deferred_enabled, deferred_reason)
+
+    def _obstacle_slow_target_linear_vel(self, enabled: bool) -> Optional[float]:
+        baseline = self._obstacle_slow_baseline_linear_vel
+        if baseline is None or baseline <= 0.0:
+            return None
+        if enabled:
+            return max(0.01, min(baseline, self.obstacle_slow_linear_vel))
+        return float(baseline)
+
+    def _on_obstacle_slow_set_result(
+        self, future: Any, enabled: bool, target: float, reason: str
+    ) -> None:
+        self._obstacle_slow_pending_request = False
+        self._obstacle_slow_pending_target = None
+
+        success = False
+        failure_reason = ""
+        try:
+            result = future.result()
+            first = None
+            if isinstance(result, (list, tuple)):
+                first = result[0] if result else None
+            elif hasattr(result, "results"):
+                results = list(getattr(result, "results", []))
+                first = results[0] if results else None
+            else:
+                first = result
+            success = bool(getattr(first, "successful", False))
+            failure_reason = str(getattr(first, "reason", ""))
+        except Exception as exc:
+            failure_reason = str(exc)
+
+        if success:
+            self._obstacle_slow_active = bool(enabled)
+            self._obstacle_slow_last_applied = float(target)
+            self.get_logger().info(
+                f"Obstacle slow {'enabled' if enabled else 'cleared'} "
+                f"(target_linear_vel={target:.3f}, reason={reason})."
+            )
+            self._publish_event(
+                "OBSTACLE_SLOW_ON" if enabled else "OBSTACLE_SLOW_OFF",
+                self._task_id_payload(
+                    {
+                        "reason": reason,
+                        "reason_code": self._normalize_reason_code(reason),
+                        "target_linear_vel": float(target),
+                        "baseline_linear_vel": (
+                            float(self._obstacle_slow_baseline_linear_vel)
+                            if self._obstacle_slow_baseline_linear_vel is not None
+                            else None
+                        ),
+                    }
+                ),
+            )
+        else:
+            self.get_logger().warn(
+                "Obstacle slow toggle rejected "
+                f"(node={self._obstacle_slow_controller_full_name}, target={target:.3f}, "
+                f"reason={reason}, detail={failure_reason})."
+            )
+
+        if self._obstacle_slow_deferred_enabled is None:
+            return
+
+        deferred_enabled = bool(self._obstacle_slow_deferred_enabled)
+        deferred_reason = self._obstacle_slow_deferred_reason or "deferred_slow_toggle"
+        self._obstacle_slow_deferred_enabled = None
+        self._obstacle_slow_deferred_reason = ""
+        if success and deferred_enabled == enabled:
+            return
+        self._set_obstacle_slow_mode(deferred_enabled, deferred_reason)
+
+    def _parameter_value_to_python(self, parameter_value: Any) -> Any:
+        param_type = int(getattr(parameter_value, "type", ParameterType.PARAMETER_NOT_SET))
+        if param_type == ParameterType.PARAMETER_BOOL:
+            return bool(getattr(parameter_value, "bool_value", False))
+        if param_type == ParameterType.PARAMETER_INTEGER:
+            return int(getattr(parameter_value, "integer_value", 0))
+        if param_type == ParameterType.PARAMETER_DOUBLE:
+            return float(getattr(parameter_value, "double_value", 0.0))
+        if param_type == ParameterType.PARAMETER_STRING:
+            return str(getattr(parameter_value, "string_value", ""))
+        if param_type == ParameterType.PARAMETER_BYTE_ARRAY:
+            return list(getattr(parameter_value, "byte_array_value", []))
+        if param_type == ParameterType.PARAMETER_BOOL_ARRAY:
+            return list(getattr(parameter_value, "bool_array_value", []))
+        if param_type == ParameterType.PARAMETER_INTEGER_ARRAY:
+            return list(getattr(parameter_value, "integer_array_value", []))
+        if param_type == ParameterType.PARAMETER_DOUBLE_ARRAY:
+            return list(getattr(parameter_value, "double_array_value", []))
+        if param_type == ParameterType.PARAMETER_STRING_ARRAY:
+            return list(getattr(parameter_value, "string_array_value", []))
+        return None
+
     def _start_guide_display(self) -> None:
         self._stop_guide_display()
         self._guide_display_toggle = False
@@ -2995,27 +3462,55 @@ class OfficeRobotExecutor(Node):
 
         now = time.monotonic()
         if now >= self._qr_scan_deadline_mono:
+            timeout_elapsed = now - self._qr_scan_started_mono
+            last_candidate = self._qr_scan_candidate_data or ""
+            last_count = int(self._qr_scan_candidate_count)
+            failure_reason_code, failure_display_text = self._resolve_qr_timeout_failure()
             self._stop_local_qr_scan()
-            self._fail_current_action(
-                "qr_scan_timeout",
-                {"status_code": 408, "status_text": "qr scan timeout"},
+            self.get_logger().warn(
+                "QR_SCAN timed out "
+                f"(elapsed_sec={timeout_elapsed:.2f}, "
+                f"last_candidate={last_candidate!r}, "
+                f"candidate_count={last_count}, "
+                f"failure_reason_code={failure_reason_code})."
             )
+            if self._is_employee_verification_qr_action():
+                self._handle_employee_verification_qr_timeout(
+                    failure_reason_code, failure_display_text
+                )
+                return
+            self._handle_qr_scan_timeout(failure_reason_code, failure_display_text)
             return
 
         if (now - self._qr_scan_started_mono) < self.qr_scan_min_dwell_sec:
             return
 
-        scanned = self._decode_latest_qr()
+        scanned, observation_kind = self._inspect_latest_qr()
         if not scanned:
+            if observation_kind != self._qr_scan_last_observation:
+                self.get_logger().info(
+                    "QR_SCAN observation updated "
+                    f"(state={observation_kind}, elapsed_sec={now - self._qr_scan_started_mono:.2f})."
+                )
+            self._qr_scan_last_observation = observation_kind
+            if observation_kind == "decode_failed":
+                self._qr_scan_decode_failed_seen = True
             self._qr_scan_candidate_data = ""
             self._qr_scan_candidate_count = 0
             return
 
+        self._qr_scan_last_observation = "decoded"
         if scanned == self._qr_scan_candidate_data:
             self._qr_scan_candidate_count += 1
         else:
             self._qr_scan_candidate_data = scanned
             self._qr_scan_candidate_count = 1
+
+        self.get_logger().info(
+            "QR_SCAN candidate detected "
+            f"(data={scanned!r}, count={self._qr_scan_candidate_count}/{self.qr_scan_confirm_count}, "
+            f"elapsed_sec={now - self._qr_scan_started_mono:.2f})."
+        )
 
         if self._qr_scan_candidate_count < self.qr_scan_confirm_count:
             return
@@ -3066,24 +3561,32 @@ class OfficeRobotExecutor(Node):
         }
         self._publish_event(self.qr_always_scan_event_name, payload)
 
-    def _decode_latest_qr(self) -> Optional[str]:
+    def _inspect_latest_qr(self) -> Tuple[Optional[str], str]:
         if self._latest_qr_image is None or self._qr_detector is None or cv2 is None or np is None:
-            return None
+            return None, "not_detected"
 
         try:
             frame = cv2.imdecode(np.frombuffer(self._latest_qr_image, dtype=np.uint8), cv2.IMREAD_COLOR)
         except Exception:
-            return None
+            return None, "not_detected"
         if frame is None:
-            return None
+            return None, "not_detected"
 
         try:
-            decoded, _, _ = self._qr_detector.detectAndDecode(frame)
+            decoded, points, _ = self._qr_detector.detectAndDecode(frame)
         except Exception:
-            return None
+            return None, "not_detected"
 
         scanned = str(decoded).strip() if decoded is not None else ""
-        return scanned or None
+        if scanned:
+            return scanned, "decoded"
+        if points is not None and len(points) > 0:
+            return None, "decode_failed"
+        return None, "not_detected"
+
+    def _decode_latest_qr(self) -> Optional[str]:
+        scanned, _ = self._inspect_latest_qr()
+        return scanned
 
     def _stop_local_qr_scan(self) -> None:
         if self._qr_scan_timer is not None:
@@ -3094,6 +3597,8 @@ class OfficeRobotExecutor(Node):
         self._qr_scan_on_success = None
         self._qr_scan_candidate_data = ""
         self._qr_scan_candidate_count = 0
+        self._qr_scan_last_observation = "not_detected"
+        self._qr_scan_decode_failed_seen = False
 
     def _is_qr_scan_active(self) -> bool:
         if self._current_action is None:
@@ -3102,6 +3607,14 @@ class OfficeRobotExecutor(Node):
             self._current_action.get("action", self._current_action.get("type", ""))
         )
         return action_name == "QR_SCAN"
+
+    def _is_employee_verification_qr_action(self) -> bool:
+        if not self._is_qr_scan_active():
+            return False
+        params = self._current_action.get("params", {}) if self._current_action else {}
+        if not isinstance(params, dict):
+            return False
+        return str(params.get("source", "")).strip().lower() == "employee_verification_auto"
 
     def _stop_always_qr_scan(self) -> None:
         if self._qr_always_scan_timer is not None:
@@ -3280,6 +3793,10 @@ class OfficeRobotExecutor(Node):
         if not self._battery_received:
             data["battery_error"] = "battery_topic_unavailable"
         data.update(self._build_safety_status_fields())
+        data.update(self._build_nav_profile_status_fields())
+        data["nav_speed_limited"] = bool(self._obstacle_slow_active)
+        if self._obstacle_slow_active and self._obstacle_slow_last_applied is not None:
+            data["nav_linear_vel_limit"] = float(self._obstacle_slow_last_applied)
         if self.include_ai_link_in_status and self._ai_link_alive is not None:
             data["ai_link_alive"] = bool(self._ai_link_alive)
         if event:
@@ -3398,6 +3915,20 @@ class OfficeRobotExecutor(Node):
             data["obstacle_box"] = dict(self._last_obstacle_box)
         return data
 
+    def _set_nav_profile_active(self, active: bool, reason: str) -> None:
+        if self._dynamic_nav_profile_manager is None:
+            return
+        self._dynamic_nav_profile_manager.set_nav_active(bool(active), reason)
+
+    def _build_nav_profile_status_fields(self) -> Dict[str, Any]:
+        if self._dynamic_nav_profile_manager is None:
+            return {}
+        return self._dynamic_nav_profile_manager.get_status_fields()
+
+    def _publish_nav_profile_event(self, event_name: str, extra: Dict[str, Any]) -> None:
+        payload = self._task_id_payload(extra)
+        self._publish_event(event_name, payload)
+
     def _normalize_box(self, value: Any) -> Optional[Dict[str, float]]:
         if not isinstance(value, dict):
             return None
@@ -3442,6 +3973,41 @@ class OfficeRobotExecutor(Node):
         }
         self.led_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
+    def _is_immediate_ui_sequence(self, actions: List[Dict[str, Any]]) -> bool:
+        if not actions:
+            return False
+        for action_msg in actions:
+            action_name = self._normalize_action_name(
+                action_msg.get("action", action_msg.get("type", ""))
+            )
+            if action_name not in {"SET_LED", "DISPLAY_TEXT"}:
+                return False
+        return True
+
+    def _apply_immediate_ui_sequence(
+        self, payload: Dict[str, Any], actions: List[Dict[str, Any]]
+    ) -> None:
+        applied_actions: List[str] = []
+        for action_msg in actions:
+            action_name = self._normalize_action_name(
+                action_msg.get("action", action_msg.get("type", ""))
+            )
+            params = action_msg.get("params", {}) or {}
+            if action_name == "SET_LED":
+                self._publish_led(params)
+                applied_actions.append("SET_LED")
+            elif action_name == "DISPLAY_TEXT":
+                text = str(params.get("text", "")).strip() or "안내중"
+                self._publish_display(text, "display")
+                applied_actions.append("DISPLAY_TEXT")
+
+        self.get_logger().info(
+            "Applied immediate UI sequence "
+            f"(task_id={self._extract_task_id(payload)}, "
+            f"current_action={self._normalize_action_name((self._current_action or {}).get('action', (self._current_action or {}).get('type', '')))}, "
+            f"safety_locked={self._safety_locked}, actions={applied_actions})."
+        )
+
     def _sync_idle_led_state(self, status: str) -> None:
         normalized_status = str(status or "").strip().upper()
         if normalized_status != "IDLE":
@@ -3480,6 +4046,156 @@ class OfficeRobotExecutor(Node):
             f"confidence={confidence:.2f})."
         )
         self._schedule_employee_feedback_restore()
+
+    def _handle_employee_verification_non_employee(
+        self, *, person_type: str, confidence: float
+    ) -> None:
+        if not self.employee_verification_qr_fallback_enabled:
+            return
+        now_mono = time.monotonic()
+        if now_mono < self._employee_verification_suppress_until_mono:
+            self.get_logger().info(
+                "Ignoring repeated non-employee verification during cooldown "
+                f"(person_type={person_type}, confidence={confidence:.2f})."
+            )
+            return
+        if self._is_qr_scan_active():
+            self.get_logger().info(
+                "Ignoring non-employee verification while QR_SCAN is already active "
+                f"(person_type={person_type}, confidence={confidence:.2f})."
+            )
+            return
+        if self._current_action is not None:
+            action_name = self._normalize_action_name(
+                self._current_action.get("action", self._current_action.get("type", ""))
+            )
+            self.get_logger().warn(
+                "Skipping automatic QR fallback while another action is active "
+                f"(action={action_name}, person_type={person_type}, confidence={confidence:.2f})."
+            )
+            return
+
+        self._employee_verification_suppress_until_mono = (
+            now_mono + self.employee_verification_cooldown_sec
+        )
+        qr_params = {
+            "purpose": self.employee_verification_qr_purpose,
+            "source": "employee_verification_auto",
+            "person_type": person_type,
+            "confidence": float(confidence),
+        }
+        self._action_queue = []
+        self._current_action = {
+            "action": "QR_SCAN",
+            "params": qr_params,
+            "on_success": self.employee_verification_qr_on_success_event,
+        }
+        self.current_status = "WAITING"
+        self._publish_status(
+            "WAITING",
+            {
+                **self._task_id_payload(),
+                "action": "QR_SCAN",
+                "params": qr_params,
+                "reason": "employee_verification_qr_required",
+                "reason_code": "employee_verification_qr_required",
+            },
+        )
+        self._publish_led({"color": "RED", "mode": "BLINK"})
+        self._publish_display(self.employee_verification_qr_prompt_text, "qr")
+        self.get_logger().info(
+            "Employee verification routed to automatic QR fallback "
+            f"(person_type={person_type}, confidence={confidence:.2f}, "
+            f"event={self.employee_verification_qr_on_success_event})."
+        )
+        if self._start_local_qr_scan(self.employee_verification_qr_on_success_event):
+            return
+
+        self.get_logger().error("Automatic employee QR fallback could not start local QR scanner.")
+        self._fail_current_action(
+            "qr_scan_unavailable",
+            {"status_code": 503, "status_text": "qr scanner unavailable"},
+        )
+
+    def _resolve_qr_timeout_failure(self) -> Tuple[str, str]:
+        if self._qr_scan_decode_failed_seen or self._qr_scan_last_observation == "decode_failed":
+            return "qr_decode_failed", self.qr_scan_decode_failed_display_text
+        return "qr_not_detected", self.qr_scan_not_detected_display_text
+
+    def _handle_employee_verification_qr_timeout(
+        self, failure_reason_code: str, failure_display_text: str
+    ) -> None:
+        payload = self._task_id_payload(
+            {
+                "reason": failure_reason_code,
+                "reason_code": failure_reason_code,
+                "source": "employee_verification_auto",
+            }
+        )
+        self._action_queue = []
+        self._current_action = None
+        self._clear_nav_goal_context()
+        self.current_status = "IDLE"
+        self._publish_event("QR_SCAN_FAILED", payload)
+        self._publish_status("IDLE", payload, event="QR_SCAN_FAILED")
+        self._publish_display(failure_display_text, "qr_failed")
+        if self.idle_led_off_enabled:
+            self._idle_led_hold_until_mono = time.monotonic() + max(
+                0.0, self.qr_scan_failure_display_hold_sec
+            )
+        self.get_logger().warn(
+            f"Automatic employee QR fallback timed out ({failure_reason_code})."
+        )
+        self._schedule_qr_failure_restore()
+
+    def _handle_qr_scan_timeout(
+        self, failure_reason_code: str, failure_display_text: str
+    ) -> None:
+        payload = self._task_id_payload(
+            {
+                "reason": failure_reason_code,
+                "reason_code": failure_reason_code,
+                "status_code": 408,
+                "status_text": "qr scan timeout",
+            }
+        )
+        self._action_queue = []
+        self._current_action = None
+        self._clear_nav_goal_context()
+        self.current_status = "IDLE"
+        self._publish_event("QR_SCAN_FAILED", payload)
+        self._publish_status("IDLE", payload, event="QR_SCAN_FAILED")
+        self._publish_display(failure_display_text, "qr_failed")
+        if self.idle_led_off_enabled:
+            self._idle_led_hold_until_mono = time.monotonic() + max(
+                0.0, self.qr_scan_failure_display_hold_sec
+            )
+        self._schedule_qr_failure_restore()
+
+    def _schedule_qr_failure_restore(self) -> None:
+        hold_sec = max(0.0, self.qr_scan_failure_display_hold_sec)
+        if hold_sec <= 0.0:
+            if self.current_status == "IDLE":
+                self._publish_display("대기", "idle")
+                if self.idle_led_off_enabled:
+                    self._idle_led_hold_until_mono = 0.0
+                    self._publish_led({"command": "clear", "mode": "OFF"})
+            return
+
+        restore_timer = None
+
+        def _restore_idle_after_qr_failure() -> None:
+            nonlocal restore_timer
+            if restore_timer is not None:
+                restore_timer.cancel()
+                restore_timer = None
+            if self.current_status == "IDLE":
+                self._publish_display("대기", "idle")
+                if self.idle_led_off_enabled:
+                    self._idle_led_hold_until_mono = 0.0
+                    self._publish_led({"command": "clear", "mode": "OFF"})
+
+        restore_timer = self.create_timer(hold_sec, _restore_idle_after_qr_failure)
 
     def _schedule_employee_feedback_restore(self) -> None:
         if self._employee_feedback_timer is not None:

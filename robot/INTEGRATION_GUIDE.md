@@ -48,8 +48,15 @@ This guide documents the integration contract for the robot runtime in
   - `person` is `presence-based STOP` by default even without distance.
   - `robot` uses `YIELD_RIGHT` first when the detection is frontal/close enough; otherwise it falls back to `STOP`.
   - if upstream later provides `distance_m` (or equivalent keys), class-based stop/slow thresholds are applied on the same path.
-  - current runtime behavior: `STOP` triggers safety lock; `SLOW` remains observability/log state only; `YIELD_RIGHT`
-    triggers a short right-offset Nav2 detour and then resumes the original goal.
+  - current runtime behavior:
+    - `STOP` triggers safety lock and zero-velocity hold.
+    - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
+    - `YIELD_RIGHT` triggers a short right-offset Nav2 detour and then resumes the original goal.
+  - optional adaptive nav profile in `office_robot_executor`:
+    - enabled only when `dynamic_nav_profile_enabled=true`.
+    - active only during `GOTO` / `LEAD_GUEST`.
+    - reads `/scan` and widens Nav2 `FollowPath` lookahead/heading parameters only in wide space.
+    - restores runtime baseline automatically on action end / cancel / safety stop.
   - final lock is `command_lock OR obstacle_lock` to keep STOP/PAUSE semantics deterministic.
   - `SAFETY_STOPPED` / `SAFETY_RESUMED` are emitted only on actual lock transitions.
     Latched `/{robot_ns}/safety_state` snapshots (`CLEAR` / `STOP`) update status context but do not
@@ -76,6 +83,16 @@ This guide documents the integration contract for the robot runtime in
 - `SR-004 v1` dynamic obstacle handling is `person stop + robot right-yield`, not full class-aware detour.
 - AI dependency split:
   - AI-independent actions can still execute while AI is down.
+## Adaptive Nav Profile
+- Feature flag: `dynamic_nav_profile_enabled` (default `false`)
+- Runtime source: `dynamic_nav_profile_scan_topic` (default `/scan`)
+- Status fields:
+  - `nav_profile_state` (`BASELINE` / `WIDE`)
+  - `nav_profile_width_m`
+  - `nav_profile_forward_clear_m`
+- Events:
+  - `NAV_PROFILE_WIDE_APPLIED`
+  - `NAV_PROFILE_BASELINE_RESTORED`
   - For AI-dependent actions, upper layer should check `/{robot_ns}/ai_link` or
     `ai_link_alive` in `/{robot_ns}/status` before issuing commands.
 
@@ -212,6 +229,8 @@ ROBOT_NS=robot01 ROS_DOMAIN_ID=88 SPIN_DEG=360 SPIN_ANGULAR_Z=0.35 ./robot/scrip
   - `obstacle_distance`
   - `obstacle_box`
   - `obstacle_reason`
+  - `nav_speed_limited`
+  - `nav_linear_vel_limit`
 - Battery observability keys:
   - `battery_valid`
   - `battery_source_topic`

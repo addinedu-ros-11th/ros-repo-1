@@ -10,10 +10,10 @@ from typing import Deque, Optional, Tuple, List
 import cv2
 import numpy as np
 import rclpy
-from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Bool
 
 
@@ -42,6 +42,8 @@ class CommunicationBridgeNode(Node):
         self.declare_parameter("tx_stats_log_period_sec", 5.0)
         self.declare_parameter("frame_id_seed", -1)
         self.declare_parameter("ai_link_topic", "/robot01/ai_link")
+        self.declare_parameter("publish_compressed_topic", True)
+        self.declare_parameter("compressed_image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("ai_healthcheck_enabled", True)
         self.declare_parameter("ai_healthcheck_mode", "tcp_port")  # tcp_port or none
         self.declare_parameter("ai_healthcheck_port", 50052)
@@ -93,6 +95,12 @@ class CommunicationBridgeNode(Node):
             self.get_parameter("frame_id_seed").get_parameter_value().integer_value
         )
         self.ai_link_topic = self.get_parameter("ai_link_topic").get_parameter_value().string_value
+        self.publish_compressed_topic = (
+            self.get_parameter("publish_compressed_topic").get_parameter_value().bool_value
+        )
+        self.compressed_image_topic = (
+            self.get_parameter("compressed_image_topic").get_parameter_value().string_value
+        )
         self.ai_healthcheck_enabled = (
             self.get_parameter("ai_healthcheck_enabled").get_parameter_value().bool_value
         )
@@ -178,6 +186,11 @@ class CommunicationBridgeNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
         )
         self.ai_link_pub = self.create_publisher(Bool, self.ai_link_topic, link_qos)
+        self.compressed_pub = None
+        if self.publish_compressed_topic and self.compressed_image_topic:
+            self.compressed_pub = self.create_publisher(
+                CompressedImage, self.compressed_image_topic, 10
+            )
 
         self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._udp_target: Tuple[str, int] = (self.ai_server_ip, self.ai_server_port)
@@ -227,7 +240,11 @@ class CommunicationBridgeNode(Node):
 
     def _on_image(self, msg: Image) -> None:
         # Save CPU/network when AI is unavailable and streaming should be paused.
-        if self.skip_stream_when_ai_dead and not self._ai_link_alive:
+        if (
+            self.skip_stream_when_ai_dead
+            and not self._ai_link_alive
+            and self.compressed_pub is None
+        ):
             return
         self._image_queue.append(msg)
         self._image_event.set()
@@ -237,9 +254,6 @@ class CommunicationBridgeNode(Node):
             self._image_event.wait(timeout=0.5)
             self._image_event.clear()
             if not self._image_queue:
-                continue
-
-            if self.skip_stream_when_ai_dead and not self._ai_link_alive:
                 continue
 
             if self.max_fps > 0.0:
@@ -257,6 +271,9 @@ class CommunicationBridgeNode(Node):
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
             encoded = self._encode_frame(frame)
             if encoded is None:
+                continue
+            self._publish_compressed_frame(encoded)
+            if self.skip_stream_when_ai_dead and not self._ai_link_alive:
                 continue
             self._send_udp_frame(encoded)
 
@@ -433,7 +450,11 @@ class CommunicationBridgeNode(Node):
                 self._selected_rpicam_awb_mode = self._auto_select_awb_mode()
                 self._awb_autoselect_done = True
 
-            if self.skip_stream_when_ai_dead and not self._ai_link_alive:
+            if (
+                self.skip_stream_when_ai_dead
+                and not self._ai_link_alive
+                and self.compressed_pub is None
+            ):
                 time.sleep(0.5)
                 continue
 
@@ -469,13 +490,15 @@ class CommunicationBridgeNode(Node):
             stopped_for_ai_dead = False
             while rclpy.ok() and not self._stop_event.is_set():
                 if self.skip_stream_when_ai_dead and not self._ai_link_alive:
-                    stopped_for_ai_dead = True
-                    break
+                    if self.compressed_pub is None:
+                        stopped_for_ai_dead = True
+                        break
                 chunk = stdout.read(8192)
                 if not chunk:
                     break
                 buffer.extend(chunk)
                 for frame in self._extract_jpeg_frames(buffer):
+                    self._publish_compressed_frame(frame)
                     if self.skip_stream_when_ai_dead and not self._ai_link_alive:
                         continue
                     self._send_udp_frame(frame)
@@ -700,6 +723,15 @@ class CommunicationBridgeNode(Node):
         self._tx_bytes = 0
         self._tx_failures = 0
         self._tx_stats_last_log_at = now
+
+    def _publish_compressed_frame(self, data: bytes) -> None:
+        if self.compressed_pub is None:
+            return
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "jpeg"
+        msg.data = data
+        self.compressed_pub.publish(msg)
 
     def destroy_node(self) -> bool:
         self._stop_event.set()

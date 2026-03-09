@@ -198,7 +198,6 @@ class OfficeRobotSafety(Node):
             .get_parameter_value()
             .double_value,
         )
-
         self._command_lock_enabled = False
         self._obstacle_lock_enabled = False
         self._lock_enabled = False
@@ -311,7 +310,7 @@ class OfficeRobotSafety(Node):
         self.lock_pub.publish(Bool(data=self._lock_enabled))
 
     def _on_keepalive_timer(self) -> None:
-        self._release_obstacle_lock_on_timeout()
+        self._release_obstacle_state_on_timeout()
         self._publish_lock_state()
 
     def _on_stop_timer(self) -> None:
@@ -416,18 +415,23 @@ class OfficeRobotSafety(Node):
             return
         self.get_logger().info("Obstacle state cleared.")
 
-    def _release_obstacle_lock_on_timeout(self) -> None:
-        if not self._obstacle_lock_enabled:
+    def _release_obstacle_state_on_timeout(self) -> None:
+        if not self._obstacle_lock_enabled and self._obstacle_state == "CLEAR":
             return
         if self._last_obstacle_msg_mono <= 0.0:
-            self._set_obstacle_lock(False, "no_obstacle_messages")
+            if self._obstacle_lock_enabled:
+                self._set_obstacle_lock(False, "no_obstacle_messages")
+            if self._obstacle_state != "CLEAR":
+                self._set_obstacle_state("CLEAR", None)
             return
 
         now = time.monotonic()
         age_sec = now - self._last_obstacle_msg_mono
         if age_sec > self.obstacle_timeout_sec:
-            self._set_obstacle_lock(False, "obstacle_message_timeout")
-            self._set_obstacle_state("CLEAR", None)
+            if self._obstacle_lock_enabled:
+                self._set_obstacle_lock(False, "obstacle_message_timeout")
+            if self._obstacle_state != "CLEAR":
+                self._set_obstacle_state("CLEAR", None)
 
     def _evaluate_detections(
         self, detections: List[Dict[str, Any]]

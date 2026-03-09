@@ -43,6 +43,39 @@ def generate_launch_description() -> LaunchDescription:
     robot_yield_right_max_attempts_per_action = LaunchConfiguration(
         "robot_yield_right_max_attempts_per_action"
     )
+    obstacle_slow_enabled = LaunchConfiguration("obstacle_slow_enabled")
+    obstacle_slow_controller_node = LaunchConfiguration("obstacle_slow_controller_node")
+    obstacle_slow_linear_vel_param = LaunchConfiguration("obstacle_slow_linear_vel_param")
+    obstacle_slow_linear_vel = LaunchConfiguration("obstacle_slow_linear_vel")
+    dynamic_nav_profile_enabled = LaunchConfiguration("dynamic_nav_profile_enabled")
+    dynamic_nav_profile_scan_topic = LaunchConfiguration("dynamic_nav_profile_scan_topic")
+    dynamic_nav_profile_robot_width_m = LaunchConfiguration("dynamic_nav_profile_robot_width_m")
+    dynamic_nav_profile_wide_width_enter_m = LaunchConfiguration(
+        "dynamic_nav_profile_wide_width_enter_m"
+    )
+    dynamic_nav_profile_wide_width_exit_m = LaunchConfiguration(
+        "dynamic_nav_profile_wide_width_exit_m"
+    )
+    dynamic_nav_profile_forward_enter_m = LaunchConfiguration(
+        "dynamic_nav_profile_forward_enter_m"
+    )
+    dynamic_nav_profile_forward_exit_m = LaunchConfiguration(
+        "dynamic_nav_profile_forward_exit_m"
+    )
+    dynamic_nav_profile_enter_samples = LaunchConfiguration("dynamic_nav_profile_enter_samples")
+    dynamic_nav_profile_exit_samples = LaunchConfiguration("dynamic_nav_profile_exit_samples")
+    dynamic_nav_profile_wide_lookahead_dist = LaunchConfiguration(
+        "dynamic_nav_profile_wide_lookahead_dist"
+    )
+    dynamic_nav_profile_wide_min_lookahead_dist = LaunchConfiguration(
+        "dynamic_nav_profile_wide_min_lookahead_dist"
+    )
+    dynamic_nav_profile_wide_max_lookahead_dist = LaunchConfiguration(
+        "dynamic_nav_profile_wide_max_lookahead_dist"
+    )
+    dynamic_nav_profile_wide_rotate_to_heading_min_angle = LaunchConfiguration(
+        "dynamic_nav_profile_wide_rotate_to_heading_min_angle"
+    )
     localization_required = LaunchConfiguration("localization_required")
     amcl_pose_topic = LaunchConfiguration("amcl_pose_topic")
     odom_topic = LaunchConfiguration("odom_topic")
@@ -110,6 +143,18 @@ def generate_launch_description() -> LaunchDescription:
     employee_verification_cooldown_sec = LaunchConfiguration(
         "employee_verification_cooldown_sec"
     )
+    employee_verification_qr_fallback_enabled = LaunchConfiguration(
+        "employee_verification_qr_fallback_enabled"
+    )
+    employee_verification_qr_prompt_text = LaunchConfiguration(
+        "employee_verification_qr_prompt_text"
+    )
+    employee_verification_qr_on_success_event = LaunchConfiguration(
+        "employee_verification_qr_on_success_event"
+    )
+    employee_verification_qr_purpose = LaunchConfiguration(
+        "employee_verification_qr_purpose"
+    )
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
     enable_ui_bridge = LaunchConfiguration("enable_ui_bridge")
     lcd_enabled = LaunchConfiguration("lcd_enabled")
@@ -120,6 +165,21 @@ def generate_launch_description() -> LaunchDescription:
     qr_scan_image_topic = LaunchConfiguration("qr_scan_image_topic")
     qr_scan_timeout_sec = LaunchConfiguration("qr_scan_timeout_sec")
     qr_scan_poll_period_sec = LaunchConfiguration("qr_scan_poll_period_sec")
+    qr_scan_min_dwell_sec = LaunchConfiguration("qr_scan_min_dwell_sec")
+    qr_scan_confirm_count = LaunchConfiguration("qr_scan_confirm_count")
+    qr_scan_ignore_commands_while_active = LaunchConfiguration(
+        "qr_scan_ignore_commands_while_active"
+    )
+    qr_scan_failure_display_text = LaunchConfiguration("qr_scan_failure_display_text")
+    qr_scan_failure_display_hold_sec = LaunchConfiguration(
+        "qr_scan_failure_display_hold_sec"
+    )
+    qr_scan_not_detected_display_text = LaunchConfiguration(
+        "qr_scan_not_detected_display_text"
+    )
+    qr_scan_decode_failed_display_text = LaunchConfiguration(
+        "qr_scan_decode_failed_display_text"
+    )
     qr_always_scan_enabled = LaunchConfiguration("qr_always_scan_enabled")
     qr_always_scan_event_name = LaunchConfiguration("qr_always_scan_event_name")
     qr_always_scan_poll_period_sec = LaunchConfiguration("qr_always_scan_poll_period_sec")
@@ -173,6 +233,45 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("robot_yield_right_cooldown_sec", default_value="5.0"),
             DeclareLaunchArgument(
                 "robot_yield_right_max_attempts_per_action", default_value="1"
+            ),
+            DeclareLaunchArgument("obstacle_slow_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "obstacle_slow_controller_node", default_value="controller_server"
+            ),
+            DeclareLaunchArgument(
+                "obstacle_slow_linear_vel_param",
+                default_value="FollowPath.desired_linear_vel",
+            ),
+            DeclareLaunchArgument("obstacle_slow_linear_vel", default_value="0.06"),
+            DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="true"),
+            DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
+            DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_width_enter_m", default_value="0.38"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_width_exit_m", default_value="0.32"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_forward_enter_m", default_value="0.55"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_forward_exit_m", default_value="0.40"
+            ),
+            DeclareLaunchArgument("dynamic_nav_profile_enter_samples", default_value="3"),
+            DeclareLaunchArgument("dynamic_nav_profile_exit_samples", default_value="2"),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_lookahead_dist", default_value="0.32"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_min_lookahead_dist", default_value="0.15"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_max_lookahead_dist", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_rotate_to_heading_min_angle",
+                default_value="0.45",
             ),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
@@ -245,6 +344,20 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "employee_verification_cooldown_sec", default_value="5.0"
             ),
+            DeclareLaunchArgument(
+                "employee_verification_qr_fallback_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_qr_prompt_text",
+                default_value="QR 코드를 인증해주세요",
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_qr_on_success_event",
+                default_value="QR_SCANNED",
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_qr_purpose", default_value="VISITOR_SCAN"
+            ),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("enable_ui_bridge", default_value="true"),
             DeclareLaunchArgument("lcd_enabled", default_value="true"),
@@ -253,8 +366,27 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
             DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
-            DeclareLaunchArgument("qr_scan_timeout_sec", default_value="8.0"),
+            DeclareLaunchArgument("qr_scan_timeout_sec", default_value="15.0"),
             DeclareLaunchArgument("qr_scan_poll_period_sec", default_value="0.2"),
+            DeclareLaunchArgument("qr_scan_min_dwell_sec", default_value="1.5"),
+            DeclareLaunchArgument("qr_scan_confirm_count", default_value="2"),
+            DeclareLaunchArgument(
+                "qr_scan_ignore_commands_while_active", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "qr_scan_failure_display_text", default_value="인증 실패"
+            ),
+            DeclareLaunchArgument(
+                "qr_scan_failure_display_hold_sec", default_value="2.0"
+            ),
+            DeclareLaunchArgument(
+                "qr_scan_not_detected_display_text",
+                default_value="QR 코드가 보이지 않습니다",
+            ),
+            DeclareLaunchArgument(
+                "qr_scan_decode_failed_display_text",
+                default_value="QR 코드를 읽지 못했습니다",
+            ),
             DeclareLaunchArgument("qr_always_scan_enabled", default_value="false"),
             DeclareLaunchArgument("qr_always_scan_event_name", default_value="QR_DETECTED"),
             DeclareLaunchArgument("qr_always_scan_poll_period_sec", default_value="0.5"),
@@ -364,6 +496,23 @@ def generate_launch_description() -> LaunchDescription:
                             "robot_yield_right_forward_m": robot_yield_right_forward_m,
                             "robot_yield_right_cooldown_sec": robot_yield_right_cooldown_sec,
                             "robot_yield_right_max_attempts_per_action": robot_yield_right_max_attempts_per_action,
+                            "obstacle_slow_enabled": obstacle_slow_enabled,
+                            "obstacle_slow_controller_node": obstacle_slow_controller_node,
+                            "obstacle_slow_linear_vel_param": obstacle_slow_linear_vel_param,
+                            "obstacle_slow_linear_vel": obstacle_slow_linear_vel,
+                            "dynamic_nav_profile_enabled": dynamic_nav_profile_enabled,
+                            "dynamic_nav_profile_scan_topic": dynamic_nav_profile_scan_topic,
+                            "dynamic_nav_profile_robot_width_m": dynamic_nav_profile_robot_width_m,
+                            "dynamic_nav_profile_wide_width_enter_m": dynamic_nav_profile_wide_width_enter_m,
+                            "dynamic_nav_profile_wide_width_exit_m": dynamic_nav_profile_wide_width_exit_m,
+                            "dynamic_nav_profile_forward_enter_m": dynamic_nav_profile_forward_enter_m,
+                            "dynamic_nav_profile_forward_exit_m": dynamic_nav_profile_forward_exit_m,
+                            "dynamic_nav_profile_enter_samples": dynamic_nav_profile_enter_samples,
+                            "dynamic_nav_profile_exit_samples": dynamic_nav_profile_exit_samples,
+                            "dynamic_nav_profile_wide_lookahead_dist": dynamic_nav_profile_wide_lookahead_dist,
+                            "dynamic_nav_profile_wide_min_lookahead_dist": dynamic_nav_profile_wide_min_lookahead_dist,
+                            "dynamic_nav_profile_wide_max_lookahead_dist": dynamic_nav_profile_wide_max_lookahead_dist,
+                            "dynamic_nav_profile_wide_rotate_to_heading_min_angle": dynamic_nav_profile_wide_rotate_to_heading_min_angle,
                             "localization_required": localization_required,
                             "amcl_pose_topic": amcl_pose_topic,
                             "odom_topic": odom_topic,
@@ -409,12 +558,23 @@ def generate_launch_description() -> LaunchDescription:
                             "employee_verification_greeting_text": employee_verification_greeting_text,
                             "employee_verification_feedback_hold_sec": employee_verification_feedback_hold_sec,
                             "employee_verification_cooldown_sec": employee_verification_cooldown_sec,
+                            "employee_verification_qr_fallback_enabled": employee_verification_qr_fallback_enabled,
+                            "employee_verification_qr_prompt_text": employee_verification_qr_prompt_text,
+                            "employee_verification_qr_on_success_event": employee_verification_qr_on_success_event,
+                            "employee_verification_qr_purpose": employee_verification_qr_purpose,
                             "guide_display_period_sec": guide_display_period_sec,
                             "emit_command_received_event": emit_command_received_event,
                             "qr_scan_local_enabled": qr_scan_local_enabled,
                             "qr_scan_image_topic": qr_scan_image_topic,
                             "qr_scan_timeout_sec": qr_scan_timeout_sec,
                             "qr_scan_poll_period_sec": qr_scan_poll_period_sec,
+                            "qr_scan_min_dwell_sec": qr_scan_min_dwell_sec,
+                            "qr_scan_confirm_count": qr_scan_confirm_count,
+                            "qr_scan_ignore_commands_while_active": qr_scan_ignore_commands_while_active,
+                            "qr_scan_failure_display_text": qr_scan_failure_display_text,
+                            "qr_scan_failure_display_hold_sec": qr_scan_failure_display_hold_sec,
+                            "qr_scan_not_detected_display_text": qr_scan_not_detected_display_text,
+                            "qr_scan_decode_failed_display_text": qr_scan_decode_failed_display_text,
                             "qr_always_scan_enabled": qr_always_scan_enabled,
                             "qr_always_scan_event_name": qr_always_scan_event_name,
                             "qr_always_scan_poll_period_sec": qr_always_scan_poll_period_sec,
