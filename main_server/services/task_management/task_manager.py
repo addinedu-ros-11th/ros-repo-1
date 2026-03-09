@@ -239,19 +239,31 @@ class TaskManager:
             ]
             self.fleet_manager.send_action_commands(robot_id, actions)
             
-        # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성
+        # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성 및 즉시 명령 전송
         else:
-            logger.info(f"[{robot_id}] 외부인/미인식 감지({person_type}) -> QR 인증 태스크 생성")
+            logger.info(f"[{robot_id}] 외부인/미인식 감지({person_type}) -> QR 인증 태스크 생성 및 즉시 명령 전송")
+            
+            # [즉시 명령] 태스크 생성 전이라도 로봇이 바로 반응하도록 함
+            purpose = "VISITOR_SCAN"
+            initial_actions = [
+                {"action": "SET_LED", "params": {"color": "RED", "mode": "BLINK", "rate": 1.0}},
+                {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}},
+                {"action": "QR_SCAN", "params": {"purpose": purpose}, "on_success": RobotEvent.QR_SCANNED}
+            ]
+            self.fleet_manager.send_action_commands(robot_id, initial_actions)
+
+            # [태스크 생성] 사후 관리를 위해 DB에 태스크 생성 및 할당 상태 유지
             task_data = {
                 "task_type": "GUEST_CHECK",
                 "requester_id": 1, # System
                 "status": "ASSIGNED",
                 "assigned_robot_id": robot.id,
-                "details": {"reason": "stranger_detected", "person_type": person_type}
+                "details": {"reason": "stranger_detected", "person_type": person_type, "purpose": purpose}
             }
             task = await self.task_repo.create(task_data)
             if task:
-                await self.assign_and_dispatch(robot, task)
+                # 상태만 업데이트 (명령은 위에서 이미 보냈으므로 assign_and_dispatch 대신 상태만 변경)
+                await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

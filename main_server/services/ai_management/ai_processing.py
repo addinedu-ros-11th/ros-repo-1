@@ -78,6 +78,9 @@ class AIProcessingService:
         robot_name = data.get("robot_id")
         result_type = data.get("type")
 
+        # 실시간 스트림 결과 로깅 (터미널 가시성 확보)
+        logger.info(f"AI Stream Result: Robot={robot_name}, Type={result_type}, Content={data.get('content')}")
+
         if robot_name in self.callbacks:
             callback = self.callbacks[robot_name].get(result_type)
             if callback:
