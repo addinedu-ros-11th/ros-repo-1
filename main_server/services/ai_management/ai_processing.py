@@ -5,31 +5,71 @@ from main_server.infrastructure.ai_client.vision_client import VisionServiceClie
 
 logger = logging.getLogger(__name__)
 
+
 class AIProcessingService:
     """
-    AI 서버(Vision)와의 통신을 관리하고, 스트림 결과를 구독하여 
+    AI 서버(Vision)와의 통신을 관리하고, 스트림 결과를 구독하여
     각 로봇별 핸들러로 분배(Relay)하는 서비스입니다.
     식별자로 robot_name을 사용합니다.
     """
-    def __init__(self, vision_service: VisionServiceClient, llm_service=None, connection_manager=None):
+
+    def __init__(
+        self,
+        vision_service: VisionServiceClient,
+        llm_service=None,
+        connection_manager=None,
+    ):
         self.vision_client = vision_service
         self.llm_service = llm_service
         self.connection_manager = connection_manager
-        self.callbacks: Dict[str, Dict[str, Callable]] = {} # {robot_name: {type: callback}}
+        self.callbacks: Dict[str, Dict[str, Callable]] = (
+            {}
+        )  # {robot_name: {type: callback}}
         self._stream_task = None
+        self._stream_running = False
 
     async def start_ai_stream(self):
-        """서비스 시작 시 AI 서버의 결과 스트림 구독을 시작합니다."""
-        if self._stream_task is None:
-            self._stream_task = asyncio.create_task(self.vision_client.start_vision_stream(self._dispatch_result))
-            logger.info("AI 결과 스트림 분배기(Dispatcher) 시작됨.")
+        """서비스 시작 시 AI 서버의 결과 스트림 구독을 시작합니다. 연결이 끊기면 자동 재연결합니다."""
+        if self._stream_running:
+            return
+        self._stream_running = True
+        self._stream_task = asyncio.create_task(self._stream_loop())
+        logger.info("AI 결과 스트림 분배기(Dispatcher) 시작됨.")
 
-    async def process_natural_language(self, req_id: str, message: str) -> Dict[str, Any]:
+    async def _stream_loop(self):
+        """AI 스트림 자동 재연결 루프. 연결 실패 시 5초 후 재시도합니다."""
+        retry_delay = 5.0
+        while self._stream_running:
+            try:
+                logger.info("AI Vision 스트림 구독 시도 중...")
+                await self.vision_client.start_vision_stream(self._dispatch_result)
+                logger.warning("AI Vision 스트림 종료됨. 재연결 대기 중...")
+            except asyncio.CancelledError:
+                logger.info("AI 스트림 루프 취소됨.")
+                break
+            except Exception as e:
+                logger.error(f"AI 스트림 오류: {e}")
+            if self._stream_running:
+                await asyncio.sleep(retry_delay)
+
+    async def stop_ai_stream(self):
+        """AI 스트림 루프를 중지합니다."""
+        self._stream_running = False
+        if self._stream_task:
+            self._stream_task.cancel()
+            self._stream_task = None
+
+    async def process_natural_language(
+        self, req_id: str, message: str
+    ) -> Dict[str, Any]:
         """자연어 명령을 해석하여 구조화된 데이터로 반환합니다."""
         if not self.llm_service:
             logger.error("LLM 서비스가 설정되지 않아 자연어 해석을 수행할 수 없습니다.")
-            return {"status": "error", "message": "AI 해석 서비스를 사용할 수 없습니다."}
-        
+            return {
+                "status": "error",
+                "message": "AI 해석 서비스를 사용할 수 없습니다.",
+            }
+
         return await self.llm_service.parse_natural_language(req_id, message)
 
     async def _dispatch_result(self, data: Dict[str, Any]):
@@ -37,7 +77,7 @@ class AIProcessingService:
         # gRPC의 robot_id 필드에 로봇 이름이 들어오는 것으로 간주
         robot_name = data.get("robot_id")
         result_type = data.get("type")
-        
+
         if robot_name in self.callbacks:
             callback = self.callbacks[robot_name].get(result_type)
             if callback:
@@ -52,7 +92,7 @@ class AIProcessingService:
             self.callbacks[robot_name] = {}
         self.callbacks[robot_name]["object_detection"] = callback
         self.callbacks[robot_name]["multi_objects"] = callback
-        
+
         await self.vision_client.update_inference_state(robot_name, "object", True)
         logger.info(f"[{robot_name}] 장애물 감지 추론 시작 명령 전송")
 
@@ -61,7 +101,7 @@ class AIProcessingService:
         if robot_name in self.callbacks:
             self.callbacks[robot_name].pop("object_detection", None)
             self.callbacks[robot_name].pop("multi_objects", None)
-        
+
         await self.vision_client.update_inference_state(robot_name, "object", False)
         logger.info(f"[{robot_name}] 장애물 감지 추론 중지 명령 전송")
 
@@ -70,7 +110,7 @@ class AIProcessingService:
         if robot_name not in self.callbacks:
             self.callbacks[robot_name] = {}
         self.callbacks[robot_name]["face_recognition"] = callback
-        
+
         await self.vision_client.update_inference_state(robot_name, "face", True)
         logger.info(f"[{robot_name}] 얼굴 인식 추론 시작 명령 전송")
 
@@ -78,6 +118,6 @@ class AIProcessingService:
         """얼굴 인식 중지"""
         if robot_name in self.callbacks:
             self.callbacks[robot_name].pop("face_recognition", None)
-        
+
         await self.vision_client.update_inference_state(robot_name, "face", False)
         logger.info(f"[{robot_name}] 얼굴 인식 추론 중지 명령 전송")

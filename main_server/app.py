@@ -8,8 +8,8 @@ from main_server.config import config
 # --- 로깅 설정 ---
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ from main_server.infrastructure.robot_bridge.ros_bridge import ROSBridge
 # 전역 변수로 백그라운드 태스크 저장
 background_tasks = set()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """애플리케이션 생명주기 관리 (시작 및 종료)"""
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
         # 1. 데이터베이스 연결 풀 생성
         await Database.initialize()
         logger.info("Database pool initialized.")
-        
+
         # 2. DI 컨테이너 초기화
         container.services()
         logger.info("DI container and services initialized.")
@@ -41,29 +42,38 @@ async def lifespan(app: FastAPI):
             task_manager=container.task_manager,
             # mutex_manager는 현재 컨테이너에 없으므로 생략 (내부적으로 None 처리됨)
             log_repo=container.log_repository,
-            communicator=container.robot_communicator # [Fix] 공유 인스턴스 주입
+            communicator=container.robot_communicator,  # [Fix] 공유 인스턴스 주입
         )
         bridge_task = asyncio.create_task(ros_bridge.start())
-        bridge_task.add_done_callback(lambda t: logger.error(f"ROS Bridge Task Failed: {t.exception()}") if t.exception() else None)
+        bridge_task.add_done_callback(
+            lambda t: (
+                logger.error(f"ROS Bridge Task Failed: {t.exception()}")
+                if t.exception()
+                else None
+            )
+        )
         background_tasks.add(bridge_task)
 
         # 4. AI 실시간 스트림 시작
-        ai_stream_task = asyncio.create_task(container.ai_processing_service.start_ai_stream())
+        ai_stream_task = asyncio.create_task(
+            container.ai_processing_service.start_ai_stream()
+        )
         background_tasks.add(ai_stream_task)
-        
+
         logger.info("ROS Bridge server and AI Stream subscriber started.")
-        
-        yield # 앱 실행 중
+
+        yield  # 앱 실행 중
 
     finally:
         # [Shutdown]
         logger.info("Cleaning up resources...")
+        await container.ai_processing_service.stop_ai_stream()
         for task in background_tasks:
             task.cancel()
-        
+
         if background_tasks:
             await asyncio.gather(*background_tasks, return_exceptions=True)
-        
+
         await Database.close()
         logger.info("Background servers stopped and Database pool closed.")
 
@@ -73,7 +83,7 @@ app = FastAPI(
     title=config.APP_TITLE,
     description=config.APP_DESCRIPTION,
     version=config.APP_VERSION,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # --- 정적 파일 마운트 ---
@@ -82,7 +92,7 @@ app.mount("/static", StaticFiles(directory=config.STATIC_FILES_DIR), name="stati
 # --- API 및 웹 라우터 등록 ---
 from main_server.api.v1 import admin_routes, employee_routes, guest_routes, login_routes
 from main_server.web import routes as web_router
-from main_server.test_scripts import test_routes 
+from main_server.test_scripts import test_routes
 
 app.include_router(admin_routes.router)
 app.include_router(employee_routes.router)
@@ -113,8 +123,9 @@ def read_root():
         "message": "Office Robot Service API is running!",
         "admin_dashboard": config.ADMIN_DASHBOARD_PATH,
         "employee_app": config.EMPLOYEE_APP_PATH,
-        "api_docs": "/docs"
+        "api_docs": "/docs",
     }
+
 
 # uvicorn으로 이 앱을 실행하려면 터미널에서 다음 명령어를 사용하세요:
 # uvicorn main_server.app:app --reload
