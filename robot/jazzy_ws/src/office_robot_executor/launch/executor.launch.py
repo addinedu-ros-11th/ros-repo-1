@@ -99,7 +99,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("led_topic", default_value="led_command"),
             DeclareLaunchArgument("idle_led_off_enabled", default_value="true"),
-            DeclareLaunchArgument("employee_verification_enabled", default_value="true"),
+            DeclareLaunchArgument("employee_verification_enabled", default_value="false"),
             DeclareLaunchArgument(
                 "employee_verification_topic", default_value="employee_verification"
             ),

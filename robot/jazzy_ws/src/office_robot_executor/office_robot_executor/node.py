@@ -149,7 +149,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("led_topic", "led_command")
         self.declare_parameter("idle_led_off_enabled", True)
-        self.declare_parameter("employee_verification_enabled", True)
+        self.declare_parameter("employee_verification_enabled", False)
         self.declare_parameter("employee_verification_topic", "employee_verification")
         self.declare_parameter("employee_verification_min_confidence", 0.5)
         self.declare_parameter("employee_verification_greeting_text", "Hello, employee")

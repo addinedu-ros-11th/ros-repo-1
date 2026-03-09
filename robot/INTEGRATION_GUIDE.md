@@ -33,6 +33,10 @@ This guide documents the integration contract for the robot runtime in
   - the same QR payload must be decoded `qr_scan_confirm_count` consecutive polls before success.
   - while `QR_SCAN` is active, new commands from `/{robot_ns}/commands` are ignored when
     `qr_scan_ignore_commands_while_active=true`.
+- Employee verification relay behavior:
+  - direct `/{robot_ns}/employee_verification` handling is disabled by default.
+  - employee UI feedback should come from the normal command path (`SET_LED`, `DISPLAY_TEXT`) unless
+    `employee_verification_enabled=true` is explicitly enabled.
 
 ## Safety Model
 - Person detection decision is made by upper layer (`main_server` / AI pipeline).
