@@ -183,6 +183,7 @@ sudo systemctl restart pinky-navigation.service
 - `robot/scripts/nav2_runtime_audit.sh`
 - `robot/scripts/install_pinky_navigation_override.sh`
 - `robot/scripts/run_rviz_nav_debug.sh`
+- `robot/scripts/reset_localization.sh`
 
 ## RViz Debug (On-PC)
 ```bash
@@ -196,3 +197,23 @@ ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
 
 - RViz `Debug Overlay` display uses `/{robot_ns}/debug_markers`
   and shows latest `status` + `event` text in the scene.
+
+## Localization Reset (On-PC)
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/reset_localization.sh
+```
+
+- Default mode preserves the current/manual RViz pose estimate and only requests
+  no-motion update plus optional scan spin.
+- If the robot is completely lost, use global relocalization explicitly:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 RELOCALIZE=true ./robot/scripts/reset_localization.sh
+```
+
+- Optional slow scan spin during relocalization:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 SPIN_DEG=360 SPIN_ANGULAR_Z=0.35 ./robot/scripts/reset_localization.sh
+```

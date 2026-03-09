@@ -145,6 +145,30 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
   - latest `event` line
   - overlay timestamp
 
+## Localization Reset (On-PC)
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/reset_localization.sh
+```
+
+- This helper:
+  - sends zero `cmd_vel` burst
+  - calls `/{robot_ns}/request_nomotion_update`
+  - prints one `amcl_pose` and one `status`
+- Default behavior preserves the current/manual pose estimate.
+- If you already used RViz `2D Pose Estimate`, run the helper after that to request
+  no-motion update or slow scan spin without resetting the pose.
+- Only use global relocalization when the robot is truly lost:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 RELOCALIZE=true ./robot/scripts/reset_localization.sh
+```
+- Optional slow scan spin:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 SPIN_DEG=360 SPIN_ANGULAR_Z=0.35 ./robot/scripts/reset_localization.sh
+```
+
 ## Compatibility Notes
 - Keep topic/port contract stable; downstream services depend on it.
 - Any schema/key changes must be documented in `HANDOFF.md` and communicated before rollout.
