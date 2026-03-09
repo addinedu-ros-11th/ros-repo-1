@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
         )
         background_tasks.add(ai_stream_task)
 
+        # 5. DB 로봇 상태 기반 AI 콜백 복원 (재시작 시 콜백 누락 방지)
+        await container.fleet_manager.restore_ai_relay_from_db()
+
         logger.info("ROS Bridge server and AI Stream subscriber started.")
 
         yield  # 앱 실행 중
