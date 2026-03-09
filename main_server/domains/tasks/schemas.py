@@ -62,11 +62,13 @@ class TaskBase(BaseModel):
     task_type: TaskType
     target_location_name: Optional[str] = None
     priority: int = 3
+    destination_id: Optional[int] = None
+    visitor_id: Optional[int] = None
+    receiver_id: Optional[int] = None
     details: Dict[str, Any] = Field(default_factory=dict)
 
 class TaskCreate(TaskBase):
     requester_id: int
-    destination_id: Optional[int] = None
 
 class Task(TaskBase):
     id: int = Field(alias="task_id")

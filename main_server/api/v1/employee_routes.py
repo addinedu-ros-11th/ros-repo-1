@@ -168,11 +168,15 @@ async def process_command(request: Dict[str, Any]):
         if manual_result:
             task = await container.task_manager.create_task_from_ai(manual_result, caller_name=caller_id)
             if not task:
-                return {"status": "retry", "message": "가용한 로봇이 없습니다."}
+                return {"status": "error", "message": "태스크 생성 실패"}
             
+            msg = f"'{target_name}'(으)로 이동하고 있습니다."
+            if task.status == "PENDING":
+                msg = f"'{target_name}'(으)로 이동하기 위해 대기 중입니다."
+
             return {
                 "status": "success",
-                "message": f"'{target_name}'(으)로 이동하고 있습니다.",
+                "message": msg,
                 "task_id": task.id,
                 "ai_fields": manual_result["fields"]
             }
@@ -287,16 +291,25 @@ async def process_command(request: Dict[str, Any]):
     task = await container.task_manager.create_task_from_ai(ai_result, caller_name=caller_id)
     
     if not task:
-        return {"status": "retry", "message": "가용한 로봇이 없습니다.", "ai_result": ai_result}
+        # DB 저장 실패 등의 심각한 오류
+        return {"status": "error", "message": "태스크 생성 중 오류가 발생했습니다.", "ai_result": ai_result}
 
     # 결과 메시지 및 필드 보정
     response_message = f"작업이 접수되었습니다: {task_type}"
+    
+    if task.status == "PENDING":
+        response_message = f"작업이 대기열에 등록되었습니다: {task_type}"
+
     fields = ai_result.get("fields")
     if fields is None:
         fields = {}
 
     if task_type == "SNACK_DELIVERY":
-        response_message = "간식 배달 요청이 접수되었습니다. 로봇이 탕비실에서 간식을 수령하여 요청하신 위치로 배달합니다."
+        if task.status == "PENDING":
+             response_message = "간식 배달 요청이 대기 중입니다. 로봇이 배정되는 대로 시작됩니다."
+        else:
+             response_message = "간식 배달 요청이 접수되었습니다. 로봇이 탕비실에서 간식을 수령하여 요청하신 위치로 배달합니다."
+        
         # 프론트엔드에 목적지가 명확히 나오도록 설정
         if not fields.get("dest_location") and not fields.get("location"):
              fields["dest_location"] = "요청자 위치"

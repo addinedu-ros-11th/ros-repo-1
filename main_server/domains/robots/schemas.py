@@ -50,7 +50,7 @@ class RobotEvent(str, Enum):
 # ==========================================
 
 class RobotBase(BaseModel):
-    name: str = Field(..., description="로봇의 고유 이름 (예: robot_01)")
+    name: str = Field(..., description="로봇의 고유 이름 (예: robot01)")
     status: RobotStatus = Field(default=RobotStatus.IDLE)
     battery_level: float = Field(..., description="배터리 잔량 (%)", ge=0, le=100)
     pose_x: Optional[float] = Field(default=0.0, alias="current_x", description="현재 X 좌표")

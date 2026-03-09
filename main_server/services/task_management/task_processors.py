@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 
 class BaseTaskProcessor(ABC):
     """모든 작업 처리기의 기본 인터페이스"""
-    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo=None):
+    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo=None, on_complete=None):
         self.fleet_manager = fleet_manager
         self.location_repo = location_repo
         self.task_repo = task_repo
         self.ai_processing_service = ai_processing_service
         self.connection_manager = connection_manager
         self.product_repo = product_repo
+        self.on_complete = on_complete
 
     @abstractmethod
     async def get_initial_actions(self, task: Task) -> List[Dict[str, Any]]:
@@ -34,6 +35,10 @@ class BaseTaskProcessor(ABC):
         await self.fleet_manager.update_robot_task_status(robot_id, None, RobotStatus.IDLE)
         logger.info(f"태스크 {task.id} 완료 및 로봇 {robot_id} 배차 해제.")
         await self.broadcast_task_update(f"작업(ID:{task.id})이 완료되었습니다.")
+        
+        # 태스크 완료 콜백 호출 (대기열 처리 등)
+        if self.on_complete:
+            await self.on_complete(robot_id)
 
     async def broadcast_task_update(self, message: str):
         """작업 진행 상황을 클라이언트에게 알립니다."""
@@ -346,8 +351,8 @@ class ManualMoveProcessor(BaseTaskProcessor):
 
 class GuestCheckProcessor(BaseTaskProcessor):
     """외부인 감지 시 QR 인증 및 가이드 전환 처리기"""
-    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo=None):
-        super().__init__(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo)
+    def __init__(self, fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo=None, on_complete=None):
+        super().__init__(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo, on_complete=on_complete)
         self.visitor_repo = visitor_repo
 
     async def get_initial_actions(self, task: Task) -> List[Dict[str, Any]]:
@@ -389,14 +394,15 @@ class GuestCheckProcessor(BaseTaskProcessor):
                     {"action": "DISPLAY_TEXT", "params": {"text": f"Welcome {visitor.name}", "duration": 3}}
                 ])
                 
-                # 2. 태스크 전환 (GUIDING 명령 전송)
-                await self._complete_task(task, robot_id)
+                # 2. 태스크 전환 (중요: _complete_task 대신 직접 상태만 업데이트하여 IDLE 방지)
+                # _complete_task는 로봇을 IDLE로 만들고 대기열 조회를 유도하므로, 즉시 가이드 전환 시에는 태스크만 완료처리함.
+                await self.task_repo.update(task.id, {"status": TaskStatus.COMPLETED})
                 
                 # 목적지 설정
                 target_loc_name = "large_meeting_room"
                 target_loc_id = visitor.destination_id
                 if target_loc_id:
-                    loc = await self.location_repo.get_by_id(target_loc_id)
+                    loc = await self.location_repo.find_by_id(target_loc_id)
                     if loc: target_loc_name = loc.name
 
                 new_task_data = {
@@ -413,6 +419,8 @@ class GuestCheckProcessor(BaseTaskProcessor):
                 if self.fleet_manager.task_manager:
                     new_task = await self.task_repo.create(new_task_data)
                     if new_task:
+                        logger.info(f"[GuestCheckProcessor] 즉시 가이드 시작 (Robot: {robot.name}, Task: {new_task.id})")
+                        # 로봇에게 즉시 가이드 명령 전송 (기존 배차 로직 우회하여 동일 로봇 강제 지정)
                         await self.fleet_manager.task_manager.assign_and_dispatch(robot, new_task)
             else:
                 result_msg = "인증 실패: 등록되지 않은 QR 코드입니다."

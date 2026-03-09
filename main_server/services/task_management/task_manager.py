@@ -44,13 +44,97 @@ class TaskManager:
         self.scenario_handler = ScenarioDataHandler(location_repo, user_repo, product_repo)
 
         # Processor 등록 (시나리오 확장 시 여기에 추가)
+        # 각 프로세서가 태스크 완료 시 호출할 콜백 전달
         self.processors = {
-            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
-            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
-            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
-            TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo),
-            TaskType.GUEST_CHECK: GuestCheckProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo),
+            TaskType.SNACK_DELIVERY: SnackProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo, on_complete=self.on_task_complete),
+            TaskType.GUIDE_GUEST: GuideProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo, on_complete=self.on_task_complete),
+            TaskType.ITEM_DELIVERY: ItemProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo, on_complete=self.on_task_complete),
+            TaskType.MANUAL_MOVE: ManualMoveProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, product_repo, on_complete=self.on_task_complete),
+            TaskType.GUEST_CHECK: GuestCheckProcessor(fleet_manager, location_repo, task_repo, ai_processing_service, connection_manager, visitor_repo, product_repo, on_complete=self.on_task_complete),
         }
+
+    async def on_task_complete(self, robot_id: int):
+        """로봇이 작업을 마쳤을 때 호출되는 콜백"""
+        logger.info(f"[TaskManager] 로봇 {robot_id} 작업 완료. 대기열 확인.")
+        await self.process_pending_tasks()
+
+    async def process_pending_tasks(self):
+        """대기 중인 태스크(PENDING)를 조회하여 가용한 로봇에 배차합니다."""
+        pending_tasks = await self.task_repo.get_all_by_status(TaskStatus.PENDING)
+        
+        if not pending_tasks:
+            return
+
+        logger.info(f"[TaskManager] 대기 중인 태스크 {len(pending_tasks)}개 발견. 배차 시도.")
+        for task in pending_tasks:
+            assigned = await self._try_assign_robot(task)
+            if not assigned:
+                # 현재 가용한 로봇이 없으면 이후 태스크도 배차 불가능할 가능성이 높음 (단, 로봇 위치에 따라 다를 수 있음)
+                # find_optimal_robot은 IDLE 로봇이 하나라도 있어야 동작하므로, 
+                # 여기서 실패했다면 더 이상 시도할 필요가 없음.
+                logger.info("[TaskManager] 가용한 로봇이 없어 배차 중단.")
+                break
+
+    async def _try_assign_robot(self, task: Task) -> bool:
+        """태스크에 대해 로봇 배차를 시도합니다."""
+        target_pose = await self._get_initial_target_pose(task)
+        
+        # 타겟 위치를 특정할 수 없는 경우 (예: GUEST_CHECK 수동 할당 등)
+        # 로봇 위치(0,0) 기준이라도 배차를 시도해야 할지 결정 필요. 
+        # 일단 (0,0)으로 가정하거나 생략.
+        if not target_pose:
+            target_pose = (0.0, 0.0)
+
+        optimal_robot = await self.fleet_manager.find_optimal_robot(target_pose)
+        if not optimal_robot:
+            return False
+
+        # 배차 성공
+        logger.info(f"[TaskManager] 태스크 {task.id} -> 로봇 {optimal_robot.name} 배차.")
+        
+        # 1. 태스크 정보 업데이트 (로봇 ID, 상태)
+        # assign_and_dispatch 내부에서 robot status 업데이트 하므로 여기서는 Task Status만 먼저 업데이트?
+        # 아니면 assign_and_dispatch가 Task Status도 관리?
+        # 기존 로직: create_task_from_ai -> task_data["assigned_robot_id"] set -> task_repo.create
+        # -> assign_and_dispatch (update robot status)
+        
+        # 여기서는 이미 Task가 DB에 있음.
+        await self.task_repo.update(task.id, {
+            "assigned_robot_id": optimal_robot.id,
+            "status": TaskStatus.ASSIGNED # or MOVING? Existing logic used MOVING for Robot, but Task?
+        })
+        
+        # 2. 실제 명령 전송
+        await self.assign_and_dispatch(optimal_robot, task)
+        return True
+
+    async def _get_initial_target_pose(self, task: Task) -> Optional[tuple]:
+        """태스크 유형에 따른 초기 이동 목적지 좌표를 반환합니다."""
+        # 1. Manual Move
+        if task.task_type == TaskType.MANUAL_MOVE:
+            return (task.details.get("x", 0.0), task.details.get("y", 0.0))
+        
+        target_name = None
+        
+        # 2. Snack Delivery -> Pantry (snack_waiting_area)
+        if task.task_type == TaskType.SNACK_DELIVERY:
+            target_name = "snack_waiting_area"
+
+        # 3. Item Delivery -> Sender Location
+        elif task.task_type == TaskType.ITEM_DELIVERY:
+            target_name = task.details.get("source_location", "office_1")
+
+        # 4. Guide Guest -> Target Location (or Guest Location?)
+        # GuideProcessor uses 'location' in details as destination.
+        elif task.task_type == TaskType.GUIDE_GUEST:
+            target_name = task.details.get("location")
+
+        if target_name:
+            loc = await self.location_repo.find_by_name(target_name)
+            if loc:
+                return (loc["coordinate_x"], loc["coordinate_y"])
+        
+        return None
 
     async def create_task_from_ai(self, ai_result: Dict[str, Any], caller_name: Optional[str] = None) -> Optional[Task]:
         """AI 해석 결과로 태스크를 생성하고 로봇을 배차합니다."""
@@ -79,40 +163,20 @@ class TaskManager:
 
         task_data = prepared_data["task_data"]
         task_items = prepared_data.get("task_items")
-        initial_destination_name = prepared_data["initial_destination_name"]
 
-        # 2. 초기 목적지 좌표 결정 (로봇 배차용)
-        if initial_destination_name == "MANUAL_COORDINATE":
-            # 수동 이동 시나리오: fields에 포함된 좌표를 직접 사용
-            initial_target_pose = (fields.get("x", 0.0), fields.get("y", 0.0))
-            logger.info(f"Manual move detected. Using direct coordinates: {initial_target_pose}")
-        else:
-            # 일반 시나리오: 위치 이름을 기반으로 DB에서 좌표 조회
-            initial_location_data = await self.location_repo.find_by_name(initial_destination_name)
-            if not initial_location_data:
-                logger.error(f"초기 목적지 '{initial_destination_name}'를 찾을 수 없습니다.")
-                return None
-            initial_target_pose = (initial_location_data["coordinate_x"], initial_location_data["coordinate_y"])
-
-        # 3. 최적 로봇 탐색
-        optimal_robot = await self.fleet_manager.find_optimal_robot(initial_target_pose)
-        if not optimal_robot:
-            # 로봇이 없어도 태스크는 PENDING 상태로 생성할 수 있으나,
-            # 현재 요구사항은 '가용한 로봇이 없을 때' 즉시 retry를 유도하므로 None을 반환합니다.
-            logger.warning(f"태스크 {task_data.get('task_type')}를 처리할 적절한 로봇이 없습니다.")
-            return None
-
-        # 로봇 ID를 태스크 데이터에 반영
-        task_data["assigned_robot_id"] = optimal_robot.id
-
-        # 4. 태스크 생성 (DB)
+        # 3. 태스크 생성 (DB) - 상태: PENDING
+        task_data["status"] = TaskStatus.PENDING
         task = await self.task_repo.create(task_data, task_items)
         if not task:
             logger.error("Failed to create task in database.")
             return None
 
-        # 5. 로봇 할당 및 초기 명령 전송
-        await self.assign_and_dispatch(optimal_robot, task)
+        # 4. 로봇 배차 시도
+        if await self._try_assign_robot(task):
+            logger.info(f"Task {task.id} assigned immediately.")
+        else:
+            logger.info(f"Task {task.id} queued (No robot available).")
+
         return task
 
     async def assign_and_dispatch(self, robot, task):
