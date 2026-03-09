@@ -185,6 +185,13 @@ sudo systemctl restart pinky-navigation.service
 - `robot/scripts/run_rviz_nav_debug.sh`
 - `robot/scripts/reset_localization.sh`
 
+- `robot-udp-bridge.service` must source both
+  `/home/pinky/pinky_pro/install/setup.bash` and
+  `/home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash`.
+- If `journalctl -u robot-udp-bridge.service` shows
+  `Package 'communication_node' not found`, rebuild `communication_node`,
+  reinstall the unit file, run `sudo systemctl daemon-reload`, and restart the service.
+
 ## RViz Debug (On-PC)
 ```bash
 # PC must join same network and ROS_DOMAIN_ID as robot

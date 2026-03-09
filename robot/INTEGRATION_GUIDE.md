@@ -116,6 +116,12 @@ grep -E '^CAMERA_SOURCE=' /etc/robot_runtime.env
 # ros2 topic info /camera/image_raw -v
 # ros2 topic hz /camera/image_raw
 journalctl -u robot-udp-bridge.service -n 50 --no-pager
+
+Note:
+- `robot-udp-bridge.service` must source both `/home/pinky/pinky_pro/install/setup.bash`
+  and `/home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash`.
+- If `journalctl -u robot-udp-bridge.service` shows `Package 'communication_node' not found`,
+  rebuild `communication_node` in `robot/jazzy_ws` and reinstall the systemd unit.
 ```
 
 ## Verification Checklist
