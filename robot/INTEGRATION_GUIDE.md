@@ -24,6 +24,11 @@ This guide documents the integration contract for the robot runtime in
 - Core commands:
   - `ACTION_SEQUENCE` (`GOTO`, `LEAD_GUEST`, `DISPLAY_TEXT`, `PAUSE`, `RESUME`)
   - top-level `STOP`, `PAUSE`, `RESUME`, `CANCEL`
+- QR scan behavior:
+  - `QR_SCAN` now enforces `qr_scan_min_dwell_sec` before accepting any decode.
+  - the same QR payload must be decoded `qr_scan_confirm_count` consecutive polls before success.
+  - while `QR_SCAN` is active, new commands from `/{robot_ns}/commands` are ignored when
+    `qr_scan_ignore_commands_while_active=true`.
 
 ## Safety Model
 - Person detection decision is made by upper layer (`main_server` / AI pipeline).
@@ -116,6 +121,12 @@ grep -E '^CAMERA_SOURCE=' /etc/robot_runtime.env
 # ros2 topic info /camera/image_raw -v
 # ros2 topic hz /camera/image_raw
 journalctl -u robot-udp-bridge.service -n 50 --no-pager
+
+Note:
+- `robot-udp-bridge.service` must source both `/home/pinky/pinky_pro/install/setup.bash`
+  and `/home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash`.
+- If `journalctl -u robot-udp-bridge.service` shows `Package 'communication_node' not found`,
+  rebuild `communication_node` in `robot/jazzy_ws` and reinstall the systemd unit.
 ```
 
 ## Verification Checklist
@@ -144,6 +155,30 @@ ros2 launch office_robot_bringup nav_debug_rviz.launch.py robot_ns:=robot01
   - latest `status` line
   - latest `event` line
   - overlay timestamp
+
+## Localization Reset (On-PC)
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/reset_localization.sh
+```
+
+- This helper:
+  - sends zero `cmd_vel` burst
+  - calls `/{robot_ns}/request_nomotion_update`
+  - prints one `amcl_pose` and one `status`
+- Default behavior preserves the current/manual pose estimate.
+- If you already used RViz `2D Pose Estimate`, run the helper after that to request
+  no-motion update or slow scan spin without resetting the pose.
+- Only use global relocalization when the robot is truly lost:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 RELOCALIZE=true ./robot/scripts/reset_localization.sh
+```
+- Optional slow scan spin:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 SPIN_DEG=360 SPIN_ANGULAR_Z=0.35 ./robot/scripts/reset_localization.sh
+```
 
 ## Compatibility Notes
 - Keep topic/port contract stable; downstream services depend on it.

@@ -18,11 +18,11 @@ class InferenceStateManager:
     로봇별 추론 상태를 thread-safe 하게 관리.
 
     지원 모델 타입:
-        - EMPLOYEE : 얼굴 인식 (유휴 모드)
-        - OBSTACLE : 장애물 감지 (주행 모드 - 사람/의자/화분/가방/로봇)
+        - FACE   : 얼굴 인식 (유휴 모드)
+        - OBJECT : 장애물 감지 (주행 모드 - 사람/의자/화분/가방/로봇)
     """
 
-    VALID_MODEL_TYPES = {"EMPLOYEE", "OBSTACLE"}
+    VALID_MODEL_TYPES = {"FACE", "OBJECT"}
 
     def __init__(self):
         # { robot_id: { model_type: is_active } }
@@ -36,7 +36,7 @@ class InferenceStateManager:
 
         Args:
             robot_id: 로봇 식별자
-            model_type: 모델 타입 (EMPLOYEE / SNACK / OBSTACLE)
+            model_type: 모델 타입 (FACE / OBJECT)
             is_active: 활성화 여부
 
         Returns:

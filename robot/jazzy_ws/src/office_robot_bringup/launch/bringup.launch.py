@@ -87,7 +87,11 @@ def generate_launch_description() -> LaunchDescription:
     )
     enable_display = LaunchConfiguration("enable_display")
     display_topic = LaunchConfiguration("display_topic")
+    led_topic = LaunchConfiguration("led_topic")
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
+    enable_ui_bridge = LaunchConfiguration("enable_ui_bridge")
+    lcd_enabled = LaunchConfiguration("lcd_enabled")
+    led_enabled = LaunchConfiguration("led_enabled")
     emit_command_received_event = LaunchConfiguration("emit_command_received_event")
     qr_scan_local_enabled = LaunchConfiguration("qr_scan_local_enabled")
     qr_scan_image_topic = LaunchConfiguration("qr_scan_image_topic")
@@ -193,7 +197,11 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
+            DeclareLaunchArgument("led_topic", default_value="led_command"),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
+            DeclareLaunchArgument("enable_ui_bridge", default_value="true"),
+            DeclareLaunchArgument("lcd_enabled", default_value="true"),
+            DeclareLaunchArgument("led_enabled", default_value="true"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
             DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
@@ -232,6 +240,26 @@ def generate_launch_description() -> LaunchDescription:
                                 "obstacle_topic": obstacle_topic,
                                 "obstacle_presence_stop_classes": obstacle_presence_stop_classes,
                             },
+                        ],
+                    ),
+                    Node(
+                        package="office_robot_executor",
+                        executable="office_robot_ui_bridge_node",
+                        name="office_robot_ui_bridge",
+                        condition=IfCondition(enable_ui_bridge),
+                        cwd="/home/pinky",
+                        additional_env={
+                            "HOME": "/home/pinky",
+                            "TMPDIR": "/tmp",
+                        },
+                        parameters=[
+                            {
+                                "robot_name": robot_ns,
+                                "display_topic": display_topic,
+                                "led_topic": led_topic,
+                                "lcd_enabled": lcd_enabled,
+                                "led_enabled": led_enabled,
+                            }
                         ],
                     ),
                     IncludeLaunchDescription(
@@ -308,6 +336,7 @@ def generate_launch_description() -> LaunchDescription:
                             "localization_not_ready_event_min_interval_sec": localization_not_ready_event_min_interval_sec,
                             "enable_display": enable_display,
                             "display_topic": display_topic,
+                            "led_topic": led_topic,
                             "guide_display_period_sec": guide_display_period_sec,
                             "emit_command_received_event": emit_command_received_event,
                             "qr_scan_local_enabled": qr_scan_local_enabled,

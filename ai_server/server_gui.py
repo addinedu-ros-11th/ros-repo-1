@@ -126,6 +126,18 @@ GRPC_REQUEST_PATTERNS = {
         "icon": "📡",
         "service": "Vision",
     },
+    "얼굴 인식: ": {
+        "rpc": "FaceRecognition",
+        "icon": "👤",
+        "service": "Vision",
+        "is_response": True,
+    },
+    "장애물 감지: ": {
+        "rpc": "ObjectDetection",
+        "icon": "🔶",
+        "service": "Vision",
+        "is_response": True,
+    },
     "자연어 해석 완료": {
         "rpc": "ParseNaturalLanguage",
         "icon": "✅",
@@ -495,10 +507,9 @@ class AIServerGUI:
                     for r in robots:
                         idx = r["index"]
                         ip = r["ip"]
+                        robot_id = r.get("robot_id", ip)
                         if idx in self._robot_video_status_vars:
-                            self._robot_video_status_vars[idx].set(
-                                f"Robot #{idx + 1} — {ip}"
-                            )
+                            self._robot_video_status_vars[idx].set(f"{robot_id} — {ip}")
                 except Exception:
                     pass
 

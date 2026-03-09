@@ -91,6 +91,9 @@
 - `startup_initial_pose_enabled` (default `false`)
 - `startup_initial_pose_topic` (default `initialpose`)
 - `startup_initial_pose_x/y/yaw` (default `0.0`)
+- `qr_scan_min_dwell_sec` (default `1.5`)
+- `qr_scan_confirm_count` (default `3`)
+- `qr_scan_ignore_commands_while_active` (default `true`)
 
 ## Standard Run
 ```bash
@@ -133,6 +136,10 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
   - Upstream bbox (`box.x/y/width/height`) is preserved into `safety_state` and `/status`.
   - Full distance-aware yield can be layered later if upstream starts sending `distance_m`
     or if robot-side box + LiDAR fusion is added.
+- QR scanning:
+  - `QR_SCAN` does not succeed immediately on first decode anymore.
+  - runtime requires both a minimum dwell time and repeated identical decodes.
+  - while an active `QR_SCAN` action is running, new `/{robot_ns}/commands` messages are ignored.
 - Localization:
   - If `amcl_pose_missing` persists after global relocalization + spin, the operator must set
     `2D Pose Estimate` once in RViz unless fixed startup pose is enabled.
@@ -183,6 +190,14 @@ sudo systemctl restart pinky-navigation.service
 - `robot/scripts/nav2_runtime_audit.sh`
 - `robot/scripts/install_pinky_navigation_override.sh`
 - `robot/scripts/run_rviz_nav_debug.sh`
+- `robot/scripts/reset_localization.sh`
+
+- `robot-udp-bridge.service` must source both
+  `/home/pinky/pinky_pro/install/setup.bash` and
+  `/home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash`.
+- If `journalctl -u robot-udp-bridge.service` shows
+  `Package 'communication_node' not found`, rebuild `communication_node`,
+  reinstall the unit file, run `sudo systemctl daemon-reload`, and restart the service.
 
 ## RViz Debug (On-PC)
 ```bash
@@ -196,3 +211,23 @@ ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/run_rviz_nav_debug.sh
 
 - RViz `Debug Overlay` display uses `/{robot_ns}/debug_markers`
   and shows latest `status` + `event` text in the scene.
+
+## Localization Reset (On-PC)
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 ./robot/scripts/reset_localization.sh
+```
+
+- Default mode preserves the current/manual RViz pose estimate and only requests
+  no-motion update plus optional scan spin.
+- If the robot is completely lost, use global relocalization explicitly:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 RELOCALIZE=true ./robot/scripts/reset_localization.sh
+```
+
+- Optional slow scan spin during relocalization:
+```bash
+cd /home/changpc/ros-repo-1
+ROBOT_NS=robot01 ROS_DOMAIN_ID=88 SPIN_DEG=360 SPIN_ANGULAR_Z=0.35 ./robot/scripts/reset_localization.sh
+```
