@@ -36,6 +36,13 @@ def generate_launch_description() -> LaunchDescription:
                 "forward_first_allow_reversing_param",
                 default_value="FollowPath.allow_reversing",
             ),
+            DeclareLaunchArgument("robot_yield_right_enabled", default_value="true"),
+            DeclareLaunchArgument("robot_yield_right_offset_m", default_value="0.18"),
+            DeclareLaunchArgument("robot_yield_right_forward_m", default_value="0.20"),
+            DeclareLaunchArgument("robot_yield_right_cooldown_sec", default_value="5.0"),
+            DeclareLaunchArgument(
+                "robot_yield_right_max_attempts_per_action", default_value="1"
+            ),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
             DeclareLaunchArgument("odom_topic", default_value="/odom"),
@@ -91,6 +98,23 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("led_topic", default_value="led_command"),
+            DeclareLaunchArgument("idle_led_off_enabled", default_value="true"),
+            DeclareLaunchArgument("employee_verification_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "employee_verification_topic", default_value="employee_verification"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_min_confidence", default_value="0.5"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_greeting_text", default_value="Hello, employee"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_feedback_hold_sec", default_value="5.0"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_cooldown_sec", default_value="5.0"
+            ),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
@@ -140,6 +164,21 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "forward_first_allow_reversing_param": LaunchConfiguration(
                             "forward_first_allow_reversing_param"
+                        ),
+                        "robot_yield_right_enabled": LaunchConfiguration(
+                            "robot_yield_right_enabled"
+                        ),
+                        "robot_yield_right_offset_m": LaunchConfiguration(
+                            "robot_yield_right_offset_m"
+                        ),
+                        "robot_yield_right_forward_m": LaunchConfiguration(
+                            "robot_yield_right_forward_m"
+                        ),
+                        "robot_yield_right_cooldown_sec": LaunchConfiguration(
+                            "robot_yield_right_cooldown_sec"
+                        ),
+                        "robot_yield_right_max_attempts_per_action": LaunchConfiguration(
+                            "robot_yield_right_max_attempts_per_action"
                         ),
                         "localization_required": LaunchConfiguration("localization_required"),
                         "amcl_pose_topic": LaunchConfiguration("amcl_pose_topic"),
@@ -229,6 +268,25 @@ def generate_launch_description() -> LaunchDescription:
                         "enable_display": LaunchConfiguration("enable_display"),
                         "display_topic": LaunchConfiguration("display_topic"),
                         "led_topic": LaunchConfiguration("led_topic"),
+                        "idle_led_off_enabled": LaunchConfiguration("idle_led_off_enabled"),
+                        "employee_verification_enabled": LaunchConfiguration(
+                            "employee_verification_enabled"
+                        ),
+                        "employee_verification_topic": LaunchConfiguration(
+                            "employee_verification_topic"
+                        ),
+                        "employee_verification_min_confidence": LaunchConfiguration(
+                            "employee_verification_min_confidence"
+                        ),
+                        "employee_verification_greeting_text": LaunchConfiguration(
+                            "employee_verification_greeting_text"
+                        ),
+                        "employee_verification_feedback_hold_sec": LaunchConfiguration(
+                            "employee_verification_feedback_hold_sec"
+                        ),
+                        "employee_verification_cooldown_sec": LaunchConfiguration(
+                            "employee_verification_cooldown_sec"
+                        ),
                         "guide_display_period_sec": LaunchConfiguration("guide_display_period_sec"),
                         "emit_command_received_event": LaunchConfiguration("emit_command_received_event"),
                         "qr_scan_local_enabled": LaunchConfiguration("qr_scan_local_enabled"),

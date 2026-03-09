@@ -21,6 +21,7 @@ for candidate in (
 PIL_IMPORT_ERROR: Optional[str] = None
 LCD_IMPORT_ERROR: Optional[str] = None
 LED_IMPORT_ERROR: Optional[str] = None
+SETLED_IMPORT_ERROR: Optional[str] = None
 
 try:  # pragma: no cover - runtime environment dependent
     from PIL import Image, ImageDraw, ImageFont
@@ -47,6 +48,12 @@ except Exception as exc:  # pragma: no cover - runtime environment dependent
     PinkyLED = None
     LED_IMPORT_ERROR = repr(exc)
 
+try:  # pragma: no cover - runtime environment dependent
+    from pinky_interfaces.srv import SetLed as PinkySetLed
+except Exception as exc:  # pragma: no cover - runtime environment dependent
+    PinkySetLed = None
+    SETLED_IMPORT_ERROR = repr(exc)
+
 
 COLOR_NAME_MAP = {
     "RED": (255, 0, 0),
@@ -71,6 +78,9 @@ class OfficeRobotUiBridge(Node):
         self.declare_parameter("led_topic", "led_command")
         self.declare_parameter("lcd_enabled", True)
         self.declare_parameter("led_enabled", True)
+        self.declare_parameter("led_service_enabled", True)
+        self.declare_parameter("led_service_name", "/set_led")
+        self.declare_parameter("led_service_wait_sec", 0.15)
         self.declare_parameter("lcd_font_path", "")
         self.declare_parameter(
             "lcd_font_candidates",
@@ -100,6 +110,16 @@ class OfficeRobotUiBridge(Node):
         self.led_topic = self.get_parameter("led_topic").get_parameter_value().string_value
         self.lcd_enabled = self.get_parameter("lcd_enabled").get_parameter_value().bool_value
         self.led_enabled = self.get_parameter("led_enabled").get_parameter_value().bool_value
+        self.led_service_enabled = (
+            self.get_parameter("led_service_enabled").get_parameter_value().bool_value
+        )
+        self.led_service_name = (
+            self.get_parameter("led_service_name").get_parameter_value().string_value
+        )
+        self.led_service_wait_sec = max(
+            0.0,
+            float(self.get_parameter("led_service_wait_sec").get_parameter_value().double_value),
+        )
         self.lcd_font_path = self.get_parameter("lcd_font_path").get_parameter_value().string_value
         self.lcd_font_candidates = [
             token.strip()
@@ -147,9 +167,11 @@ class OfficeRobotUiBridge(Node):
 
         self._lcd = None
         self._led = None
+        self._led_service_client = None
         self._led_blink_timer = None
         self._led_blink_color = (255, 255, 255)
         self._led_blink_on = False
+        self._warned_led_service_unavailable = False
 
         self._init_lcd()
         self._init_led()
@@ -162,7 +184,8 @@ class OfficeRobotUiBridge(Node):
         self.get_logger().info(
             f"UI bridge ready (robot={self.robot_name}, display_topic={self.display_topic}, "
             f"lcd_enabled={self._lcd is not None}, led_topic={self.led_topic}, "
-            f"led_enabled={self._led is not None})"
+            f"led_enabled={self._led is not None}, "
+            f"led_service={self.led_service_name if self._led_service_client else 'disabled'})"
         )
 
     def _init_lcd(self) -> None:
@@ -189,16 +212,29 @@ class OfficeRobotUiBridge(Node):
     def _init_led(self) -> None:
         if not self.led_enabled:
             return
+        if self.led_service_enabled:
+            if PinkySetLed is None:
+                self.get_logger().warn(
+                    f"LED service bridge disabled: pinky_interfaces.srv.SetLed unavailable "
+                    f"({SETLED_IMPORT_ERROR})."
+                )
+            else:
+                self._led_service_client = self.create_client(PinkySetLed, self.led_service_name)
         if PinkyLED is None:
-            self.get_logger().warn(
-                f"LED bridge disabled: pinkylib.led.LED unavailable ({LED_IMPORT_ERROR})."
-            )
+            if self._led_service_client is None:
+                self.get_logger().warn(
+                    f"LED bridge disabled: pinkylib.led.LED unavailable ({LED_IMPORT_ERROR})."
+                )
+                return
             return
         try:
             self._led = PinkyLED()
         except Exception as exc:
             self._led = None
-            self.get_logger().error(f"Failed to initialize LED bridge: {exc}")
+            if self._led_service_client is None:
+                self.get_logger().error(f"Failed to initialize LED bridge: {exc}")
+            else:
+                self.get_logger().warn(f"Failed to initialize local LED fallback: {exc}")
 
     def _on_display(self, msg: String) -> None:
         payload = self._decode_payload(msg.data)
@@ -221,7 +257,7 @@ class OfficeRobotUiBridge(Node):
         params = payload.get("params", payload)
         if not isinstance(params, dict):
             return
-        if self._led is None:
+        if self._led is None and self._led_service_client is None:
             self.get_logger().info(f"LED command received without LED backend: {params}")
             return
         try:
@@ -318,7 +354,7 @@ class OfficeRobotUiBridge(Node):
         pixels = params.get("pixels") or []
 
         if command == "clear" or mode in {"CLEAR", "OFF"}:
-            self._led.clear()
+            self._led_clear()
             return
 
         color = self._resolve_led_color(params)
@@ -332,27 +368,88 @@ class OfficeRobotUiBridge(Node):
             return
 
         if command == "set_pixel" or pixels:
-            for pixel in pixels:
-                self._led.set_pixel(int(pixel), color)
-            self._led.show()
+            self._led_set_pixels([int(pixel) for pixel in pixels], color)
             return
 
-        self._led.fill(color)
+        self._led_fill(color)
 
     def _tick_led_blink(self) -> None:
-        if self._led is None:
+        if self._led is None and self._led_service_client is None:
             return
         self._led_blink_on = not self._led_blink_on
         if self._led_blink_on:
-            self._led.fill(self._led_blink_color)
+            self._led_fill(self._led_blink_color)
         else:
-            self._led.clear()
+            self._led_clear()
 
     def _stop_led_blink(self) -> None:
         if self._led_blink_timer is not None:
             self._led_blink_timer.cancel()
             self._led_blink_timer = None
         self._led_blink_on = False
+
+    def _led_fill(self, color: Tuple[int, int, int]) -> None:
+        if self._dispatch_led_service("fill", color=color):
+            return
+        if self._led is None:
+            raise RuntimeError("No LED backend available.")
+        self._led.fill(color)
+
+    def _led_clear(self) -> None:
+        if self._dispatch_led_service("clear"):
+            return
+        if self._led is None:
+            raise RuntimeError("No LED backend available.")
+        self._led.clear()
+
+    def _led_set_pixels(self, pixels: List[int], color: Tuple[int, int, int]) -> None:
+        if self._dispatch_led_service("set_pixel", color=color, pixels=pixels):
+            return
+        if self._led is None:
+            raise RuntimeError("No LED backend available.")
+        for pixel in pixels:
+            self._led.set_pixel(int(pixel), color)
+        self._led.show()
+
+    def _dispatch_led_service(
+        self,
+        command: str,
+        *,
+        color: Optional[Tuple[int, int, int]] = None,
+        pixels: Optional[List[int]] = None,
+    ) -> bool:
+        if self._led_service_client is None or PinkySetLed is None:
+            return False
+        if not self._led_service_client.wait_for_service(timeout_sec=self.led_service_wait_sec):
+            if not self._warned_led_service_unavailable:
+                self.get_logger().warn(
+                    f"LED service {self.led_service_name} is unavailable; falling back to local backend."
+                )
+                self._warned_led_service_unavailable = True
+            return False
+        self._warned_led_service_unavailable = False
+        request = PinkySetLed.Request()
+        request.command = command
+        request.pixels = [int(pixel) for pixel in (pixels or [])]
+        if color is not None:
+            request.r = int(color[0])
+            request.g = int(color[1])
+            request.b = int(color[2])
+        future = self._led_service_client.call_async(request)
+        future.add_done_callback(self._on_led_service_result)
+        return True
+
+    def _on_led_service_result(self, future) -> None:
+        try:
+            response = future.result()
+        except Exception as exc:
+            self.get_logger().error(f"LED service call failed: {exc}")
+            return
+        if response is None:
+            self.get_logger().error("LED service call returned no response.")
+            return
+        if not bool(response.success):
+            self.get_logger().error(f"LED service rejected command: {response.message}")
 
     @staticmethod
     def _decode_payload(raw: str) -> Dict[str, Any]:
@@ -388,9 +485,9 @@ class OfficeRobotUiBridge(Node):
 
     def destroy_node(self) -> bool:
         self._stop_led_blink()
-        if self._led is not None and self.led_clear_on_shutdown:
+        if self.led_clear_on_shutdown:
             try:
-                self._led.clear()
+                self._led_clear()
             except Exception:
                 pass
         if self._lcd is not None and self.lcd_clear_on_shutdown:

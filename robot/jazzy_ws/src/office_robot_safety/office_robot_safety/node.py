@@ -86,6 +86,12 @@ class OfficeRobotSafety(Node):
         self.declare_parameter("obstacle_bag_slow_m", 0.70)
         self.declare_parameter("obstacle_robot_stop_m", 0.55)
         self.declare_parameter("obstacle_robot_slow_m", 0.85)
+        self.declare_parameter("obstacle_robot_yield_enabled", True)
+        self.declare_parameter("obstacle_robot_yield_m", 0.95)
+        self.declare_parameter("obstacle_robot_yield_box_image_width_px", 1280.0)
+        self.declare_parameter("obstacle_robot_yield_center_ratio_min", 0.35)
+        self.declare_parameter("obstacle_robot_yield_center_ratio_max", 0.65)
+        self.declare_parameter("obstacle_robot_yield_min_box_width_px", 120.0)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -153,6 +159,45 @@ class OfficeRobotSafety(Node):
             3: self.get_parameter("obstacle_bag_slow_m").get_parameter_value().double_value,
             4: self.get_parameter("obstacle_robot_slow_m").get_parameter_value().double_value,
         }
+        self.obstacle_robot_yield_enabled = (
+            self.get_parameter("obstacle_robot_yield_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.obstacle_robot_yield_m = max(
+            0.0,
+            self.get_parameter("obstacle_robot_yield_m").get_parameter_value().double_value,
+        )
+        self.obstacle_robot_yield_box_image_width_px = max(
+            1.0,
+            self.get_parameter("obstacle_robot_yield_box_image_width_px")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.obstacle_robot_yield_center_ratio_min = max(
+            0.0,
+            min(
+                1.0,
+                self.get_parameter("obstacle_robot_yield_center_ratio_min")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.obstacle_robot_yield_center_ratio_max = max(
+            self.obstacle_robot_yield_center_ratio_min,
+            min(
+                1.0,
+                self.get_parameter("obstacle_robot_yield_center_ratio_max")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.obstacle_robot_yield_min_box_width_px = max(
+            1.0,
+            self.get_parameter("obstacle_robot_yield_min_box_width_px")
+            .get_parameter_value()
+            .double_value,
+        )
 
         self._command_lock_enabled = False
         self._obstacle_lock_enabled = False
@@ -315,12 +360,18 @@ class OfficeRobotSafety(Node):
         now = time.monotonic()
         self._last_obstacle_msg_mono = now
         detections = self._extract_detections(payload)
-        stop_hit, slow_hit = self._evaluate_detections(detections)
+        stop_hit, yield_hit, slow_hit = self._evaluate_detections(detections)
 
         if stop_hit is not None:
             self._last_stop_trigger_mono = now
             self._set_obstacle_state("STOP", stop_hit)
             self._set_obstacle_lock(True, stop_hit["reason"])
+            return
+
+        if yield_hit is not None:
+            self._set_obstacle_state("YIELD_RIGHT", yield_hit)
+            if self._obstacle_lock_enabled:
+                self._set_obstacle_lock(False, "yield_right")
             return
 
         if slow_hit is not None:
@@ -357,6 +408,12 @@ class OfficeRobotSafety(Node):
                 f"confidence={detail.get('confidence')}, slow={detail.get('slow_threshold')})."
             )
             return
+        if state == "YIELD_RIGHT" and detail is not None:
+            self.get_logger().info(
+                f"Obstacle YIELD_RIGHT trigger (class={detail['class_name']}, distance={detail.get('distance')}, "
+                f"confidence={detail.get('confidence')}, box_center_ratio={detail.get('box_center_ratio')})."
+            )
+            return
         self.get_logger().info("Obstacle state cleared.")
 
     def _release_obstacle_lock_on_timeout(self) -> None:
@@ -374,8 +431,9 @@ class OfficeRobotSafety(Node):
 
     def _evaluate_detections(
         self, detections: List[Dict[str, Any]]
-    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         best_stop: Optional[Dict[str, Any]] = None
+        best_yield: Optional[Dict[str, Any]] = None
         best_slow: Optional[Dict[str, Any]] = None
 
         for det in detections:
@@ -393,12 +451,23 @@ class OfficeRobotSafety(Node):
             stop_threshold = self._stop_thresholds.get(class_id)
             slow_threshold = self._slow_thresholds.get(class_id)
             class_name = self._CLASS_ID_TO_NAME.get(class_id, str(class_id))
+            box = self._extract_box(det)
 
-            if (
-                distance is None
-                and class_id in self._presence_stop_class_ids
-            ):
-                box = self._extract_box(det)
+            yield_hit = self._build_robot_yield_hit(
+                class_id=class_id,
+                class_name=class_name,
+                confidence=confidence,
+                distance=distance,
+                stop_threshold=stop_threshold,
+                slow_threshold=slow_threshold,
+                box=box,
+            )
+            if yield_hit is not None:
+                if best_yield is None or self._is_better_yield_hit(yield_hit, best_yield):
+                    best_yield = yield_hit
+                continue
+
+            if distance is None and class_id in self._presence_stop_class_ids:
                 hit = {
                     "class_id": class_id,
                     "class_name": class_name,
@@ -419,7 +488,6 @@ class OfficeRobotSafety(Node):
                 and class_id == 0
                 and self.obstacle_person_stop_without_distance
             ):
-                box = self._extract_box(det)
                 hit = {
                     "class_id": class_id,
                     "class_name": class_name,
@@ -438,7 +506,6 @@ class OfficeRobotSafety(Node):
             if distance is None:
                 continue
 
-            box = self._extract_box(det)
             if stop_threshold is not None and distance <= stop_threshold:
                 hit = {
                     "class_id": class_id,
@@ -470,7 +537,91 @@ class OfficeRobotSafety(Node):
                 if best_slow is None or distance < float(best_slow.get("distance", 999.0)):
                     best_slow = hit
 
-        return best_stop, best_slow
+        return best_stop, best_yield, best_slow
+
+    def _build_robot_yield_hit(
+        self,
+        class_id: int,
+        class_name: str,
+        confidence: float,
+        distance: Optional[float],
+        stop_threshold: Optional[float],
+        slow_threshold: Optional[float],
+        box: Optional[Dict[str, float]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.obstacle_robot_yield_enabled or class_id != 4:
+            return None
+
+        if distance is not None:
+            if stop_threshold is not None and distance <= stop_threshold:
+                return None
+            if distance <= self.obstacle_robot_yield_m:
+                hit = {
+                    "class_id": class_id,
+                    "class_name": class_name,
+                    "confidence": confidence,
+                    "distance": distance,
+                    "stop_threshold": stop_threshold,
+                    "slow_threshold": slow_threshold,
+                    "yield_threshold": self.obstacle_robot_yield_m,
+                    "reason": "class_4_yield_right_distance",
+                }
+                if box is not None:
+                    hit["box"] = box
+                    hit["box_center_ratio"] = self._box_center_ratio(box)
+                return hit
+            return None
+
+        if box is None:
+            return None
+
+        center_ratio = self._box_center_ratio(box)
+        if center_ratio is None:
+            return None
+        box_width = float(box.get("width", 0.0))
+        if box_width < self.obstacle_robot_yield_min_box_width_px:
+            return None
+        if not (
+            self.obstacle_robot_yield_center_ratio_min
+            <= center_ratio
+            <= self.obstacle_robot_yield_center_ratio_max
+        ):
+            return None
+
+        return {
+            "class_id": class_id,
+            "class_name": class_name,
+            "confidence": confidence,
+            "distance": None,
+            "stop_threshold": stop_threshold,
+            "slow_threshold": slow_threshold,
+            "yield_threshold": self.obstacle_robot_yield_m,
+            "reason": "class_4_yield_right_box",
+            "box": box,
+            "box_center_ratio": center_ratio,
+        }
+
+    def _is_better_yield_hit(self, candidate: Dict[str, Any], current: Dict[str, Any]) -> bool:
+        candidate_distance = self._to_float(candidate.get("distance"))
+        current_distance = self._to_float(current.get("distance"))
+        if candidate_distance is not None and current_distance is not None:
+            return candidate_distance < current_distance
+        if candidate_distance is not None:
+            return True
+        if current_distance is not None:
+            return False
+
+        candidate_box = candidate.get("box") if isinstance(candidate.get("box"), dict) else {}
+        current_box = current.get("box") if isinstance(current.get("box"), dict) else {}
+        return float(candidate_box.get("width", 0.0)) > float(current_box.get("width", 0.0))
+
+    def _box_center_ratio(self, box: Dict[str, float]) -> Optional[float]:
+        x = self._to_float(box.get("x"))
+        width = self._to_float(box.get("width"))
+        if x is None or width is None:
+            return None
+        center_x = float(x) + float(width) * 0.5
+        return center_x / float(self.obstacle_robot_yield_box_image_width_px)
 
     def _extract_detections(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         root: Any = payload

@@ -22,8 +22,12 @@ This guide documents the integration contract for the robot runtime in
 ## Command Model
 - Message type: `std_msgs/msg/String` with JSON payload.
 - Core commands:
-  - `ACTION_SEQUENCE` (`GOTO`, `LEAD_GUEST`, `DISPLAY_TEXT`, `PAUSE`, `RESUME`)
+  - `ACTION_SEQUENCE` (`GOTO`, `LEAD_GUEST`, `DISPLAY_TEXT`, `SET_LED`, `PAUSE`, `RESUME`)
   - top-level `STOP`, `PAUSE`, `RESUME`, `CANCEL`
+- UI behavior:
+  - `DISPLAY_TEXT` is rendered by `office_robot_ui_bridge` onto the Pinky LCD.
+  - `SET_LED` is forwarded by `office_robot_ui_bridge` to the global `/set_led`
+    service provided by `pinky_led/led_server` (with local `pinkylib.led` fallback).
 - QR scan behavior:
   - `QR_SCAN` now enforces `qr_scan_min_dwell_sec` before accepting any decode.
   - the same QR payload must be decoded `qr_scan_confirm_count` consecutive polls before success.
@@ -37,9 +41,11 @@ This guide documents the integration contract for the robot runtime in
   - `RESUME`: safety lock off + next action sequence allowed
 - Optional obstacle policy in `office_robot_safety`:
   - when `obstacle_enabled=true`, obstacle policy is evaluated from `/{robot_ns}/obstacles`.
-  - `person` / `robot` are `presence-based STOP` by default even without distance.
+  - `person` is `presence-based STOP` by default even without distance.
+  - `robot` uses `YIELD_RIGHT` first when the detection is frontal/close enough; otherwise it falls back to `STOP`.
   - if upstream later provides `distance_m` (or equivalent keys), class-based stop/slow thresholds are applied on the same path.
-  - current runtime behavior: `STOP` triggers safety lock; `SLOW` remains observability/log state only.
+  - current runtime behavior: `STOP` triggers safety lock; `SLOW` remains observability/log state only; `YIELD_RIGHT`
+    triggers a short right-offset Nav2 detour and then resumes the original goal.
   - final lock is `command_lock OR obstacle_lock` to keep STOP/PAUSE semantics deterministic.
   - `SAFETY_STOPPED` / `SAFETY_RESUMED` are emitted only on actual lock transitions.
     Latched `/{robot_ns}/safety_state` snapshots (`CLEAR` / `STOP`) update status context but do not
@@ -63,7 +69,7 @@ This guide documents the integration contract for the robot runtime in
     - request Nav2 lifecycle manager `STARTUP/RESUME` if lifecycle nodes are inactive
     - retry with bounded attempts (`nav2_retry_*`, `localization_recovery_*`, `amcl_*` params).
 - `SR-003` static obstacle avoidance remains Nav2 costmap/controller responsibility.
-- `SR-004 v1` dynamic obstacle handling is `safe stop / resume`, not full detour.
+- `SR-004 v1` dynamic obstacle handling is `person stop + robot right-yield`, not full class-aware detour.
 - AI dependency split:
   - AI-independent actions can still execute while AI is down.
   - For AI-dependent actions, upper layer should check `/{robot_ns}/ai_link` or
@@ -76,6 +82,15 @@ source install/setup.bash
 ros2 launch office_robot_bringup bringup.launch.py \
   robot_ns:=robot01 robot_id:=1 enable_rosbridge:=true \
   use_nav2:=true nav2_action_name:=/robot01/navigate_to_pose
+```
+
+## LED Manual Check
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/pinky/pinky_pro/install/setup.bash
+source /home/pinky/ros-repo-1/robot/jazzy_ws/install/setup.bash
+ros2 service list | grep set_led
+ros2 service call /set_led pinky_interfaces/srv/SetLed "{command: 'fill', r: 255, g: 0, b: 0}"
 ```
 
 ## Nav2 Params File Fix Checklist
