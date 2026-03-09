@@ -71,6 +71,7 @@ office_robot_executor:
     localization_not_ready_event_min_interval_sec: 2.0
     enable_display: true
     display_topic: display
+    led_topic: led_command
     guide_display_period_sec: 2.0
     emit_command_received_event: true
     qr_scan_local_enabled: true

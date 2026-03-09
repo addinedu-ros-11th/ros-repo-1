@@ -142,6 +142,7 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("localization_not_ready_event_min_interval_sec", 2.0)
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
+        self.declare_parameter("led_topic", "led_command")
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
         self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
@@ -452,6 +453,7 @@ class OfficeRobotExecutor(Node):
             self.get_parameter("enable_display").get_parameter_value().bool_value
         )
         self.display_topic = self.get_parameter("display_topic").get_parameter_value().string_value
+        self.led_topic = self.get_parameter("led_topic").get_parameter_value().string_value
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
         )
@@ -591,6 +593,7 @@ class OfficeRobotExecutor(Node):
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
         self.display_pub = self.create_publisher(String, self.display_topic, 10)
+        self.led_pub = self.create_publisher(String, self.led_topic, 10)
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, self.startup_initial_pose_topic, 10
@@ -989,13 +992,20 @@ class OfficeRobotExecutor(Node):
         self._nav_retry_attempt_count = 0
         self._localization_recovery_cycle_count = 0
         self._last_localization_recovery_mono = 0.0
-        action = str(action_msg.get("action", action_msg.get("type", ""))).upper().strip()
+        action = self._normalize_action_name(action_msg.get("action", action_msg.get("type", "")))
         params = action_msg.get("params", {}) or {}
         on_success = str(action_msg.get("on_success", "")).strip() or None
 
         if action in {"GOTO", "LEAD_GUEST"}:
             self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
-        elif action in {"DISPLAY_TEXT", "PAUSE", "QR_SCAN"}:
+        elif action in {
+            "DISPLAY_TEXT",
+            "PAUSE",
+            "QR_SCAN",
+            "SET_LED",
+            "QR_SCAN_FAILED",
+            "QR_SCAN_SUCCESS",
+        }:
             self.current_status = "WAITING"
         elif action == "RESUME":
             self.current_status = "IDLE"
@@ -1022,6 +1032,12 @@ class OfficeRobotExecutor(Node):
                 self._publish_display(text, "display")
             elif action == "QR_SCAN":
                 self._publish_display("QR 코드를 인증해주세요", "qr")
+            elif action == "SET_LED":
+                self._publish_led(params)
+            elif action == "QR_SCAN_FAILED":
+                self._publish_display("인증 실패", "qr_failed")
+            elif action == "QR_SCAN_SUCCESS":
+                self._publish_display("인증 성공", "qr_success")
             elif action == "PAUSE":
                 self._publish_display("일시정지", "pause")
             elif action == "RESUME":
@@ -1096,6 +1112,12 @@ class OfficeRobotExecutor(Node):
             )
             return
 
+        if action in {"SET_LED", "QR_SCAN_FAILED", "QR_SCAN_SUCCESS"}:
+            self._action_timer = self.create_timer(
+                0.05, lambda: self._finish_action_once(on_success)
+            )
+            return
+
         if self.mock_mode:
             self._action_timer = self.create_timer(
                 self.execution_delay_sec, lambda: self._finish_action_once(on_success)
@@ -1112,9 +1134,9 @@ class OfficeRobotExecutor(Node):
         self._stop_nav_retry()
         self._stop_localization_recovery("action_finished")
         current_action = self._current_action or {}
-        action_name = str(
+        action_name = self._normalize_action_name(
             current_action.get("action", current_action.get("type", ""))
-        ).upper().strip()
+        )
         success_event = on_success
         if not success_event and action_name == "GOTO" and self.default_goto_success_event:
             success_event = self.default_goto_success_event
@@ -1320,9 +1342,9 @@ class OfficeRobotExecutor(Node):
         if self._safety_locked or self._current_action is None:
             return False
 
-        action_name = str(
+        action_name = self._normalize_action_name(
             self._current_action.get("action", self._current_action.get("type", ""))
-        ).upper().strip()
+        )
         if action_name not in {"GOTO", "LEAD_GUEST"}:
             return False
         if self._nav_retry_attempt_count >= self.nav2_retry_attempts:
@@ -1345,9 +1367,9 @@ class OfficeRobotExecutor(Node):
             self._stop_nav_retry()
             if self._safety_locked or self._current_action is None:
                 return
-            retry_action = str(
+            retry_action = self._normalize_action_name(
                 self._current_action.get("action", self._current_action.get("type", ""))
-            ).upper().strip()
+            )
             if retry_action not in {"GOTO", "LEAD_GUEST"}:
                 return
             retry_params = self._current_action.get("params", {}) or {}
@@ -2245,9 +2267,9 @@ class OfficeRobotExecutor(Node):
             self._goal_response_started_at = None
             return
 
-        action_name = str(
+        action_name = self._normalize_action_name(
             self._current_action.get("action", self._current_action.get("type", ""))
-        ).upper().strip()
+        )
         if action_name not in {"GOTO", "LEAD_GUEST"}:
             self._goal_response_started_at = None
             return
@@ -2491,9 +2513,9 @@ class OfficeRobotExecutor(Node):
         if self._current_action is None:
             self._stop_local_qr_scan()
             return
-        action_name = str(
+        action_name = self._normalize_action_name(
             self._current_action.get("action", self._current_action.get("type", ""))
-        ).upper().strip()
+        )
         if action_name != "QR_SCAN":
             self._stop_local_qr_scan()
             return
@@ -2526,9 +2548,9 @@ class OfficeRobotExecutor(Node):
         if not self.qr_always_scan_enabled:
             return
         if self._current_action is not None:
-            action_name = str(
+            action_name = self._normalize_action_name(
                 self._current_action.get("action", self._current_action.get("type", ""))
-            ).upper().strip()
+            )
             if action_name == "QR_SCAN":
                 # Avoid duplicate event emission while QR_SCAN action is actively running.
                 return
@@ -2899,6 +2921,22 @@ class OfficeRobotExecutor(Node):
             "ts": time.time(),
         }
         self.display_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
+
+    def _publish_led(self, params: Dict[str, Any]) -> None:
+        payload = {
+            "robot_id": int(self.robot_id),
+            "robot_name": self.robot_name,
+            "params": params or {},
+            "ts": time.time(),
+        }
+        self.led_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
+
+    @staticmethod
+    def _normalize_action_name(value: Any) -> str:
+        action = str(value or "").upper().strip()
+        if action == "SEL_LED":
+            return "SET_LED"
+        return action
 
     @staticmethod
     def _extract_actions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:

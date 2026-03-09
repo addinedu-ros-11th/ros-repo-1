@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "office_robot_executor_node = office_robot_executor.node:main",
+            "office_robot_ui_bridge_node = office_robot_executor.ui_bridge_node:main",
         ],
     },
 )
