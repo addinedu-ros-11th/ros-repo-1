@@ -260,22 +260,45 @@ class UDPVideoReceiver:
             logger.error(f"미리보기 프레임 저장 실패: {e}", exc_info=True)
 
     def _get_robot_index(self, robot_ip: str) -> int:
-        """로봇 IP → 인덱스 매핑 (최초 접속 시 자동 등록)"""
+        """로봇 IP → 고정 인덱스 매핑.
+        config.ROBOT_IP_MAP에 등록된 IP면 robot01→0, robot02→1 등 고정 슬롯 사용.
+        미등록 IP면 남은 슬롯 중 다음 번호 사용.
+        """
         with self._robot_lock:
             if robot_ip in self._robot_indices:
                 self._robot_last_seen[robot_ip] = time.time()
                 return self._robot_indices[robot_ip]
-            if len(self._robot_indices) >= self._max_robots:
+
+            # IP맵에서 고정 인덱스 결정 (robot01→0, robot02→1, ...)
+            fixed_idx = -1
+            robot_id = config.ROBOT_IP_MAP.get(robot_ip)
+            if robot_id:
+                # "robot01" → 0, "robot02" → 1
+                suffix = robot_id.replace("robot", "")
+                try:
+                    fixed_idx = int(suffix) - 1
+                except ValueError:
+                    fixed_idx = -1
+
+            if fixed_idx < 0:
+                # 미등록 IP: 아직 사용되지 않은 슬롯 중 최솟값
+                used = set(self._robot_indices.values())
+                fixed_idx = next(
+                    (i for i in range(self._max_robots) if i not in used), -1
+                )
+
+            if fixed_idx < 0 or fixed_idx >= self._max_robots:
                 logger.warning(
-                    f"최대 로봇 수({self._max_robots}) 초과: {robot_ip} 무시"
+                    f"최대 로봇 수({self._max_robots}) 초과 또는 슬롯 없음: {robot_ip} 무시"
                 )
                 return -1
-            idx = len(self._robot_indices)
-            self._robot_indices[robot_ip] = idx
+
+            self._robot_indices[robot_ip] = fixed_idx
             self._robot_last_seen[robot_ip] = time.time()
-            logger.info(f"새 로봇 등록: {robot_ip} → Robot#{idx}")
+            label = robot_id or robot_ip
+            logger.info(f"새 로봇 등록: {robot_ip} ({label}) → 슬롯 #{fixed_idx}")
             self._save_robots_info()
-            return idx
+            return fixed_idx
 
     def get_robot_index(self, robot_ip: str) -> int:
         """robot_ip에 대응하는 로봇 인덱스 반환 (미등록이면 -1)"""
@@ -298,6 +321,7 @@ class UDPVideoReceiver:
                     {
                         "index": idx,
                         "ip": ip,
+                        "robot_id": config.ROBOT_IP_MAP.get(ip, ip),
                         "last_seen": self._robot_last_seen.get(ip, 0),
                     }
                     for ip, idx in self._robot_indices.items()
@@ -480,7 +504,8 @@ class VideoStreamProcessor:
         """
         if model_type == "FACE":
             result = self.vision_service.recognize_face_from_frame(frame)
-            if result["person_type"] != "Unknown":
+            person_type = result["person_type"]
+            if person_type != "Unknown":
                 entry = {
                     "robot_id": robot_id,
                     "timestamp": timestamp_ms,
@@ -488,6 +513,18 @@ class VideoStreamProcessor:
                     "content": result,
                 }
                 self._push_result(entry)
+                conf = result.get("confidence", 0.0)
+                if person_type == "Employee":
+                    emp_id = result.get("employee_id", "?")
+                    logger.info(
+                        f"얼굴 인식: robot={robot_id}, "
+                        f"직원={emp_id}, 유사도={conf:.1%}"
+                    )
+                else:
+                    logger.info(
+                        f"얼굴 인식: robot={robot_id}, "
+                        f"유형={person_type}, 유사도={conf:.1%}"
+                    )
                 return entry
             return None
 
@@ -501,6 +538,8 @@ class VideoStreamProcessor:
                     "content": detections,
                 }
                 self._push_result(entry)
+                names = [d["object_name"] for d in detections]
+                logger.info(f"장애물 감지: robot={robot_id}, objects={names}")
                 return entry
             return None
 

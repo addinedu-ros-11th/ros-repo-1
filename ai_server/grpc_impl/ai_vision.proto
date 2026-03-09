@@ -31,7 +31,7 @@ message Empty {}
 
 message InferenceStateRequest {
   string robot_id = 1;
-  string model_type = 2; // "EMPLOYEE", "OBSTACLE"
+  string model_type = 2; // "FACE", "OBJECT"
   bool is_active = 3;
 }
 

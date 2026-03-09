@@ -46,7 +46,7 @@ MAX_ROBOTS = int(os.getenv("MAX_ROBOTS", 2))  # 동시 수신 가능한 최대 �
 # 고정 IP → robot_id 매핑 (IP가 바뀌어도 robot_id가 일정하게 유지)
 ROBOT_IP_MAP: dict = {
     os.getenv("ROBOT01_IP", "192.168.1.59"): "robot01",
-    os.getenv("ROBOT02_IP", "192.168.1.60"): "robot02",
+    os.getenv("ROBOT02_IP", "192.168.1.30"): "robot02",
 }
 
 # Inference Processing Configuration
