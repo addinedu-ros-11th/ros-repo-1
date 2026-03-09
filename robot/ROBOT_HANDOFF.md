@@ -41,8 +41,10 @@
     - `person`: presence-only `STOP` by default even when upstream distance is missing.
     - `robot`: tries `YIELD_RIGHT` first when frontal/close enough, then falls back to `STOP`.
     - `chair` / `plant` / `bag`: distance-based threshold only; without distance they fall back to Nav2 static avoidance.
-    - runtime today: `STOP` threshold enforces lock/zero-velocity, `SLOW` threshold is state/log only,
-      and `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
+    - runtime today:
+      - `STOP` threshold enforces lock/zero-velocity.
+      - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
+      - `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
   - `/{robot_ns}/status` may carry latest safety metadata:
     - `event`
@@ -53,6 +55,11 @@
     - `obstacle_distance`
     - `obstacle_box`
     - `obstacle_reason`
+    - `nav_speed_limited`
+    - `nav_linear_vel_limit`
+    - `nav_profile_state`
+    - `nav_profile_width_m`
+    - `nav_profile_forward_clear_m`
   - `SAFETY_STOPPED` / `SAFETY_RESUMED` are transition events only.
     A latched `/{robot_ns}/safety_state` snapshot may refresh status metadata, but it must not be
     treated as a new resume/stop transition unless the safety lock actually changed.
@@ -98,13 +105,30 @@
 - `startup_initial_pose_topic` (default `initialpose`)
 - `startup_initial_pose_x/y/yaw` (default `0.0`)
 - `qr_scan_min_dwell_sec` (default `1.5`)
-- `qr_scan_confirm_count` (default `3`)
+- `qr_scan_confirm_count` (default `2`)
 - `qr_scan_ignore_commands_while_active` (default `true`)
+- `dynamic_nav_profile_enabled` (default `false`)
+- `dynamic_nav_profile_scan_topic` (default `/scan`)
+- `dynamic_nav_profile_robot_width_m` (default `0.12`)
+- `dynamic_nav_profile_wide_width_enter_m` (default `0.38`)
+- `dynamic_nav_profile_wide_width_exit_m` (default `0.32`)
+- `dynamic_nav_profile_forward_enter_m` (default `0.55`)
+- `dynamic_nav_profile_forward_exit_m` (default `0.40`)
+- `dynamic_nav_profile_enter_samples` (default `3`)
+- `dynamic_nav_profile_exit_samples` (default `2`)
+- `dynamic_nav_profile_wide_lookahead_dist` (default `0.32`)
+- `dynamic_nav_profile_wide_min_lookahead_dist` (default `0.15`)
+- `dynamic_nav_profile_wide_max_lookahead_dist` (default `0.40`)
+- `dynamic_nav_profile_wide_rotate_to_heading_min_angle` (default `0.45`)
 - `robot_yield_right_enabled` (default `true`)
 - `robot_yield_right_offset_m` (default `0.18`)
 - `robot_yield_right_forward_m` (default `0.20`)
 - `robot_yield_right_cooldown_sec` (default `5.0`)
 - `robot_yield_right_max_attempts_per_action` (default `1`)
+- `obstacle_slow_enabled` (default `true`)
+- `obstacle_slow_controller_node` (default `controller_server`)
+- `obstacle_slow_linear_vel_param` (default `FollowPath.desired_linear_vel`)
+- `obstacle_slow_linear_vel` (default `0.06`)
 - `enable_led_server` (default `true`)
 
 ## Standard Run
