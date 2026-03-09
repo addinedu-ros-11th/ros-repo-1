@@ -230,20 +230,20 @@ class TaskManager:
         # robot_id(str)로 로봇 정보 조회
         robot = await self.fleet_manager.robot_repo.get_by_name(robot_id)
         if not robot:
-            logger.error(f"❌ [TaskManager] Robot '{robot_id}' not found in DB! Check name consistency.")
+            logger.error(f"❌ [TaskManager] Robot '{robot_id}' not found in DB! Please check if robot name matches.")
             return
             
         if robot.status == RobotStatus.OFFLINE:
-            logger.warning(f"⚠️ [TaskManager] Robot '{robot_id}' is OFFLINE. Ignoring event.")
+            logger.warning(f"⚠️ [TaskManager] Robot '{robot_id}' is OFFLINE. Ignoring recognition event.")
             return
 
         # 이미 작업 중이거나 생성 중인 로봇은 무시 (Race Condition 방지)
         if robot.current_task_id:
-             logger.debug(f"ℹ️ [TaskManager] Robot '{robot_id}' is busy (Task: {robot.current_task_id}). Ignoring.")
+             logger.info(f"ℹ️ [TaskManager] Robot '{robot_id}' is busy (Task ID: {robot.current_task_id}). Skipping face event.")
              return
              
         if robot.name in self.processing_robots:
-             logger.debug(f"ℹ️ [TaskManager] Robot '{robot_id}' is already processing a task. Ignoring.")
+             logger.info(f"ℹ️ [TaskManager] Robot '{robot_id}' is currently processing another task creation. Skipping.")
              return
 
         # 1. 직원 인식 시: DB에서 이름을 찾아 환영 메시지 전송
@@ -290,6 +290,46 @@ class TaskManager:
                     await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
             finally:
                 self.processing_robots.remove(robot.name)
+
+    async def start_watchdog(self, interval_seconds: int = 60):
+        """작업 대기열 및 멈춘 작업을 주기적으로 감시하는 루프를 시작합니다."""
+        logger.info(f"🛡️ [TaskManager] Task Watchdog started (Interval: {interval_seconds}s)")
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                await self.cleanup_stuck_tasks()
+                await self.process_pending_tasks() # 대기열도 주기적으로 재확인
+            except Exception as e:
+                logger.error(f"❌ [TaskManager] Watchdog Error: {e}")
+
+    async def cleanup_stuck_tasks(self, timeout_minutes: int = 3):
+        """수행 중인 상태로 너무 오래 방치된 작업을 찾아 실패 처리합니다."""
+        from datetime import datetime, timedelta
+        
+        # 감시할 상태들
+        active_statuses = [TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS]
+        
+        for status in active_statuses:
+            tasks = await self.task_repo.get_all_by_status(status)
+            now = datetime.utcnow()
+            
+            for task in tasks:
+                # 생성된 지 timeout_minutes 이상 지났는지 확인
+                if now - task.created_at > timedelta(minutes=timeout_minutes):
+                    logger.warning(f"⏰ [TaskManager] Task {task.id} has been stuck for >{timeout_minutes}m. Cleaning up.")
+                    
+                    # 1. 태스크 상태 업데이트 (FAILED)
+                    await self.task_repo.update(task.id, {"status": TaskStatus.FAILED})
+                    
+                    # 2. 로봇 해제 (해당 태스크에 묶여있던 로봇이 있다면)
+                    if task.assigned_robot_id:
+                        await self.fleet_manager.update_robot_task_status(
+                            task.assigned_robot_id, None, RobotStatus.IDLE
+                        )
+                        # 로봇에게 취소 명령 전송
+                        robot = await self.fleet_manager.robot_repo.get_by_id(task.assigned_robot_id)
+                        if robot:
+                            self.fleet_manager.cancel_robot_task(robot.name)
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

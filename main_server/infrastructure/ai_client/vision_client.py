@@ -105,6 +105,10 @@ class VisionServiceClient(IVisionService):
                 robot_id=robot_id, model_type=model_type, is_active=is_active
             )
             response = await self.stub.UpdateInferenceState(request, timeout=5.0)
+            
+            # [추가] AI 서버의 응답 상세 로그
+            logger.info(f"📡 [Vision gRPC] UpdateInferenceState Response: robot={robot_id}, model={model_type}, active={is_active} -> success={response.success}, message='{response.message}'")
+            
             return {"success": response.success, "message": response.message}
         except grpc.aio.AioRpcError as e:
             logger.error(

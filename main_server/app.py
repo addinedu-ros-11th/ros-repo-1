@@ -69,7 +69,13 @@ async def lifespan(app: FastAPI):
         restore_task = asyncio.create_task(_delayed_restore())
         background_tasks.add(restore_task)
 
-        logger.info("ROS Bridge server and AI Stream subscriber started.")
+        # 6. 작업 감시자(Watchdog) 시작 (멈춘 작업 정리 및 대기열 배차)
+        watchdog_task = asyncio.create_task(
+            container.task_manager.start_watchdog()
+        )
+        background_tasks.add(watchdog_task)
+
+        logger.info("ROS Bridge server, AI Stream, and Task Watchdog started.")
 
         yield  # 앱 실행 중
 

@@ -292,9 +292,15 @@ class FleetManager:
         new_x = location[0] if location else robot.pose_x
         new_y = location[1] if location else robot.pose_y
         new_battery = battery if battery is not None else robot.battery_level
+        new_task_id = robot.current_task_id
+
+        # [Self-Healing] 로봇이 IDLE 상태를 보고하면 current_task_id를 강제로 비움
+        if status == RobotStatus.IDLE and robot.current_task_id is not None:
+            logger.info(f"♻️ [FleetManager] Robot {robot.name} reported IDLE. Clearing stuck Task ID: {robot.current_task_id}")
+            new_task_id = None
 
         # [Optimization] 변경 사항이 없으면 DB 업데이트 건너뛰기
-        has_changed = old_status != status
+        has_changed = old_status != status or new_task_id != robot.current_task_id
 
         if not has_changed:
             # 좌표 비교 (None 체크 포함)
@@ -325,6 +331,7 @@ class FleetManager:
             "pose_x": new_x,
             "pose_y": new_y,
             "battery_level": new_battery,
+            "current_task_id": new_task_id
         }
         updated_robot = await self.robot_repo.update(robot_id, update_data)
 
