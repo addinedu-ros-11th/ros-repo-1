@@ -208,40 +208,46 @@ class TaskManager:
     async def handle_face_recognition_event(self, robot_id: str, face_data: Dict[str, Any]):
         """
         FleetManager로부터 전달받은 얼굴 인식 결과를 처리합니다.
-        - 직원: 환영 메시지 및 LED 제어 명령 전송
-        - 외부인: GUEST_CHECK 태스크 생성 및 할당
+        - 직원(Employee): 환영 메시지 및 LED 제어 명령 전송
+        - 외부인/미인식자(Guest/Unknown): QR 인증 태스크(GUEST_CHECK) 생성
         """
-        name = face_data.get("name", "unknown")
+        person_type = face_data.get("person_type", "Unknown")
         confidence = face_data.get("confidence", 0.0)
-        
+        employee_account = face_data.get("employee_id") # AI 서버가 보내는 식별자
+
+        if confidence < 0.5:
+            return
+
         # robot_id(str)로 로봇 정보 조회
         robot = await self.fleet_manager.robot_repo.get_by_name(robot_id)
         if not robot:
             return
 
-        # 작업 중이면 무시 (IDLE, CHARGING 상태는 FleetManager가 이미 필터링해서 보냄)
+        # 이미 작업 중이면 무시
         if robot.current_task_id:
-             current_task = await self.task_repo.get_by_id(robot.current_task_id)
-             if current_task and current_task.task_type == "GUEST_CHECK":
-                 return # 이미 처리 중
+             return
 
-        if name and name.lower() != "unknown" and confidence > 0.5:
-            # [직원 인식]
-            logger.info(f"[{robot_id}] 직원 인식됨: {name} ({confidence:.2f}) -> 환영 처리")
+        # 1. 직원 인식 시: DB에서 이름을 찾아 환영 메시지 전송
+        if person_type == "Employee" and employee_account:
+            user = await self.user_repo.get_user_by_username(employee_account)
+            user_name = user.name if user else employee_account
+            
+            logger.info(f"[{robot_id}] 직원 인식됨: {user_name} ({confidence:.2f}) -> 환영 처리")
             actions = [
                 {"action": "SET_LED", "params": {"color": "GREEN", "mode": "SOLID"}},
-                {"action": "DISPLAY_TEXT", "params": {"text": f"Hello, {name}", "duration": 5}},
+                {"action": "DISPLAY_TEXT", "params": {"text": f"Hello, {user_name}", "duration": 5}},
             ]
             self.fleet_manager.send_action_commands(robot_id, actions)
+            
+        # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성
         else:
-            # [외부인 감지]
-            logger.info(f"[{robot_id}] 외부인 감지됨 -> QR 인증 태스크 생성")
+            logger.info(f"[{robot_id}] 외부인/미인식 감지({person_type}) -> QR 인증 태스크 생성")
             task_data = {
                 "task_type": "GUEST_CHECK",
                 "requester_id": 1, # System
                 "status": "ASSIGNED",
                 "assigned_robot_id": robot.id,
-                "details": {"reason": "stranger_detected"}
+                "details": {"reason": "stranger_detected", "person_type": person_type}
             }
             task = await self.task_repo.create(task_data)
             if task:
