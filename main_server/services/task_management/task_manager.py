@@ -39,6 +39,9 @@ class TaskManager:
         self.user_repo = user_repo
         self.visitor_repo = visitor_repo
         self.fleet_manager = fleet_manager
+        
+        # [Addition] 태스크 생성 중인 로봇을 추적하여 중복 처리를 방지합니다.
+        self.processing_robots = set()
 
         # AI 결과를 시나리오에 맞게 처리하는 핸들러
         self.scenario_handler = ScenarioDataHandler(location_repo, user_repo, product_repo)
@@ -181,15 +184,18 @@ class TaskManager:
 
     async def assign_and_dispatch(self, robot, task):
         """로봇에게 작업을 할당하고 해당 시나리오의 초기 명령을 전송합니다."""
+        logger.info(f"🔗 [TaskManager] 배차 및 실행: Task {task.id} ({task.task_type}) -> Robot {robot.name}")
         await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
 
         processor = self.processors.get(task.task_type)
         if processor:
             actions = await processor.get_initial_actions(task)
             if actions:
-                self.fleet_manager.send_action_commands(robot.name, actions)
+                self.fleet_manager.send_action_commands(robot.name, actions, task_id=task.id)
+            else:
+                logger.warning(f"⚠️ [TaskManager] Task {task.id}에 대한 초기 액션이 없습니다.")
         else:
-            logger.error(f"작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
+            logger.error(f"❌ [TaskManager] 작업 타입 {task.task_type}에 대한 처리기가 없습니다.")
 
     async def handle_robot_event(self, task_id: int, robot_id: int, event: str, data: Optional[Dict[str, Any]] = None):
         """로봇으로부터 수신된 이벤트(도착 등)를 처리기에 전달합니다."""
@@ -211,59 +217,79 @@ class TaskManager:
         - 직원(Employee): 환영 메시지 및 LED 제어 명령 전송
         - 외부인/미인식자(Guest/Unknown): QR 인증 태스크(GUEST_CHECK) 생성
         """
+        logger.info(f"🔍 [TaskManager] Face Recognition Event Received: robot_id={robot_id}, data={face_data}")
+        
         person_type = face_data.get("person_type", "Unknown")
         confidence = face_data.get("confidence", 0.0)
         employee_account = face_data.get("employee_id") # AI 서버가 보내는 식별자
 
         if confidence < 0.5:
+            logger.warning(f"⚠️ [TaskManager] Low confidence ({confidence:.2f}). Ignoring.")
             return
 
         # robot_id(str)로 로봇 정보 조회
         robot = await self.fleet_manager.robot_repo.get_by_name(robot_id)
         if not robot:
+            logger.error(f"❌ [TaskManager] Robot '{robot_id}' not found in DB! Check name consistency.")
+            return
+            
+        if robot.status == RobotStatus.OFFLINE:
+            logger.warning(f"⚠️ [TaskManager] Robot '{robot_id}' is OFFLINE. Ignoring event.")
             return
 
-        # 이미 작업 중이면 무시
+        # 이미 작업 중이거나 생성 중인 로봇은 무시 (Race Condition 방지)
         if robot.current_task_id:
+             logger.debug(f"ℹ️ [TaskManager] Robot '{robot_id}' is busy (Task: {robot.current_task_id}). Ignoring.")
+             return
+             
+        if robot.name in self.processing_robots:
+             logger.debug(f"ℹ️ [TaskManager] Robot '{robot_id}' is already processing a task. Ignoring.")
              return
 
         # 1. 직원 인식 시: DB에서 이름을 찾아 환영 메시지 전송
         if person_type == "Employee" and employee_account:
+            logger.info(f"👤 [TaskManager] Employee Detected: {employee_account}")
             user = await self.user_repo.get_user_by_username(employee_account)
             user_name = user.name if user else employee_account
             
-            logger.info(f"[{robot_id}] 직원 인식됨: {user_name} ({confidence:.2f}) -> 환영 처리")
+            logger.info(f"[{robot_id}] 직원 인식됨: {user_name} ({confidence:.2f}) -> 환영 처리 시작")
             actions = [
                 {"action": "SET_LED", "params": {"color": "GREEN", "mode": "SOLID"}},
                 {"action": "DISPLAY_TEXT", "params": {"text": f"Hello, {user_name}", "duration": 5}},
             ]
             self.fleet_manager.send_action_commands(robot_id, actions)
+            logger.info(f"✅ [TaskManager] Employee welcome command sent to {robot_id}")
             
-        # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성 및 즉시 명령 전송
+        # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성 및 명령 전송
         else:
-            logger.info(f"[{robot_id}] 외부인/미인식 감지({person_type}) -> QR 인증 태스크 생성 및 즉시 명령 전송")
+            logger.info(f"🕵️ [TaskManager] Non-employee detected ({person_type}). Starting GUEST_CHECK.")
             
-            # [즉시 명령] 태스크 생성 전이라도 로봇이 바로 반응하도록 함
-            purpose = "VISITOR_SCAN"
-            initial_actions = [
-                {"action": "SET_LED", "params": {"color": "RED", "mode": "BLINK", "rate": 1.0}},
-                {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}},
-                {"action": "QR_SCAN", "params": {"purpose": purpose}, "on_success": RobotEvent.QR_SCANNED}
-            ]
-            self.fleet_manager.send_action_commands(robot_id, initial_actions)
+            self.processing_robots.add(robot.name)
+            try:
+                # [태스크 생성] 먼저 생성하여 Task ID 확보
+                purpose = "VISITOR_SCAN"
+                task_data = {
+                    "task_type": "GUEST_CHECK",
+                    "requester_id": 1, # System
+                    "status": "ASSIGNED",
+                    "assigned_robot_id": robot.id,
+                    "details": {"reason": "stranger_detected", "person_type": person_type, "purpose": purpose}
+                }
+                task = await self.task_repo.create(task_data)
+                
+                if task:
+                    # [명령 전송] Task ID를 포함하여 전송
+                    initial_actions = [
+                        {"action": "SET_LED", "params": {"color": "RED", "mode": "BLINK", "rate": 1.0}},
+                        {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}},
+                        {"action": "QR_SCAN", "params": {"purpose": purpose}, "on_success": RobotEvent.QR_SCANNED}
+                    ]
+                    self.fleet_manager.send_action_commands(robot_id, initial_actions, task_id=task.id)
 
-            # [태스크 생성] 사후 관리를 위해 DB에 태스크 생성 및 할당 상태 유지
-            task_data = {
-                "task_type": "GUEST_CHECK",
-                "requester_id": 1, # System
-                "status": "ASSIGNED",
-                "assigned_robot_id": robot.id,
-                "details": {"reason": "stranger_detected", "person_type": person_type, "purpose": purpose}
-            }
-            task = await self.task_repo.create(task_data)
-            if task:
-                # 상태만 업데이트 (명령은 위에서 이미 보냈으므로 assign_and_dispatch 대신 상태만 변경)
-                await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
+                    # [상태 업데이트] 이 시점에 AI Relay(Employee)가 즉시 중단됨 (자원 경합 방지)
+                    await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
+            finally:
+                self.processing_robots.remove(robot.name)
 
     async def confirm_delivery(self, task_id: int, action_type: str):
         """사용자로부터 확인(적재/수령)을 받아 처리합니다."""

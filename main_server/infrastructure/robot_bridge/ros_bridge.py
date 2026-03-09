@@ -69,7 +69,8 @@ class ROSBridgeCommunicator(IRobotCommunicator):
     # --- IRobotCommunicator Implementation ---
     def send_action_sequence(self, robot_name: str, actions: List[Dict[str, Any]], task_id: Optional[int] = None):
         """로봇에게 액션 시퀀스와 Task ID를 전송합니다."""
-        topic = self._get_topic(robot_name, f"/{robot_name}/commands", "std_msgs/String")
+        topic_name = f"/{robot_name}/commands"
+        topic = self._get_topic(robot_name, topic_name, "std_msgs/String")
         if topic:
             payload = {
                 "robot_name": robot_name,
@@ -77,18 +78,28 @@ class ROSBridgeCommunicator(IRobotCommunicator):
                 "payload": actions,
                 "task_id": task_id
             }
-            topic.publish(roslibpy.Message({"data": json.dumps(payload)}))
-            logger.info(f"[{robot_name}] Sent ACTION_SEQUENCE (Task: {task_id}): {len(actions)} actions")
+            json_payload = json.dumps(payload)
+            logger.info(f"📡 [ROSBridge -> {robot_name}] Publishing to {topic_name}: {json_payload[:100]}...")
+            topic.publish(roslibpy.Message({"data": json_payload}))
+            logger.info(f"📤 [ROSBridge -> {robot_name}] Published ACTION_SEQUENCE successfully.")
+        else:
+            logger.error(f"❌ [ROSBridge -> {robot_name}] Failed to get topic {topic_name}")
 
     def publish_obstacle_info(self, robot_name: str, obstacle_data: Dict[str, Any]):
-        topic = self._get_topic(robot_name, f"/{robot_name}/obstacles", "std_msgs/String")
+        topic_name = f"/{robot_name}/obstacles"
+        topic = self._get_topic(robot_name, topic_name, "std_msgs/String")
         if topic:
-            topic.publish(roslibpy.Message({"data": json.dumps({"robot_name": robot_name, "type": "OBSTACLE_INFO", "payload": obstacle_data})}))
+            payload = {"robot_name": robot_name, "type": "OBSTACLE_INFO", "payload": obstacle_data}
+            topic.publish(roslibpy.Message({"data": json.dumps(payload)}))
+            logger.debug(f"📡 [ROSBridge -> {robot_name}] Published OBSTACLE_INFO to {topic_name}")
 
     def publish_employee_result(self, robot_name: str, result_data: Dict[str, Any]):
-        topic = self._get_topic(robot_name, f"/{robot_name}/employee_verification", "std_msgs/String")
+        topic_name = f"/{robot_name}/employee_verification"
+        topic = self._get_topic(robot_name, topic_name, "std_msgs/String")
         if topic:
-            topic.publish(roslibpy.Message({"data": json.dumps({"robot_name": robot_name, "type": "EMPLOYEE_RESULT", "payload": result_data})}))
+            payload = {"robot_name": robot_name, "type": "EMPLOYEE_RESULT", "payload": result_data}
+            logger.info(f"📡 [ROSBridge -> {robot_name}] Publishing EMPLOYEE_RESULT to {topic_name}")
+            topic.publish(roslibpy.Message({"data": json.dumps(payload)}))
 
     def set_forbidden_zones(self, robot_name: str, zones: List[Dict[str, Any]]) -> bool:
         client = self._get_client(robot_name)
