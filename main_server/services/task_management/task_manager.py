@@ -1,9 +1,10 @@
 import logging
 import asyncio
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Set
 
 from main_server.domains.robots.schemas import RobotStatus, RobotEvent
-from main_server.domains.tasks.schemas import Task, TaskType
+from main_server.domains.tasks.schemas import Task, TaskType, TaskStatus
 from main_server.infrastructure.database.repositories.mysql_location_repository import MySQLLocationRepository
 from main_server.infrastructure.database.repositories.mysql_product_repository import MySQLProductRepository
 from main_server.infrastructure.database.repositories.mysql_task_repository import MySQLTaskRepository
@@ -224,10 +225,6 @@ class TaskManager:
         confidence = face_data.get("confidence", 0.0)
         employee_account = face_data.get("employee_id") # AI 서버가 보내는 식별자
 
-        if confidence < 0.5:
-            logger.warning(f"⚠️ [TaskManager] Low confidence ({confidence:.2f}). Ignoring.")
-            return
-
         # robot_id(str)로 로봇 정보 조회
         robot = await self.fleet_manager.robot_repo.get_by_name(robot_id)
         if not robot:
@@ -263,7 +260,7 @@ class TaskManager:
             
         # 2. 외부인 또는 미인식자 감지 시: QR 인증 태스크 생성 및 명령 전송
         else:
-            logger.info(f"🕵️ [TaskManager] Non-employee detected ({person_type}). Starting GUEST_CHECK.")
+            logger.info(f"🕵️ [TaskManager] Non-employee detected ({person_type}). Starting GUEST_CHECK via Processor.")
             
             self.processing_robots.add(robot.name)
             try:
@@ -279,20 +276,13 @@ class TaskManager:
                 task = await self.task_repo.create(task_data)
                 
                 if task:
-                    # [명령 전송] Task ID를 포함하여 전송
-                    initial_actions = [
-                        {"action": "SET_LED", "params": {"color": "RED", "mode": "BLINK", "rate": 1.0}},
-                        {"action": "DISPLAY_TEXT", "params": {"text": "Please scan your QR code", "duration": 0}},
-                        {"action": "QR_SCAN", "params": {"purpose": purpose}, "on_success": RobotEvent.QR_SCANNED}
-                    ]
-                    self.fleet_manager.send_action_commands(robot_id, initial_actions, task_id=task.id)
-
-                    # [상태 업데이트] 이 시점에 AI Relay(Employee)가 즉시 중단됨 (자원 경합 방지)
-                    await self.fleet_manager.update_robot_task_status(robot.id, task.id, RobotStatus.MOVING)
+                    # [연결] 이제 TaskProcessor(GuestCheckProcessor)가 명령을 생성하고 전송하도록 위임
+                    await self.assign_and_dispatch(robot, task)
+                    logger.info(f"✅ [TaskManager] GUEST_CHECK task {task.id} assigned to {robot.name}")
             finally:
                 self.processing_robots.remove(robot.name)
 
-    async def start_watchdog(self, interval_seconds: int = 60):
+    async def start_watchdog(self, interval_seconds: int = 10):
         """작업 대기열 및 멈춘 작업을 주기적으로 감시하는 루프를 시작합니다."""
         logger.info(f"🛡️ [TaskManager] Task Watchdog started (Interval: {interval_seconds}s)")
         while True:
@@ -305,8 +295,6 @@ class TaskManager:
 
     async def cleanup_stuck_tasks(self, timeout_minutes: int = 3):
         """수행 중인 상태로 너무 오래 방치된 작업을 찾아 실패 처리합니다."""
-        from datetime import datetime, timedelta
-        
         # 감시할 상태들
         active_statuses = [TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS]
         
@@ -315,15 +303,21 @@ class TaskManager:
             now = datetime.utcnow()
             
             for task in tasks:
-                # 생성된 지 timeout_minutes 이상 지났는지 확인
-                if now - task.created_at > timedelta(minutes=timeout_minutes):
-                    logger.warning(f"⏰ [TaskManager] Task {task.id} has been stuck for >{timeout_minutes}m. Cleaning up.")
+                # [특수 처리] GUEST_CHECK은 로봇 스캔 종료(15초)에 맞춰 30초 후 자동 만료
+                current_timeout = timedelta(minutes=timeout_minutes)
+                if task.task_type == TaskType.GUEST_CHECK:
+                    current_timeout = timedelta(seconds=30)
+                
+                # 생성된 지 타임아웃 이상 지났는지 확인
+                if now - task.created_at > current_timeout:
+                    logger.warning(f"⏰ [TaskManager] Task {task.id} ({task.task_type}) has been stuck for {now - task.created_at}. Cleaning up.")
                     
                     # 1. 태스크 상태 업데이트 (FAILED)
                     await self.task_repo.update(task.id, {"status": TaskStatus.FAILED})
                     
                     # 2. 로봇 해제 (해당 태스크에 묶여있던 로봇이 있다면)
                     if task.assigned_robot_id:
+                        logger.info(f"♻️ [TaskManager] Releasing robot {task.assigned_robot_id} from failed task {task.id}")
                         await self.fleet_manager.update_robot_task_status(
                             task.assigned_robot_id, None, RobotStatus.IDLE
                         )

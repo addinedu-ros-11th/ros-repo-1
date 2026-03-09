@@ -45,8 +45,11 @@ class MySQLRobotRepository(BaseRepository, IRobotRepository):
 
     async def update(self, robot_id: int, update_data: Dict[str, Any]) -> Optional[Robot]:
         """로봇 정보를 업데이트하고 업데이트된 객체를 반환합니다."""
-        # Pydantic 모델의 기본값이 아닌 명시적으로 설정된 값만 포함
-        update_values = {k: v for k, v in update_data.items() if v is not None}
+        # [Fix] current_task_id는 None으로 설정될 수 있어야 하므로 필터링에서 예외 처리
+        update_values = {}
+        for k, v in update_data.items():
+            if v is not None or k == "current_task_id":
+                update_values[k] = v
         
         # 하트비트 시간 명시적 추가 (실시간 통신 확인용)
         update_values["last_heartbeat"] = "NOW()" 
