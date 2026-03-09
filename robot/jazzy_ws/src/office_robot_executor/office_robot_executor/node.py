@@ -94,6 +94,11 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter(
             "forward_first_allow_reversing_param", "FollowPath.allow_reversing"
         )
+        self.declare_parameter("robot_yield_right_enabled", True)
+        self.declare_parameter("robot_yield_right_offset_m", 0.18)
+        self.declare_parameter("robot_yield_right_forward_m", 0.20)
+        self.declare_parameter("robot_yield_right_cooldown_sec", 5.0)
+        self.declare_parameter("robot_yield_right_max_attempts_per_action", 1)
         self.declare_parameter("localization_required", True)
         self.declare_parameter("amcl_pose_topic", "amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
@@ -143,6 +148,13 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("enable_display", True)
         self.declare_parameter("display_topic", "display")
         self.declare_parameter("led_topic", "led_command")
+        self.declare_parameter("idle_led_off_enabled", True)
+        self.declare_parameter("employee_verification_enabled", True)
+        self.declare_parameter("employee_verification_topic", "employee_verification")
+        self.declare_parameter("employee_verification_min_confidence", 0.5)
+        self.declare_parameter("employee_verification_greeting_text", "Hello, employee")
+        self.declare_parameter("employee_verification_feedback_hold_sec", 5.0)
+        self.declare_parameter("employee_verification_cooldown_sec", 5.0)
         self.declare_parameter("guide_display_period_sec", 2.0)
         self.declare_parameter("emit_command_received_event", True)
         self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
@@ -254,6 +266,33 @@ class OfficeRobotExecutor(Node):
             .string_value
             .strip()
             or "FollowPath.allow_reversing"
+        )
+        self.robot_yield_right_enabled = (
+            self.get_parameter("robot_yield_right_enabled").get_parameter_value().bool_value
+        )
+        self.robot_yield_right_offset_m = max(
+            0.0,
+            self.get_parameter("robot_yield_right_offset_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.robot_yield_right_forward_m = max(
+            0.0,
+            self.get_parameter("robot_yield_right_forward_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.robot_yield_right_cooldown_sec = max(
+            0.0,
+            self.get_parameter("robot_yield_right_cooldown_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.robot_yield_right_max_attempts_per_action = max(
+            0,
+            self.get_parameter("robot_yield_right_max_attempts_per_action")
+            .get_parameter_value()
+            .integer_value,
         )
         self.localization_required = (
             self.get_parameter("localization_required").get_parameter_value().bool_value
@@ -457,6 +496,47 @@ class OfficeRobotExecutor(Node):
         )
         self.display_topic = self.get_parameter("display_topic").get_parameter_value().string_value
         self.led_topic = self.get_parameter("led_topic").get_parameter_value().string_value
+        self.idle_led_off_enabled = (
+            self.get_parameter("idle_led_off_enabled").get_parameter_value().bool_value
+        )
+        self.employee_verification_enabled = (
+            self.get_parameter("employee_verification_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.employee_verification_topic = (
+            self.get_parameter("employee_verification_topic")
+            .get_parameter_value()
+            .string_value
+        )
+        self.employee_verification_min_confidence = max(
+            0.0,
+            min(
+                1.0,
+                self.get_parameter("employee_verification_min_confidence")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.employee_verification_greeting_text = (
+            self.get_parameter("employee_verification_greeting_text")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "Hello, employee"
+        )
+        self.employee_verification_feedback_hold_sec = max(
+            0.5,
+            self.get_parameter("employee_verification_feedback_hold_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.employee_verification_cooldown_sec = max(
+            0.0,
+            self.get_parameter("employee_verification_cooldown_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
         )
@@ -518,6 +598,11 @@ class OfficeRobotExecutor(Node):
 
         self.location: Tuple[float, float] = (0.0, 0.0)
         self.current_status = "IDLE"
+        self._idle_led_clear_sent = False
+        self._idle_led_hold_until_mono = 0.0
+        self._employee_feedback_timer = None
+        self._employee_verification_suppress_until_mono = 0.0
+        self._employee_verification_last_employee_id = ""
         self._current_task_id: Optional[Any] = None
         self._action_queue: List[Dict[str, Any]] = []
         self._action_timer = None
@@ -531,6 +616,7 @@ class OfficeRobotExecutor(Node):
         self._last_feedback_log_at = 0.0
         self._cancel_requested = False
         self._cancel_reason: Optional[str] = None
+        self._odom_yaw = 0.0
         self._guide_display_timer = None
         self._guide_display_toggle = False
         self._safety_locked = False
@@ -597,6 +683,13 @@ class OfficeRobotExecutor(Node):
             self.forward_first_controller_node
         )
         self._forward_first_param_client = None
+        self._yield_right_active = False
+        self._yield_right_phase = ""
+        self._yield_right_attempt_count = 0
+        self._yield_right_last_trigger_mono = 0.0
+        self._yield_right_original_params: Optional[Dict[str, Any]] = None
+        self._yield_right_original_goal_target: Optional[Dict[str, Any]] = None
+        self._yield_right_detour_goal_target: Optional[Dict[str, Any]] = None
         self._qr_detector = (
             cv2.QRCodeDetector()
             if (
@@ -608,6 +701,14 @@ class OfficeRobotExecutor(Node):
         )
 
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
+        self.employee_verification_sub = None
+        if self.employee_verification_enabled:
+            self.employee_verification_sub = self.create_subscription(
+                String,
+                self.employee_verification_topic,
+                self._on_employee_verification,
+                10,
+            )
         self.status_pub = self.create_publisher(String, "status", 10)
         self.event_pub = self.create_publisher(String, "event", 10)
         self.display_pub = self.create_publisher(String, self.display_topic, 10)
@@ -728,6 +829,9 @@ class OfficeRobotExecutor(Node):
             f"forward_first_max_sec={self.forward_first_max_sec}, "
             f"forward_first_stuck_timeout_sec={self.forward_first_stuck_timeout_sec}, "
             f"forward_first_min_progress_m={self.forward_first_min_progress_m}, "
+            f"robot_yield_right_enabled={self.robot_yield_right_enabled}, "
+            f"robot_yield_right_offset_m={self.robot_yield_right_offset_m}, "
+            f"robot_yield_right_forward_m={self.robot_yield_right_forward_m}, "
             f"forward_first_controller={self._forward_first_controller_full_name}, "
             f"recovery_enabled={self.localization_recovery_enabled}, "
             f"recovery_cycles={self.localization_recovery_max_cycles}, "
@@ -825,6 +929,43 @@ class OfficeRobotExecutor(Node):
         self._publish_status("ASSIGNED", self._task_id_payload())
         self._run_next_action()
 
+    def _on_employee_verification(self, msg: String) -> None:
+        payload = self._parse_payload(msg.data)
+        if not self._is_for_this_robot(payload):
+            return
+
+        message_type = str(payload.get("type", "")).strip().upper()
+        if message_type and message_type != "EMPLOYEE_RESULT":
+            return
+
+        result = payload.get("payload")
+        if not isinstance(result, dict):
+            return
+
+        content = result.get("content", result)
+        if not isinstance(content, dict):
+            return
+
+        person_type = str(content.get("person_type", "")).strip().lower()
+        confidence = self._to_float(content.get("confidence")) or 0.0
+        if person_type != "employee":
+            return
+        if confidence < self.employee_verification_min_confidence:
+            self.get_logger().info(
+                f"Ignoring employee verification below threshold ({confidence:.2f} < "
+                f"{self.employee_verification_min_confidence:.2f})."
+            )
+            return
+
+        employee_id = str(content.get("employee_id", "")).strip()
+        if time.monotonic() < self._employee_verification_suppress_until_mono:
+            self.get_logger().info(
+                "Ignoring repeated employee verification during cooldown "
+                f"(employee_id={employee_id or 'unknown'})."
+            )
+            return
+        self._handle_employee_verification(employee_id=employee_id, confidence=confidence)
+
     def _on_safety_lock(self, msg: Bool) -> None:
         if bool(msg.data):
             if not (
@@ -861,6 +1002,8 @@ class OfficeRobotExecutor(Node):
                     }
                 ),
             )
+        elif state == "YIELD_RIGHT":
+            self._maybe_start_robot_yield_right(payload)
         elif state == "CLEAR" and not self._safety_locked:
             self.current_status = "IDLE" if self.current_status == "WAITING" else self.current_status
             self._publish_status(
@@ -910,6 +1053,7 @@ class OfficeRobotExecutor(Node):
         if not math.isfinite(x) or not math.isfinite(y):
             return
         self.location = (x, y)
+        self._odom_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
 
     def _set_safety_lock(self, enabled: bool, source: str) -> None:
         if self._safety_locked == enabled:
@@ -926,6 +1070,7 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("safety_lock")
+        self._reset_yield_right_state(reset_attempts=True)
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -966,6 +1111,7 @@ class OfficeRobotExecutor(Node):
     def _exit_safety_lock(self, source: str) -> None:
         self._stop_nav_retry()
         self._stop_localization_recovery("safety_resume")
+        self._reset_yield_right_state(reset_attempts=True)
         self._action_queue = []
         self._current_action = None
         self._clear_nav_goal_context()
@@ -989,6 +1135,7 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("next_action")
+        self._reset_yield_right_state(reset_attempts=True)
         self._current_action = None
         if not self._action_queue:
             if self._safety_locked:
@@ -1158,6 +1305,7 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_finished")
+        self._reset_yield_right_state(reset_attempts=True)
         current_action = self._current_action or {}
         action_name = self._normalize_action_name(
             current_action.get("action", current_action.get("type", ""))
@@ -1303,6 +1451,16 @@ class OfficeRobotExecutor(Node):
             )
             return False
 
+        self._yield_right_original_params = dict(params)
+        self._yield_right_original_goal_target = None
+        self._yield_right_detour_goal_target = None
+
+        return self._send_nav_goal(x, y, yaw, goal_tag="primary")
+
+    def _send_nav_goal(self, x: float, y: float, yaw: float, goal_tag: str) -> bool:
+        if self.nav_client is None or NavigateToPose is None:
+            return False
+
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = self.frame_id
@@ -1321,8 +1479,15 @@ class OfficeRobotExecutor(Node):
             "yaw": yaw,
             "frame_id": self.frame_id,
             "action_name": self.nav2_action_name,
+            "goal_tag": goal_tag,
             "send_ts": send_ts,
         }
+        if goal_tag in {"primary", "resume_after_yield"}:
+            self._yield_right_original_goal_target = dict(self._goal_target)
+            if goal_tag == "primary":
+                self._yield_right_attempt_count = 0
+        elif goal_tag == "yield_right_detour":
+            self._yield_right_detour_goal_target = dict(self._goal_target)
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._cancel_requested = False
@@ -1332,7 +1497,8 @@ class OfficeRobotExecutor(Node):
         self._begin_forward_first_mode()
         self.get_logger().info(
             f"Sending Nav2 goal (task_id={self._current_task_id}, action={self.nav2_action_name}, "
-            f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), send_ts={send_ts:.3f})"
+            f"frame={self.frame_id}, target=({x:.3f}, {y:.3f}, yaw={yaw:.3f}), "
+            f"goal_tag={goal_tag}, send_ts={send_ts:.3f})"
         )
         self._start_timeout_watchdog()
         send_future = self.nav_client.send_goal_async(
@@ -2027,6 +2193,7 @@ class OfficeRobotExecutor(Node):
             pose = feedback.current_pose.pose
             snapshot["current_x"] = float(pose.position.x)
             snapshot["current_y"] = float(pose.position.y)
+            snapshot["current_yaw"] = self._yaw_from_quaternion(pose.orientation)
 
         self._last_nav_feedback = snapshot
         self._handle_forward_first_feedback(snapshot)
@@ -2044,6 +2211,9 @@ class OfficeRobotExecutor(Node):
         )
 
     def _on_nav_goal_response(self, future: Any) -> None:
+        goal_tag = ""
+        if isinstance(self._goal_target, dict):
+            goal_tag = str(self._goal_target.get("goal_tag", "")).strip().lower()
         try:
             goal_handle = future.result()
         except Exception as exc:
@@ -2053,6 +2223,16 @@ class OfficeRobotExecutor(Node):
             self.get_logger().error(
                 f"Nav2 goal send failed: {exc} (task_id={self._current_task_id})"
             )
+            if goal_tag in {"yield_right_detour", "resume_after_yield"}:
+                self._fail_current_action(
+                    "yield_goal_send_exception",
+                    {
+                        "failure_detail": "yield_goal_send_exception",
+                        "error": str(exc),
+                        "goal_tag": goal_tag,
+                    },
+                )
+                return
             self._fail_current_action(
                 "goal_send_exception",
                 {"failure_detail": "goal_send_exception", "error": str(exc)},
@@ -2063,6 +2243,16 @@ class OfficeRobotExecutor(Node):
             self._goal_response_started_at = None
             self._cancel_requested = False
             self._cancel_reason = None
+            if goal_tag in {"yield_right_detour", "resume_after_yield"}:
+                self.get_logger().warn(
+                    f"Yield-related goal rejected (task_id={self._current_task_id}, goal_tag={goal_tag}, "
+                    f"action={self.nav2_action_name})."
+                )
+                self._fail_current_action(
+                    "yield_goal_rejected",
+                    {"failure_detail": "yield_goal_rejected", "goal_tag": goal_tag},
+                )
+                return
             if self._schedule_nav_retry("goal_rejected"):
                 return
             self.get_logger().warn(
@@ -2082,6 +2272,9 @@ class OfficeRobotExecutor(Node):
     def _on_nav_goal_result(self, future: Any) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         feedback_snapshot = self._last_nav_feedback
+        goal_tag = ""
+        if isinstance(self._goal_target, dict):
+            goal_tag = str(self._goal_target.get("goal_tag", "")).strip().lower()
         self._stop_timeout_watchdog()
         self._current_goal_handle = None
         try:
@@ -2098,17 +2291,29 @@ class OfficeRobotExecutor(Node):
             return
 
         if status_code == 5 and self._cancel_requested:
+            cancel_reason = self._cancel_reason or ""
             self.get_logger().info(
-                f"Nav2 goal canceled as requested (reason={self._cancel_reason}, "
+                f"Nav2 goal canceled as requested (reason={cancel_reason}, "
                 f"task_id={self._current_task_id}, elapsed_sec={elapsed_sec:.3f})"
             )
             if feedback_snapshot:
                 self.get_logger().info(f"Last Nav2 feedback before cancel: {feedback_snapshot}")
             self._cancel_requested = False
             self._cancel_reason = None
+            if cancel_reason == "yield_right_start":
+                self._start_robot_yield_right_detour()
             return
 
         if status_code == self.nav2_success_status_code:
+            if goal_tag == "yield_right_detour" and self._yield_right_active:
+                self.get_logger().info(
+                    f"Yield-right detour goal succeeded (task_id={self._current_task_id}, "
+                    f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                )
+                self._resume_original_goal_after_yield()
+                self._cancel_requested = False
+                self._cancel_reason = None
+                return
             on_success = None
             if self._current_action is not None:
                 on_success = str(self._current_action.get("on_success", "")).strip() or None
@@ -2118,6 +2323,9 @@ class OfficeRobotExecutor(Node):
             )
             if feedback_snapshot:
                 self.get_logger().info(f"Last Nav2 feedback before success: {feedback_snapshot}")
+            if goal_tag == "resume_after_yield":
+                self._yield_right_active = False
+                self._yield_right_phase = ""
             self._finish_action_once(on_success)
             self._cancel_requested = False
             self._cancel_reason = None
@@ -2126,6 +2334,15 @@ class OfficeRobotExecutor(Node):
         detail = self._build_nav2_result_detail(status_code, result)
         fallback = self._build_abort_success_detail(status_code, detail, feedback_snapshot)
         if fallback is not None:
+            if goal_tag == "yield_right_detour" and self._yield_right_active:
+                self.get_logger().warn(
+                    f"Yield-right detour aborted but treated as success-like resume "
+                    f"(task_id={self._current_task_id}, fallback={fallback})."
+                )
+                self._resume_original_goal_after_yield()
+                self._cancel_requested = False
+                self._cancel_reason = None
+                return
             on_success = None
             if self._current_action is not None:
                 on_success = str(self._current_action.get("on_success", "")).strip() or None
@@ -2150,6 +2367,27 @@ class OfficeRobotExecutor(Node):
         )
         if feedback_snapshot:
             self.get_logger().error(f"Last Nav2 feedback before failure: {feedback_snapshot}")
+        if goal_tag == "yield_right_detour" and self._yield_right_active:
+            self._publish_event(
+                "ROBOT_YIELD_RIGHT_FAILED",
+                self._task_id_payload(
+                    {
+                        "reason": "yield_detour_goal_failed",
+                        "reason_code": "yield_detour_goal_failed",
+                        "status_code": status_code,
+                        "goal_status": detail.get("status_text", status_code),
+                        "error_code": detail.get("error_code"),
+                    }
+                ),
+            )
+            self.get_logger().warn(
+                f"Yield-right detour goal failed; resuming original goal "
+                f"(task_id={self._current_task_id}, detail={detail})."
+            )
+            self._resume_original_goal_after_yield()
+            self._cancel_requested = False
+            self._cancel_reason = None
+            return
         self._fail_current_action(f"goal_failed_status_{status_code}", detail)
         self._cancel_requested = False
         self._cancel_reason = None
@@ -2198,6 +2436,7 @@ class OfficeRobotExecutor(Node):
         self._stop_guide_display()
         self._stop_nav_retry()
         self._stop_localization_recovery("sequence_cancel")
+        self._reset_yield_right_state(reset_attempts=True)
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -2277,6 +2516,16 @@ class OfficeRobotExecutor(Node):
             return None
         return float(sec) + float(nanosec) * 1e-9
 
+    @staticmethod
+    def _yaw_from_quaternion(orientation: Any) -> float:
+        x = float(getattr(orientation, "x", 0.0))
+        y = float(getattr(orientation, "y", 0.0))
+        z = float(getattr(orientation, "z", 0.0))
+        w = float(getattr(orientation, "w", 1.0))
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return math.atan2(siny_cosp, cosy_cosp)
+
     def _goal_elapsed_sec(self) -> float:
         if self._goal_started_at is None:
             return 0.0
@@ -2320,6 +2569,203 @@ class OfficeRobotExecutor(Node):
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._goal_response_started_at = None
+
+    def _reset_yield_right_state(self, reset_attempts: bool = False) -> None:
+        self._yield_right_active = False
+        self._yield_right_phase = ""
+        self._yield_right_original_params = None
+        self._yield_right_original_goal_target = None
+        self._yield_right_detour_goal_target = None
+        if reset_attempts:
+            self._yield_right_attempt_count = 0
+
+    def _maybe_start_robot_yield_right(self, payload: Dict[str, Any]) -> None:
+        if not self.robot_yield_right_enabled or self._safety_locked:
+            return
+        if self._yield_right_active:
+            return
+        if self.robot_yield_right_max_attempts_per_action <= 0:
+            return
+        if self._current_goal_handle is None or self._current_action is None:
+            return
+
+        action_name = self._normalize_action_name(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        )
+        if action_name not in {"GOTO", "LEAD_GUEST"}:
+            return
+
+        obstacle_class = str(payload.get("class_name", "")).strip().lower()
+        if obstacle_class != "robot":
+            return
+
+        now_mono = time.monotonic()
+        if (
+            self.robot_yield_right_cooldown_sec > 0.0
+            and self._yield_right_last_trigger_mono > 0.0
+            and (now_mono - self._yield_right_last_trigger_mono) < self.robot_yield_right_cooldown_sec
+        ):
+            return
+        if self._yield_right_attempt_count >= self.robot_yield_right_max_attempts_per_action:
+            return
+
+        detour_params = self._build_robot_yield_right_goal()
+        if detour_params is None:
+            return
+
+        current_params = self._current_action.get("params", {}) if self._current_action else {}
+        if not isinstance(current_params, dict):
+            return
+
+        self._yield_right_active = True
+        self._yield_right_phase = "canceling_original_goal"
+        self._yield_right_attempt_count += 1
+        self._yield_right_last_trigger_mono = now_mono
+        self._yield_right_original_params = dict(current_params)
+        self._yield_right_detour_goal_target = dict(detour_params)
+
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_START",
+            self._task_id_payload(
+                {
+                    "attempt": self._yield_right_attempt_count,
+                    "detour_x": detour_params["x"],
+                    "detour_y": detour_params["y"],
+                    "detour_yaw": detour_params["yaw"],
+                    "reason": "robot_obstacle_yield_right",
+                    "reason_code": "yield_right_start",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            "Starting robot right-yield maneuver "
+            f"(task_id={self._current_task_id}, attempt={self._yield_right_attempt_count}, "
+            f"detour=({detour_params['x']:.3f}, {detour_params['y']:.3f}, yaw={detour_params['yaw']:.3f}), "
+            f"original_target={self._yield_right_original_goal_target})."
+        )
+
+        self._stop_timeout_watchdog()
+        try:
+            self._cancel_requested = True
+            self._cancel_reason = "yield_right_start"
+            cancel_future = self._current_goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(
+                lambda f: self._on_nav_cancel_response(f, "cancel:yield_right_start")
+            )
+            self._current_goal_handle = None
+        except Exception as exc:
+            self._cancel_requested = False
+            self._cancel_reason = None
+            self._yield_right_active = False
+            self._yield_right_phase = ""
+            self.get_logger().warn(f"Failed to request yield-right cancel: {exc}")
+
+    def _build_robot_yield_right_goal(self) -> Optional[Dict[str, float]]:
+        snapshot = self._last_nav_feedback or {}
+        current_x = snapshot.get("current_x")
+        current_y = snapshot.get("current_y")
+        current_yaw = snapshot.get("current_yaw")
+        if not isinstance(current_x, (int, float)) or not isinstance(current_y, (int, float)):
+            return None
+        if not isinstance(current_yaw, (int, float)):
+            current_yaw = self._odom_yaw
+
+        forward_dx = math.cos(float(current_yaw))
+        forward_dy = math.sin(float(current_yaw))
+        right_dx = math.sin(float(current_yaw))
+        right_dy = -math.cos(float(current_yaw))
+
+        x = float(current_x) + (self.robot_yield_right_forward_m * forward_dx) + (
+            self.robot_yield_right_offset_m * right_dx
+        )
+        y = float(current_y) + (self.robot_yield_right_forward_m * forward_dy) + (
+            self.robot_yield_right_offset_m * right_dy
+        )
+        return {"x": x, "y": y, "yaw": float(current_yaw)}
+
+    def _start_robot_yield_right_detour(self) -> None:
+        if not self._yield_right_active or not self._yield_right_detour_goal_target:
+            return
+        detour = dict(self._yield_right_detour_goal_target)
+        self._yield_right_phase = "yield_detour_goal"
+        if self._send_nav_goal(detour["x"], detour["y"], detour["yaw"], goal_tag="yield_right_detour"):
+            return
+
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_FAILED",
+            self._task_id_payload(
+                {
+                    "reason": "yield_detour_start_failed",
+                    "reason_code": "yield_detour_start_failed",
+                    "status_code": 503,
+                    "status_text": "yield detour start failed",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            f"Yield-right detour start failed (task_id={self._current_task_id}, detour={detour})."
+        )
+        self._fail_current_action(
+            "yield_detour_start_failed",
+            {"status_code": 503, "status_text": "yield detour start failed"},
+        )
+
+    def _resume_original_goal_after_yield(self) -> None:
+        if not self._yield_right_active or not self._yield_right_original_params:
+            return
+        original = dict(self._yield_right_original_params)
+        self._yield_right_phase = "resuming_original_goal"
+        try:
+            x = float(original.get("x"))
+            y = float(original.get("y"))
+            yaw = float(original.get("yaw", original.get("theta", 0.0)))
+        except (TypeError, ValueError):
+            self._publish_event(
+                "ROBOT_YIELD_RIGHT_FAILED",
+                self._task_id_payload(
+                    {
+                        "reason": "yield_resume_invalid_params",
+                        "reason_code": "yield_resume_invalid_params",
+                    }
+                ),
+            )
+            self._yield_right_active = False
+            self._yield_right_phase = ""
+            return
+
+        if self._send_nav_goal(x, y, yaw, goal_tag="resume_after_yield"):
+            self._publish_event(
+                "ROBOT_YIELD_RIGHT_RESUME",
+                self._task_id_payload(
+                    {
+                        "x": x,
+                        "y": y,
+                        "yaw": yaw,
+                        "reason": "yield_resume_original_goal",
+                        "reason_code": "yield_resume_original_goal",
+                    }
+                ),
+            )
+            return
+
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_FAILED",
+            self._task_id_payload(
+                {
+                    "reason": "yield_resume_start_failed",
+                    "reason_code": "yield_resume_start_failed",
+                    "status_code": 503,
+                    "status_text": "yield resume start failed",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            f"Yield-right original-goal resume failed (task_id={self._current_task_id}, original={original})."
+        )
+        self._fail_current_action(
+            "yield_resume_start_failed",
+            {"status_code": 503, "status_text": "yield resume start failed"},
+        )
 
     def _begin_forward_first_mode(self) -> None:
         if not self.forward_first_enabled:
@@ -2784,6 +3230,7 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_failed")
+        self._reset_yield_right_state(reset_attempts=True)
         self._action_queue = []
         self._current_action = None
         self._current_goal_handle = None
@@ -2818,6 +3265,7 @@ class OfficeRobotExecutor(Node):
         self._publish_display("대기", "idle")
 
     def _publish_status(self, status: str, extra: Dict[str, Any], event: Optional[str] = None) -> None:
+        self._sync_idle_led_state(status)
         data = {
             "robot_id": int(self.robot_id),
             "robot_name": self.robot_name,
@@ -2979,13 +3427,78 @@ class OfficeRobotExecutor(Node):
         self.display_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
     def _publish_led(self, params: Dict[str, Any]) -> None:
+        normalized = {str(key): value for key, value in (params or {}).items()}
+        mode = str(normalized.get("mode", "")).strip().upper()
+        command = str(normalized.get("command", "")).strip().lower()
+        if mode in {"OFF", "CLEAR"} or command == "clear":
+            self._idle_led_clear_sent = True
+        else:
+            self._idle_led_clear_sent = False
         payload = {
             "robot_id": int(self.robot_id),
             "robot_name": self.robot_name,
-            "params": params or {},
+            "params": normalized,
             "ts": time.time(),
         }
         self.led_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
+
+    def _sync_idle_led_state(self, status: str) -> None:
+        normalized_status = str(status or "").strip().upper()
+        if normalized_status != "IDLE":
+            self._idle_led_clear_sent = False
+            return
+        if not self.idle_led_off_enabled:
+            return
+        if time.monotonic() < self._idle_led_hold_until_mono:
+            return
+        if self._idle_led_clear_sent:
+            return
+        self._publish_led({"command": "clear", "mode": "OFF"})
+
+    def _handle_employee_verification(self, *, employee_id: str, confidence: float) -> None:
+        self._employee_verification_suppress_until_mono = (
+            time.monotonic() + self.employee_verification_cooldown_sec
+        )
+        self._employee_verification_last_employee_id = employee_id
+        self._idle_led_hold_until_mono = (
+            time.monotonic() + self.employee_verification_feedback_hold_sec
+        )
+        self._publish_led({"color": "GREEN", "mode": "SOLID"})
+        self._publish_display(self.employee_verification_greeting_text, "display")
+        self._publish_event(
+            "EMPLOYEE_VERIFIED",
+            {
+                "robot_id": int(self.robot_id),
+                "robot_name": self.robot_name,
+                "employee_id": employee_id,
+                "confidence": float(confidence),
+                "source": "employee_verification",
+            },
+        )
+        self.get_logger().info(
+            f"Employee verification accepted (employee_id={employee_id or 'unknown'}, "
+            f"confidence={confidence:.2f})."
+        )
+        self._schedule_employee_feedback_restore()
+
+    def _schedule_employee_feedback_restore(self) -> None:
+        if self._employee_feedback_timer is not None:
+            self._employee_feedback_timer.cancel()
+            self._employee_feedback_timer = None
+
+        delay_sec = max(0.5, self.employee_verification_feedback_hold_sec)
+
+        def _restore() -> None:
+            if self._employee_feedback_timer is not None:
+                self._employee_feedback_timer.cancel()
+                self._employee_feedback_timer = None
+            if self.current_status == "IDLE":
+                self._publish_display("대기", "idle")
+                if self.idle_led_off_enabled:
+                    self._idle_led_hold_until_mono = 0.0
+                    self._publish_led({"command": "clear", "mode": "OFF"})
+
+        self._employee_feedback_timer = self.create_timer(delay_sec, _restore)
 
     @staticmethod
     def _normalize_action_name(value: Any) -> str:

@@ -28,15 +28,21 @@
   - `PAUSE`
   - `RESUME`
   - `CANCEL`
+- UI actions:
+  - `DISPLAY_TEXT` is rendered on Pinky LCD by `office_robot_ui_bridge`.
+  - `SET_LED` is forwarded to the global `/set_led` service from `pinky_led/led_server`
+    (with local `pinkylib.led` fallback if the service is unavailable).
 - `task_id`/`sequence_id` are both carried by executor for compatibility.
   - Safety lock behavior:
     - `STOP`/`PAUSE` => lock enabled, `cmd_vel` zero hold, running goal canceled.
     - `RESUME` => lock released, new action sequence can run.
   - Optional obstacle policy (`office_robot_safety`):
     - subscribes `/{robot_ns}/obstacles` and evaluates dynamic obstacle policy.
-    - `person` / `robot`: presence-only `STOP` by default even when upstream distance is missing.
+    - `person`: presence-only `STOP` by default even when upstream distance is missing.
+    - `robot`: tries `YIELD_RIGHT` first when frontal/close enough, then falls back to `STOP`.
     - `chair` / `plant` / `bag`: distance-based threshold only; without distance they fall back to Nav2 static avoidance.
-    - runtime today: `STOP` threshold enforces lock/zero-velocity, `SLOW` threshold is state/log only.
+    - runtime today: `STOP` threshold enforces lock/zero-velocity, `SLOW` threshold is state/log only,
+      and `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
   - `/{robot_ns}/status` may carry latest safety metadata:
     - `event`
@@ -94,6 +100,12 @@
 - `qr_scan_min_dwell_sec` (default `1.5`)
 - `qr_scan_confirm_count` (default `3`)
 - `qr_scan_ignore_commands_while_active` (default `true`)
+- `robot_yield_right_enabled` (default `true`)
+- `robot_yield_right_offset_m` (default `0.18`)
+- `robot_yield_right_forward_m` (default `0.20`)
+- `robot_yield_right_cooldown_sec` (default `5.0`)
+- `robot_yield_right_max_attempts_per_action` (default `1`)
+- `enable_led_server` (default `true`)
 
 ## Standard Run
 ```bash
@@ -111,6 +123,11 @@ ros2 launch office_robot_bringup bringup.launch.py \
 # ACTION_SEQUENCE (example)
 ros2 topic pub --once /robot01/commands std_msgs/msg/String \
 '{data: "{\"robot_name\":\"robot01\",\"type\":\"ACTION_SEQUENCE\",\"task_id\":101,\"payload\":[{\"action\":\"DISPLAY_TEXT\",\"params\":{\"text\":\"hello\"},\"on_success\":\"DONE\"}]}"}'
+
+# Direct LED service check
+ros2 service list | grep set_led
+ros2 service call /set_led pinky_interfaces/srv/SetLed \
+"{command: 'fill', r: 0, g: 255, b: 0}"
 
 # STOP / RESUME
 ros2 topic pub --once /robot01/commands std_msgs/msg/String \
@@ -132,7 +149,7 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
   - `office_robot_executor` mirrors this as `ai_link_alive` key in `/{robot_ns}/status`
 - Dynamic obstacle handling:
   - `SR-003` static obstacle avoidance remains Nav2 costmap/controller behavior.
-  - `SR-004 v1` is `safe stop / resume` for dynamic `person` / `robot`.
+  - `SR-004 v1` is `person stop + robot right-yield` for dynamic `person` / `robot`.
   - Upstream bbox (`box.x/y/width/height`) is preserved into `safety_state` and `/status`.
   - Full distance-aware yield can be layered later if upstream starts sending `distance_m`
     or if robot-side box + LiDAR fusion is added.

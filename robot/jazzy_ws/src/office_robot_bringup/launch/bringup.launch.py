@@ -36,6 +36,13 @@ def generate_launch_description() -> LaunchDescription:
     forward_first_allow_reversing_param = LaunchConfiguration(
         "forward_first_allow_reversing_param"
     )
+    robot_yield_right_enabled = LaunchConfiguration("robot_yield_right_enabled")
+    robot_yield_right_offset_m = LaunchConfiguration("robot_yield_right_offset_m")
+    robot_yield_right_forward_m = LaunchConfiguration("robot_yield_right_forward_m")
+    robot_yield_right_cooldown_sec = LaunchConfiguration("robot_yield_right_cooldown_sec")
+    robot_yield_right_max_attempts_per_action = LaunchConfiguration(
+        "robot_yield_right_max_attempts_per_action"
+    )
     localization_required = LaunchConfiguration("localization_required")
     amcl_pose_topic = LaunchConfiguration("amcl_pose_topic")
     odom_topic = LaunchConfiguration("odom_topic")
@@ -88,10 +95,26 @@ def generate_launch_description() -> LaunchDescription:
     enable_display = LaunchConfiguration("enable_display")
     display_topic = LaunchConfiguration("display_topic")
     led_topic = LaunchConfiguration("led_topic")
+    idle_led_off_enabled = LaunchConfiguration("idle_led_off_enabled")
+    employee_verification_enabled = LaunchConfiguration("employee_verification_enabled")
+    employee_verification_topic = LaunchConfiguration("employee_verification_topic")
+    employee_verification_min_confidence = LaunchConfiguration(
+        "employee_verification_min_confidence"
+    )
+    employee_verification_greeting_text = LaunchConfiguration(
+        "employee_verification_greeting_text"
+    )
+    employee_verification_feedback_hold_sec = LaunchConfiguration(
+        "employee_verification_feedback_hold_sec"
+    )
+    employee_verification_cooldown_sec = LaunchConfiguration(
+        "employee_verification_cooldown_sec"
+    )
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
     enable_ui_bridge = LaunchConfiguration("enable_ui_bridge")
     lcd_enabled = LaunchConfiguration("lcd_enabled")
     led_enabled = LaunchConfiguration("led_enabled")
+    enable_led_server = LaunchConfiguration("enable_led_server")
     emit_command_received_event = LaunchConfiguration("emit_command_received_event")
     qr_scan_local_enabled = LaunchConfiguration("qr_scan_local_enabled")
     qr_scan_image_topic = LaunchConfiguration("qr_scan_image_topic")
@@ -143,6 +166,13 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "forward_first_allow_reversing_param",
                 default_value="FollowPath.allow_reversing",
+            ),
+            DeclareLaunchArgument("robot_yield_right_enabled", default_value="true"),
+            DeclareLaunchArgument("robot_yield_right_offset_m", default_value="0.18"),
+            DeclareLaunchArgument("robot_yield_right_forward_m", default_value="0.20"),
+            DeclareLaunchArgument("robot_yield_right_cooldown_sec", default_value="5.0"),
+            DeclareLaunchArgument(
+                "robot_yield_right_max_attempts_per_action", default_value="1"
             ),
             DeclareLaunchArgument("localization_required", default_value="true"),
             DeclareLaunchArgument("amcl_pose_topic", default_value="amcl_pose"),
@@ -198,10 +228,28 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_display", default_value="true"),
             DeclareLaunchArgument("display_topic", default_value="display"),
             DeclareLaunchArgument("led_topic", default_value="led_command"),
+            DeclareLaunchArgument("idle_led_off_enabled", default_value="true"),
+            DeclareLaunchArgument("employee_verification_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "employee_verification_topic", default_value="employee_verification"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_min_confidence", default_value="0.5"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_greeting_text", default_value="Hello, employee"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_feedback_hold_sec", default_value="5.0"
+            ),
+            DeclareLaunchArgument(
+                "employee_verification_cooldown_sec", default_value="5.0"
+            ),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
             DeclareLaunchArgument("enable_ui_bridge", default_value="true"),
             DeclareLaunchArgument("lcd_enabled", default_value="true"),
             DeclareLaunchArgument("led_enabled", default_value="true"),
+            DeclareLaunchArgument("enable_led_server", default_value="true"),
             DeclareLaunchArgument("emit_command_received_event", default_value="true"),
             DeclareLaunchArgument("qr_scan_local_enabled", default_value="true"),
             DeclareLaunchArgument("qr_scan_image_topic", default_value="/camera/image_raw/compressed"),
@@ -217,6 +265,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("obstacle_enabled", default_value="true"),
             DeclareLaunchArgument("obstacle_topic", default_value="obstacles"),
             DeclareLaunchArgument("obstacle_presence_stop_classes", default_value="person,robot"),
+            Node(
+                package="pinky_led",
+                executable="led_server",
+                name="pinky_led_server",
+                condition=IfCondition(enable_led_server),
+                cwd="/home/pinky",
+                additional_env={
+                    "HOME": "/home/pinky",
+                    "TMPDIR": "/tmp",
+                },
+            ),
             GroupAction(
                 [
                     PushRosNamespace(robot_ns),
@@ -259,6 +318,7 @@ def generate_launch_description() -> LaunchDescription:
                                 "led_topic": led_topic,
                                 "lcd_enabled": lcd_enabled,
                                 "led_enabled": led_enabled,
+                                "led_service_name": "/set_led",
                             }
                         ],
                     ),
@@ -299,6 +359,11 @@ def generate_launch_description() -> LaunchDescription:
                             "forward_first_min_progress_m": forward_first_min_progress_m,
                             "forward_first_controller_node": forward_first_controller_node,
                             "forward_first_allow_reversing_param": forward_first_allow_reversing_param,
+                            "robot_yield_right_enabled": robot_yield_right_enabled,
+                            "robot_yield_right_offset_m": robot_yield_right_offset_m,
+                            "robot_yield_right_forward_m": robot_yield_right_forward_m,
+                            "robot_yield_right_cooldown_sec": robot_yield_right_cooldown_sec,
+                            "robot_yield_right_max_attempts_per_action": robot_yield_right_max_attempts_per_action,
                             "localization_required": localization_required,
                             "amcl_pose_topic": amcl_pose_topic,
                             "odom_topic": odom_topic,
@@ -337,6 +402,13 @@ def generate_launch_description() -> LaunchDescription:
                             "enable_display": enable_display,
                             "display_topic": display_topic,
                             "led_topic": led_topic,
+                            "idle_led_off_enabled": idle_led_off_enabled,
+                            "employee_verification_enabled": employee_verification_enabled,
+                            "employee_verification_topic": employee_verification_topic,
+                            "employee_verification_min_confidence": employee_verification_min_confidence,
+                            "employee_verification_greeting_text": employee_verification_greeting_text,
+                            "employee_verification_feedback_hold_sec": employee_verification_feedback_hold_sec,
+                            "employee_verification_cooldown_sec": employee_verification_cooldown_sec,
                             "guide_display_period_sec": guide_display_period_sec,
                             "emit_command_received_event": emit_command_received_event,
                             "qr_scan_local_enabled": qr_scan_local_enabled,

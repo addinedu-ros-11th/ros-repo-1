@@ -29,6 +29,11 @@ office_robot_executor:
     forward_first_min_progress_m: 0.08
     forward_first_controller_node: controller_server
     forward_first_allow_reversing_param: FollowPath.allow_reversing
+    robot_yield_right_enabled: true
+    robot_yield_right_offset_m: 0.18
+    robot_yield_right_forward_m: 0.20
+    robot_yield_right_cooldown_sec: 5.0
+    robot_yield_right_max_attempts_per_action: 1
     localization_required: true
     amcl_pose_topic: amcl_pose
     odom_topic: /odom
@@ -72,6 +77,13 @@ office_robot_executor:
     enable_display: true
     display_topic: display
     led_topic: led_command
+    idle_led_off_enabled: true
+    employee_verification_enabled: true
+    employee_verification_topic: employee_verification
+    employee_verification_min_confidence: 0.5
+    employee_verification_greeting_text: "Hello, employee"
+    employee_verification_feedback_hold_sec: 5.0
+    employee_verification_cooldown_sec: 5.0
     guide_display_period_sec: 2.0
     emit_command_received_event: true
     qr_scan_local_enabled: true

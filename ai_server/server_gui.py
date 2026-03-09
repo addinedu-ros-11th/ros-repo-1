@@ -138,6 +138,18 @@ GRPC_REQUEST_PATTERNS = {
         "service": "Vision",
         "is_response": True,
     },
+    "얼굴 인식 전송: ": {
+        "rpc": "FaceRecognition → Main",
+        "icon": "📤",
+        "service": "Vision",
+        "is_send": True,
+    },
+    "장애물 감지 전송: ": {
+        "rpc": "ObjectDetection → Main",
+        "icon": "📤",
+        "service": "Vision",
+        "is_send": True,
+    },
     "자연어 해석 완료": {
         "rpc": "ParseNaturalLanguage",
         "icon": "✅",
