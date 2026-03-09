@@ -159,6 +159,21 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
                 # 결과 타입에 따라 VisionResult 메시지 생성
                 vision_result = self._build_vision_result(result_data)
                 if vision_result:
+                    rtype = result_data.get("type", "")
+                    rid = result_data.get("robot_id", "?")
+                    if rtype == "face_recognition":
+                        c = result_data.get("content", {})
+                        logger.info(
+                            f"얼굴 인식 전송: robot={rid}, "
+                            f"유형={c.get('person_type','?')}, "
+                            f"유사도={c.get('confidence', 0.0):.1%}"
+                        )
+                    elif rtype == "multi_objects":
+                        names = [
+                            d.get("object_name", "?")
+                            for d in result_data.get("content", [])
+                        ]
+                        logger.info(f"장애물 감지 전송: robot={rid}, objects={names}")
                     yield vision_result
 
         except asyncio.CancelledError:
