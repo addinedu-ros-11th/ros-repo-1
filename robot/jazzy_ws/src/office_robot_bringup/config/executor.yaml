@@ -78,6 +78,9 @@ office_robot_executor:
     qr_scan_image_topic: /camera/image_raw/compressed
     qr_scan_timeout_sec: 8.0
     qr_scan_poll_period_sec: 0.2
+    qr_scan_min_dwell_sec: 1.5
+    qr_scan_confirm_count: 3
+    qr_scan_ignore_commands_while_active: true
     qr_always_scan_enabled: false
     qr_always_scan_event_name: QR_DETECTED
     qr_always_scan_poll_period_sec: 0.5

@@ -91,6 +91,9 @@
 - `startup_initial_pose_enabled` (default `false`)
 - `startup_initial_pose_topic` (default `initialpose`)
 - `startup_initial_pose_x/y/yaw` (default `0.0`)
+- `qr_scan_min_dwell_sec` (default `1.5`)
+- `qr_scan_confirm_count` (default `3`)
+- `qr_scan_ignore_commands_while_active` (default `true`)
 
 ## Standard Run
 ```bash
@@ -133,6 +136,10 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
   - Upstream bbox (`box.x/y/width/height`) is preserved into `safety_state` and `/status`.
   - Full distance-aware yield can be layered later if upstream starts sending `distance_m`
     or if robot-side box + LiDAR fusion is added.
+- QR scanning:
+  - `QR_SCAN` does not succeed immediately on first decode anymore.
+  - runtime requires both a minimum dwell time and repeated identical decodes.
+  - while an active `QR_SCAN` action is running, new `/{robot_ns}/commands` messages are ignored.
 - Localization:
   - If `amcl_pose_missing` persists after global relocalization + spin, the operator must set
     `2D Pose Estimate` once in RViz unless fixed startup pose is enabled.

@@ -150,6 +150,9 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("qr_scan_image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("qr_scan_timeout_sec", 8.0)
         self.declare_parameter("qr_scan_poll_period_sec", 0.2)
+        self.declare_parameter("qr_scan_min_dwell_sec", 1.5)
+        self.declare_parameter("qr_scan_confirm_count", 3)
+        self.declare_parameter("qr_scan_ignore_commands_while_active", True)
         self.declare_parameter("qr_always_scan_enabled", False)
         self.declare_parameter("qr_always_scan_event_name", "QR_DETECTED")
         self.declare_parameter("qr_always_scan_poll_period_sec", 0.5)
@@ -479,6 +482,18 @@ class OfficeRobotExecutor(Node):
             0.05,
             self.get_parameter("qr_scan_poll_period_sec").get_parameter_value().double_value,
         )
+        self.qr_scan_min_dwell_sec = max(
+            0.0,
+            self.get_parameter("qr_scan_min_dwell_sec").get_parameter_value().double_value,
+        )
+        self.qr_scan_confirm_count = max(
+            1, self.get_parameter("qr_scan_confirm_count").get_parameter_value().integer_value
+        )
+        self.qr_scan_ignore_commands_while_active = (
+            self.get_parameter("qr_scan_ignore_commands_while_active")
+            .get_parameter_value()
+            .bool_value
+        )
         self.qr_always_scan_enabled = (
             self.get_parameter("qr_always_scan_enabled").get_parameter_value().bool_value
         )
@@ -553,6 +568,9 @@ class OfficeRobotExecutor(Node):
         self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
         self._qr_scan_on_success: Optional[str] = None
+        self._qr_scan_started_mono = 0.0
+        self._qr_scan_candidate_data = ""
+        self._qr_scan_candidate_count = 0
         self._qr_always_scan_timer = None
         self._qr_always_last_data = ""
         self._qr_always_last_emit_mono = 0.0
@@ -731,6 +749,13 @@ class OfficeRobotExecutor(Node):
             self.get_logger().debug(
                 f"Ignoring command not for this robot (robot_name={self.robot_name}, robot_id={self.robot_id}, "
                 f"target_name={target_robot_name}, target_id={target_robot_id})."
+            )
+            return
+
+        if self.qr_scan_ignore_commands_while_active and self._is_qr_scan_active():
+            self.get_logger().warn(
+                "Ignoring incoming command while QR_SCAN is active "
+                f"(type={payload.get('type')}, task_id={self._extract_task_id(payload)})."
             )
             return
 
@@ -2499,13 +2524,15 @@ class OfficeRobotExecutor(Node):
         if self._qr_detector is None:
             return False
         self._stop_local_qr_scan()
-        self._qr_scan_deadline_mono = time.monotonic() + self.qr_scan_timeout_sec
+        self._qr_scan_started_mono = time.monotonic()
+        self._qr_scan_deadline_mono = self._qr_scan_started_mono + self.qr_scan_timeout_sec
         self._qr_scan_on_success = on_success
         self._qr_scan_timer = self.create_timer(
             self.qr_scan_poll_period_sec, self._poll_local_qr_scan
         )
         self.get_logger().info(
-            f"QR_SCAN started (topic={self.qr_scan_image_topic}, timeout_sec={self.qr_scan_timeout_sec:.1f})."
+            f"QR_SCAN started (topic={self.qr_scan_image_topic}, timeout_sec={self.qr_scan_timeout_sec:.1f}, "
+            f"min_dwell_sec={self.qr_scan_min_dwell_sec:.1f}, confirm_count={self.qr_scan_confirm_count})."
         )
         return True
 
@@ -2529,8 +2556,22 @@ class OfficeRobotExecutor(Node):
             )
             return
 
+        if (now - self._qr_scan_started_mono) < self.qr_scan_min_dwell_sec:
+            return
+
         scanned = self._decode_latest_qr()
         if not scanned:
+            self._qr_scan_candidate_data = ""
+            self._qr_scan_candidate_count = 0
+            return
+
+        if scanned == self._qr_scan_candidate_data:
+            self._qr_scan_candidate_count += 1
+        else:
+            self._qr_scan_candidate_data = scanned
+            self._qr_scan_candidate_count = 1
+
+        if self._qr_scan_candidate_count < self.qr_scan_confirm_count:
             return
 
         params = self._current_action.get("params", {}) if self._current_action else {}
@@ -2539,7 +2580,11 @@ class OfficeRobotExecutor(Node):
         params["scanned_data"] = scanned
         self._current_action["params"] = params
 
-        self.get_logger().info(f"QR_SCAN decoded: {scanned}")
+        self.get_logger().info(
+            f"QR_SCAN decoded: {scanned} "
+            f"(confirm_count={self._qr_scan_candidate_count}, "
+            f"elapsed_sec={now - self._qr_scan_started_mono:.2f})"
+        )
         on_success = self._qr_scan_on_success
         self._stop_local_qr_scan()
         self._finish_action_once(on_success)
@@ -2599,7 +2644,18 @@ class OfficeRobotExecutor(Node):
             self._qr_scan_timer.cancel()
             self._qr_scan_timer = None
         self._qr_scan_deadline_mono = 0.0
+        self._qr_scan_started_mono = 0.0
         self._qr_scan_on_success = None
+        self._qr_scan_candidate_data = ""
+        self._qr_scan_candidate_count = 0
+
+    def _is_qr_scan_active(self) -> bool:
+        if self._current_action is None:
+            return False
+        action_name = self._normalize_action_name(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        )
+        return action_name == "QR_SCAN"
 
     def _stop_always_qr_scan(self) -> None:
         if self._qr_always_scan_timer is not None:

@@ -24,6 +24,11 @@ This guide documents the integration contract for the robot runtime in
 - Core commands:
   - `ACTION_SEQUENCE` (`GOTO`, `LEAD_GUEST`, `DISPLAY_TEXT`, `PAUSE`, `RESUME`)
   - top-level `STOP`, `PAUSE`, `RESUME`, `CANCEL`
+- QR scan behavior:
+  - `QR_SCAN` now enforces `qr_scan_min_dwell_sec` before accepting any decode.
+  - the same QR payload must be decoded `qr_scan_confirm_count` consecutive polls before success.
+  - while `QR_SCAN` is active, new commands from `/{robot_ns}/commands` are ignored when
+    `qr_scan_ignore_commands_while_active=true`.
 
 ## Safety Model
 - Person detection decision is made by upper layer (`main_server` / AI pipeline).
