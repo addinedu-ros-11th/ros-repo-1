@@ -104,6 +104,7 @@ class OfficeRobotUiBridge(Node):
         self.declare_parameter("lcd_bg_color", "0,0,0")
         self.declare_parameter("lcd_clear_on_shutdown", False)
         self.declare_parameter("led_clear_on_shutdown", True)
+        self.declare_parameter("lcd_retry_interval_sec", 5.0)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.display_topic = self.get_parameter("display_topic").get_parameter_value().string_value
@@ -164,6 +165,14 @@ class OfficeRobotUiBridge(Node):
         self.led_clear_on_shutdown = (
             self.get_parameter("led_clear_on_shutdown").get_parameter_value().bool_value
         )
+        self.lcd_retry_interval_sec = max(
+            0.5,
+            float(
+                self.get_parameter("lcd_retry_interval_sec")
+                .get_parameter_value()
+                .double_value
+            ),
+        )
 
         self._lcd = None
         self._led = None
@@ -172,6 +181,7 @@ class OfficeRobotUiBridge(Node):
         self._led_blink_color = (255, 255, 255)
         self._led_blink_on = False
         self._warned_led_service_unavailable = False
+        self._last_lcd_init_attempt_mono = 0.0
 
         self._init_lcd()
         self._init_led()
@@ -209,6 +219,22 @@ class OfficeRobotUiBridge(Node):
             self._lcd = None
             self.get_logger().error(f"Failed to initialize LCD bridge: {exc}")
 
+    def _ensure_lcd(self) -> bool:
+        if self._lcd is not None:
+            return True
+        now_mono = self.get_clock().now().nanoseconds / 1e9
+        if (
+            now_mono - self._last_lcd_init_attempt_mono
+            < self.lcd_retry_interval_sec
+        ):
+            return False
+        self._last_lcd_init_attempt_mono = now_mono
+        self._init_lcd()
+        if self._lcd is not None:
+            self.get_logger().info("LCD backend recovered after retry.")
+            return True
+        return False
+
     def _init_led(self) -> None:
         if not self.led_enabled:
             return
@@ -242,7 +268,7 @@ class OfficeRobotUiBridge(Node):
         icon = str(payload.get("icon", "")).strip()
         if not text:
             return
-        if self._lcd is None:
+        if not self._ensure_lcd():
             self.get_logger().info(f"Display message received without LCD backend: {text}")
             return
         try:

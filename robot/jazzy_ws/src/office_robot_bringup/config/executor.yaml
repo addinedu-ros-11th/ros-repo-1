@@ -78,7 +78,7 @@ office_robot_executor:
     display_topic: display
     led_topic: led_command
     idle_led_off_enabled: true
-    employee_verification_enabled: true
+    employee_verification_enabled: false
     employee_verification_topic: employee_verification
     employee_verification_min_confidence: 0.5
     employee_verification_greeting_text: "Hello, employee"

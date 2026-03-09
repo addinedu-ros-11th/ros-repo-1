@@ -157,6 +157,9 @@ ros2 topic pub --once /robot01/commands std_msgs/msg/String \
   - `QR_SCAN` does not succeed immediately on first decode anymore.
   - runtime requires both a minimum dwell time and repeated identical decodes.
   - while an active `QR_SCAN` action is running, new `/{robot_ns}/commands` messages are ignored.
+- Employee verification relay:
+  - direct `/{robot_ns}/employee_verification` handling is disabled by default.
+  - default operator path is still `main_server -> /{robot_ns}/commands` with `SET_LED` / `DISPLAY_TEXT`.
 - Localization:
   - If `amcl_pose_missing` persists after global relocalization + spin, the operator must set
     `2D Pose Estimate` once in RViz unless fixed startup pose is enabled.

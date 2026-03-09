@@ -101,14 +101,19 @@ class VisionServiceClient(IVisionService):
         AI 서버에게 특정 로봇에 대한 추론 시작/중지를 명령합니다.
         """
         try:
-            # 컴파일된 ai_vision_pb2의 실제 메시지 클래스 사용
             request = ai_vision_pb2.InferenceStateRequest(
                 robot_id=robot_id, model_type=model_type, is_active=is_active
             )
-            response = await self.stub.UpdateInferenceState(request)
+            response = await self.stub.UpdateInferenceState(request, timeout=5.0)
             return {"success": response.success, "message": response.message}
+        except grpc.aio.AioRpcError as e:
+            logger.error(
+                f"UpdateInferenceState 실패: robot={robot_id}, model={model_type}, "
+                f"code={e.code()}, detail={e.details()}"
+            )
+            return {"success": False, "message": str(e)}
         except Exception as e:
-            logger.error(f"Error in UpdateInferenceState: {e}")
+            logger.error(f"UpdateInferenceState 오류: {e}")
             return {"success": False, "message": str(e)}
 
     async def start_vision_stream(self, callback: Any):
