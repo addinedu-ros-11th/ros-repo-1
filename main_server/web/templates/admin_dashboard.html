@@ -73,11 +73,15 @@
 
         <div id="visitor-res" class="tab-content" style="display:none;">
             <h2>📅 방문객 예약 관리</h2>
-            <div class="office-section" style="margin-bottom: 30px; border: 2px solid #3498db; padding: 15px; border-radius: 10px; background: #ebf5fb;">
-                <button type="button" class="btn-refresh" onclick="fetchVisitors()" style="padding: 10px 20px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                    🔄 데이터 새로고침
-                </button>
-                <h3 style="color: #2980b9;">⏳ 승인 대기 목록 (신규 신청)</h3>
+            
+            <div class="office-section" style="margin-bottom: 20px;">
+                <div class="section-header">
+                    <h3 class="section-title">⏳ 승인 대기 목록 (신규 신청)</h3>
+                    <button type="button" class="btn-refresh-re" onclick="fetchVisitors()">
+                        🔄 조회
+                    </button>
+                </div>
+                
                 <table class="data-table">
                     <thead>
                         <tr><th>방문객</th><th>목적</th><th>목적지</th><th>날짜</th><th>신청자</th><th>결정</th></tr>
@@ -86,6 +90,7 @@
                         </tbody>
                 </table>
             </div>
+
             <h3>✅ 최종 예약 확정 현황</h3>
             <table class="data-table">
                 <thead>

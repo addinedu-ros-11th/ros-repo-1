@@ -431,3 +431,37 @@ body {
 .btn-search:hover {
     background-color: #2c3e50;
 }
+
+/* 방문객 관리 섹션 헤더 정렬 */
+.section-header {
+    display: flex;
+    justify-content: space-between; /* 양 끝 정렬 */
+    align-items: center;            /* 세로 중앙 정렬 (크기 맞춤) */
+    margin-bottom: 10px;            /* 표와의 간격을 좁게 조절 */
+}
+/* 제목 마진 제거 */
+.section-title {
+    margin: 0;                      /* h3 기본 마진을 없애야 버튼과 높이가 맞음 */
+    font-size: 1.2rem;
+}
+
+/* 데이터 새로고침(조회) 버튼 스타일 */
+.btn-refresh-re {
+    padding: 8px 16px;              /* 높이를 살짝 줄여 제목과 균형을 맞춤 */
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.1s;
+    line-height: 1;                 /* 텍스트 수직 중앙 정렬 보정 */
+}
+
+.btn-refresh-re:hover {
+    background-color: #2980b9;
+}
+
+.btn-refresh-re:active {
+    transform: scale(0.98);
+}
