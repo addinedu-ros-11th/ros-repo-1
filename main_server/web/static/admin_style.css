@@ -366,3 +366,68 @@ body {
     background-color: #95a5a6; 
     color: white; 
 }
+
+/* ----------- 시스템 로그 ------------*/
+/* 시스템 로그 헤더 정렬 */
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #2c3e50;
+}
+
+/* 엑셀 스타일 테이블 */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.admin-table th {
+    background-color: #ecf0f1;
+    color: #2c3e50;
+    border: 1px solid #dcdde1;
+    padding: 12px;
+    text-align: center;
+}
+
+.admin-table td {
+    border: 1px solid #dcdde1;
+    padding: 10px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.admin-table tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* 날짜 선택 영역 */
+.date-filter {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.date-filter input[type="date"] {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.btn-search {
+    padding: 8px 15px;
+    background-color: #34495e;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-search:hover {
+    background-color: #2c3e50;
+}

@@ -203,11 +203,25 @@ async def decide_reservation(request_data: Dict[str, Any]):
 # ---------------------------------------------------------
 # 3. 시스템 동작 로그 (가독성 좋게 포맷팅)
 # ---------------------------------------------------------
-@router.get("/logs")
-async def get_system_logs():
-    """로그 데이터를 시간순으로 정렬하고 UI 규격에 맞춰 반환"""
-    logs = await container.log_repository.get_recent_system_logs(limit=50)
-    return logs
+@router.get("/system-logs")
+async def get_system_logs(date: str = None):
+    if not date:
+        date = datetime.now().strftime('%Y-%m-%d')
+    
+    # 리포지토리에서 데이터 가져오기
+    logs = await container.log_repository.get_system_task_logs(date)
+    
+    results = []
+    for l in logs:
+        results.append({
+            "start_time": l['created_at'].strftime('%H:%M:%S') if l['created_at'] else "-",
+            "robot_name": l['robot_name'] or "Unknown",
+            "robot_status": l['robot_status'] or "IDLE",
+            "battery": f"{int(l['battery_level'])}%" if l['battery_level'] is not None else "0%",
+            "task_status": l['task_status'],
+            "end_time": l['completed_at'].strftime('%H:%M:%S') if l['completed_at'] else "-"
+        })
+    return results
 
 # ---------------------------------------------------------
 # 4. 지도 메타데이터 및 로봇 실시간 관제
