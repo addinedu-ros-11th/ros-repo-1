@@ -75,6 +75,9 @@ class OfficeRobotSafety(Node):
         self.declare_parameter("obstacle_confidence_threshold", 0.6)
         self.declare_parameter("obstacle_timeout_sec", 1.5)
         self.declare_parameter("obstacle_clear_hold_sec", 1.0)
+        self.declare_parameter("obstacle_person_presence_stop_min_confidence", 0.85)
+        self.declare_parameter("obstacle_person_presence_stop_confirm_count", 2)
+        self.declare_parameter("obstacle_person_presence_stop_min_box_width_px", 140.0)
         self.declare_parameter("obstacle_person_stop_without_distance", False)
         self.declare_parameter("obstacle_person_stop_m", 0.65)
         self.declare_parameter("obstacle_person_slow_m", 0.95)
@@ -92,6 +95,7 @@ class OfficeRobotSafety(Node):
         self.declare_parameter("obstacle_robot_yield_center_ratio_min", 0.35)
         self.declare_parameter("obstacle_robot_yield_center_ratio_max", 0.65)
         self.declare_parameter("obstacle_robot_yield_min_box_width_px", 120.0)
+        self.declare_parameter("obstacle_robot_yield_hold_sec", 1.2)
 
         self.robot_name = self.get_parameter("robot_name").get_parameter_value().string_value
         self.robot_id = self.get_parameter("robot_id").get_parameter_value().integer_value
@@ -138,6 +142,27 @@ class OfficeRobotSafety(Node):
         self.obstacle_clear_hold_sec = max(
             0.0,
             self.get_parameter("obstacle_clear_hold_sec").get_parameter_value().double_value,
+        )
+        self.obstacle_person_presence_stop_min_confidence = max(
+            0.0,
+            min(
+                1.0,
+                self.get_parameter("obstacle_person_presence_stop_min_confidence")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.obstacle_person_presence_stop_confirm_count = max(
+            1,
+            self.get_parameter("obstacle_person_presence_stop_confirm_count")
+            .get_parameter_value()
+            .integer_value,
+        )
+        self.obstacle_person_presence_stop_min_box_width_px = max(
+            0.0,
+            self.get_parameter("obstacle_person_presence_stop_min_box_width_px")
+            .get_parameter_value()
+            .double_value,
         )
         self.obstacle_person_stop_without_distance = (
             self.get_parameter("obstacle_person_stop_without_distance")
@@ -198,6 +223,12 @@ class OfficeRobotSafety(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.obstacle_robot_yield_hold_sec = max(
+            0.0,
+            self.get_parameter("obstacle_robot_yield_hold_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self._command_lock_enabled = False
         self._obstacle_lock_enabled = False
         self._lock_enabled = False
@@ -206,6 +237,10 @@ class OfficeRobotSafety(Node):
         self._obstacle_state = "CLEAR"
         self._last_command_reason = "command_clear"
         self._last_obstacle_detail: Optional[Dict[str, Any]] = None
+        self._person_presence_candidate_count = 0
+        self._person_presence_candidate_key = ""
+        self._last_yield_hit_mono = 0.0
+        self._last_yield_detail: Optional[Dict[str, Any]] = None
 
         lock_qos = QoSProfile(
             depth=1,
@@ -362,24 +397,35 @@ class OfficeRobotSafety(Node):
         stop_hit, yield_hit, slow_hit = self._evaluate_detections(detections)
 
         if stop_hit is not None:
+            self._clear_robot_yield_hold()
             self._last_stop_trigger_mono = now
             self._set_obstacle_state("STOP", stop_hit)
             self._set_obstacle_lock(True, stop_hit["reason"])
             return
 
         if yield_hit is not None:
+            self._last_yield_hit_mono = now
+            self._last_yield_detail = dict(yield_hit)
             self._set_obstacle_state("YIELD_RIGHT", yield_hit)
             if self._obstacle_lock_enabled:
                 self._set_obstacle_lock(False, "yield_right")
             return
 
+        if self._is_robot_yield_hold_active(now):
+            self._set_obstacle_state("YIELD_RIGHT", self._last_yield_detail)
+            if self._obstacle_lock_enabled:
+                self._set_obstacle_lock(False, "yield_right")
+            return
+
         if slow_hit is not None:
+            self._clear_robot_yield_hold()
             self._set_obstacle_state("SLOW", slow_hit)
         else:
             if self._obstacle_lock_enabled and (
                 now - self._last_stop_trigger_mono >= self.obstacle_clear_hold_sec
             ):
                 self._set_obstacle_lock(False, "clear_hold_elapsed")
+            self._clear_robot_yield_hold()
             self._set_obstacle_state("CLEAR", None)
 
         if self._obstacle_lock_enabled and slow_hit is not None and (
@@ -439,6 +485,7 @@ class OfficeRobotSafety(Node):
         best_stop: Optional[Dict[str, Any]] = None
         best_yield: Optional[Dict[str, Any]] = None
         best_slow: Optional[Dict[str, Any]] = None
+        best_person_presence_stop: Optional[Dict[str, Any]] = None
 
         for det in detections:
             class_id = self._extract_class_id(det)
@@ -472,6 +519,18 @@ class OfficeRobotSafety(Node):
                 continue
 
             if distance is None and class_id in self._presence_stop_class_ids:
+                if (
+                    class_id == 0
+                    and confidence < self.obstacle_person_presence_stop_min_confidence
+                ):
+                    continue
+                if class_id == 0 and box is not None:
+                    box_width = self._to_float(box.get("width"))
+                    if (
+                        box_width is not None
+                        and box_width < self.obstacle_person_presence_stop_min_box_width_px
+                    ):
+                        continue
                 hit = {
                     "class_id": class_id,
                     "class_name": class_name,
@@ -483,7 +542,13 @@ class OfficeRobotSafety(Node):
                 }
                 if box is not None:
                     hit["box"] = box
-                if best_stop is None:
+                if class_id == 0:
+                    if (
+                        best_person_presence_stop is None
+                        or confidence > float(best_person_presence_stop.get("confidence", 0.0))
+                    ):
+                        best_person_presence_stop = hit
+                elif best_stop is None:
                     best_stop = hit
                 continue
 
@@ -541,7 +606,48 @@ class OfficeRobotSafety(Node):
                 if best_slow is None or distance < float(best_slow.get("distance", 999.0)):
                     best_slow = hit
 
+        person_presence_stop = self._apply_person_presence_stop_debounce(best_person_presence_stop)
+        if person_presence_stop is not None and best_stop is None:
+            best_stop = person_presence_stop
+
         return best_stop, best_yield, best_slow
+
+    def _apply_person_presence_stop_debounce(
+        self, candidate: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        if candidate is None:
+            self._reset_person_presence_stop_candidate()
+            return None
+
+        candidate_key = "person_presence"
+        if self._person_presence_candidate_key == candidate_key:
+            self._person_presence_candidate_count += 1
+        else:
+            self._person_presence_candidate_key = candidate_key
+            self._person_presence_candidate_count = 1
+
+        candidate["confirm_count"] = self._person_presence_candidate_count
+        candidate["confirm_required"] = self.obstacle_person_presence_stop_confirm_count
+        candidate["reason"] = (
+            f"class_0_presence_stop_confirmed_{self._person_presence_candidate_count}"
+        )
+
+        if self._person_presence_candidate_count < self.obstacle_person_presence_stop_confirm_count:
+            return None
+        return candidate
+
+    def _reset_person_presence_stop_candidate(self) -> None:
+        self._person_presence_candidate_count = 0
+        self._person_presence_candidate_key = ""
+
+    def _is_robot_yield_hold_active(self, now_mono: float) -> bool:
+        if self._last_yield_detail is None or self.obstacle_robot_yield_hold_sec <= 0.0:
+            return False
+        return (now_mono - self._last_yield_hit_mono) < self.obstacle_robot_yield_hold_sec
+
+    def _clear_robot_yield_hold(self) -> None:
+        self._last_yield_hit_mono = 0.0
+        self._last_yield_detail = None
 
     def _build_robot_yield_hit(
         self,

@@ -52,6 +52,8 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="FollowPath.desired_linear_vel",
             ),
             DeclareLaunchArgument("obstacle_slow_linear_vel", default_value="0.06"),
+            DeclareLaunchArgument("obstacle_auto_resume_enabled", default_value="true"),
+            DeclareLaunchArgument("obstacle_auto_resume_delay_sec", default_value="0.6"),
             DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="false"),
             DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
             DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
@@ -268,6 +270,12 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "obstacle_slow_linear_vel": LaunchConfiguration(
                             "obstacle_slow_linear_vel"
+                        ),
+                        "obstacle_auto_resume_enabled": LaunchConfiguration(
+                            "obstacle_auto_resume_enabled"
+                        ),
+                        "obstacle_auto_resume_delay_sec": LaunchConfiguration(
+                            "obstacle_auto_resume_delay_sec"
                         ),
                         "dynamic_nav_profile_enabled": LaunchConfiguration(
                             "dynamic_nav_profile_enabled"

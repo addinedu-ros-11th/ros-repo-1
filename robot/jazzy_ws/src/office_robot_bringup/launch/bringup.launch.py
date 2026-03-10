@@ -47,6 +47,8 @@ def generate_launch_description() -> LaunchDescription:
     obstacle_slow_controller_node = LaunchConfiguration("obstacle_slow_controller_node")
     obstacle_slow_linear_vel_param = LaunchConfiguration("obstacle_slow_linear_vel_param")
     obstacle_slow_linear_vel = LaunchConfiguration("obstacle_slow_linear_vel")
+    obstacle_auto_resume_enabled = LaunchConfiguration("obstacle_auto_resume_enabled")
+    obstacle_auto_resume_delay_sec = LaunchConfiguration("obstacle_auto_resume_delay_sec")
     dynamic_nav_profile_enabled = LaunchConfiguration("dynamic_nav_profile_enabled")
     dynamic_nav_profile_scan_topic = LaunchConfiguration("dynamic_nav_profile_scan_topic")
     dynamic_nav_profile_robot_width_m = LaunchConfiguration("dynamic_nav_profile_robot_width_m")
@@ -199,6 +201,15 @@ def generate_launch_description() -> LaunchDescription:
     obstacle_enabled = LaunchConfiguration("obstacle_enabled")
     obstacle_topic = LaunchConfiguration("obstacle_topic")
     obstacle_presence_stop_classes = LaunchConfiguration("obstacle_presence_stop_classes")
+    obstacle_person_presence_stop_min_confidence = LaunchConfiguration(
+        "obstacle_person_presence_stop_min_confidence"
+    )
+    obstacle_person_presence_stop_confirm_count = LaunchConfiguration(
+        "obstacle_person_presence_stop_confirm_count"
+    )
+    obstacle_person_presence_stop_min_box_width_px = LaunchConfiguration(
+        "obstacle_person_presence_stop_min_box_width_px"
+    )
     safety_params_file = PathJoinSubstitution(
         [FindPackageShare("office_robot_bringup"), "config", "safety.yaml"]
     )
@@ -252,6 +263,8 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="FollowPath.desired_linear_vel",
             ),
             DeclareLaunchArgument("obstacle_slow_linear_vel", default_value="0.06"),
+            DeclareLaunchArgument("obstacle_auto_resume_enabled", default_value="true"),
+            DeclareLaunchArgument("obstacle_auto_resume_delay_sec", default_value="0.6"),
             DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="false"),
             DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
             DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
@@ -411,6 +424,15 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("obstacle_enabled", default_value="true"),
             DeclareLaunchArgument("obstacle_topic", default_value="obstacles"),
             DeclareLaunchArgument("obstacle_presence_stop_classes", default_value="person"),
+            DeclareLaunchArgument(
+                "obstacle_person_presence_stop_min_confidence", default_value="0.85"
+            ),
+            DeclareLaunchArgument(
+                "obstacle_person_presence_stop_confirm_count", default_value="4"
+            ),
+            DeclareLaunchArgument(
+                "obstacle_person_presence_stop_min_box_width_px", default_value="140.0"
+            ),
             Node(
                 package="pinky_led",
                 executable="led_server",
@@ -444,6 +466,15 @@ def generate_launch_description() -> LaunchDescription:
                                 "obstacle_enabled": obstacle_enabled,
                                 "obstacle_topic": obstacle_topic,
                                 "obstacle_presence_stop_classes": obstacle_presence_stop_classes,
+                                "obstacle_person_presence_stop_min_confidence": (
+                                    obstacle_person_presence_stop_min_confidence
+                                ),
+                                "obstacle_person_presence_stop_confirm_count": (
+                                    obstacle_person_presence_stop_confirm_count
+                                ),
+                                "obstacle_person_presence_stop_min_box_width_px": (
+                                    obstacle_person_presence_stop_min_box_width_px
+                                ),
                             },
                         ],
                     ),
@@ -514,6 +545,8 @@ def generate_launch_description() -> LaunchDescription:
                             "obstacle_slow_controller_node": obstacle_slow_controller_node,
                             "obstacle_slow_linear_vel_param": obstacle_slow_linear_vel_param,
                             "obstacle_slow_linear_vel": obstacle_slow_linear_vel,
+                            "obstacle_auto_resume_enabled": obstacle_auto_resume_enabled,
+                            "obstacle_auto_resume_delay_sec": obstacle_auto_resume_delay_sec,
                             "dynamic_nav_profile_enabled": dynamic_nav_profile_enabled,
                             "dynamic_nav_profile_scan_topic": dynamic_nav_profile_scan_topic,
                             "dynamic_nav_profile_robot_width_m": dynamic_nav_profile_robot_width_m,
