@@ -208,3 +208,26 @@ class MySQLLocationRepository(BaseRepository):
             AND status != 'CANCLE'
         """
         return await self._execute(query, (location_id, res_date))
+    
+    async def get_admin_meeting_room_status(self) -> List[Dict[str, Any]]:
+        """
+        관리자용: 회의실(ID 5, 6)의 예약 현황 및 상태 조회
+        """
+        # %s 대신 직접적인 값을 넣거나, 인자를 정확히 전달해야 합니다.
+        query = """
+            SELECT 
+                l.name AS room_name,
+                r.status,
+                u.name AS user_name,
+                CONCAT(DATE_FORMAT(r.start_time, '%%H:%%i'), ' ~ ', DATE_FORMAT(r.end_time, '%%H:%%i')) AS res_time
+            FROM room_reservation r
+            JOIN Locations l ON r.location_id = l.location_id
+            JOIN Users u ON r.user_id = u.user_id
+            WHERE r.location_id IN (5, 6) 
+            AND r.reservation_date = CURDATE()
+            AND r.status != 'CANCLE'
+            ORDER BY r.start_time ASC
+        """
+        # 중요: SQL 내부의 % 기호는 Python format string과 충돌할 수 있으므로 %%로 이스케이프하거나
+        # 인자가 없다면 아래와 같이 쿼리만 전달합니다.
+        return await self._execute(query)

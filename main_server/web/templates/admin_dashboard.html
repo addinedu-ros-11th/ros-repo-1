@@ -417,27 +417,53 @@
 
         /* 1. 사무실 관리 (회의실 & 간식) */
         async function fetchOfficeStatus() {
-            const res = await fetch('/api/v1/admin/office-status');
-            const data = await res.json();
-            
-            // 백엔드가 준 processed_rooms 그대로 출력
-            document.getElementById('meeting-room-tbody').innerHTML = data.rooms.map(room => `
-                <tr>
-                    <td>${room.name}</td>
-                    <td><span class="status-badge ${room.status === '사용 중' ? 'busy' : 'free'}">${room.status}</span></td>
-                    <td>${room.user}</td>
-                    <td>${room.time}</td>
-                </tr>
-            `).join('');
+            try {
+                const res = await fetch('/api/v1/admin/office-status');
+                const data = await res.json();
+                
+                // 1. 회의실 현황 렌더링
+                const roomTbody = document.getElementById('meeting-room-tbody');
+                if (data.rooms && data.rooms.length > 0) {
+                    roomTbody.innerHTML = data.rooms.map(room => {
+                        // 상태에 따른 배지 클래스 결정
+                        const statusClass = (room.status === 'CANCLE' || room.status === 'EXPIRED') ? 'free' : 'busy';
+                        return `
+                            <tr>
+                                <td>${room.name}</td>
+                                <td><span class="status-badge ${statusClass}">${room.status}</span></td>
+                                <td>${room.user}</td>
+                                <td>${room.time}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    roomTbody.innerHTML = '<tr><td colspan="4">현재 예약된 회의실이 없습니다.</td></tr>';
+                }
 
-            // 백엔드가 준 snacks 그대로 출력
-            document.getElementById('snack-status-tbody').innerHTML = data.snacks.map(snack => `
-                <tr>
-                    <td>${snack.name}</td>
-                    <td>${snack.quantity}</td>
-                    <td><b style="color: ${snack.status === '부족' ? '#e74c3c' : '#2ecc71'}">${snack.status}</b></td>
-                </tr>
-            `).join('');
+                // 2. 간식 현황 렌더링 (DB 컬럼명 확인: name, quantity_in_stock, status)
+                const snackTbody = document.getElementById('snack-status-tbody');
+                if (data.snacks && data.snacks.length > 0) {
+                    snackTbody.innerHTML = data.snacks.map(snack => {
+                        // 스낵 데이터의 필드명이 백엔드(MySQLProductRepository) 기준인지 확인 필요
+                        const name = snack.name || '알 수 없음';
+                        const quantity = snack.quantity_in_stock ?? snack.quantity ?? 0;
+                        const status = snack.status || (quantity < 5 ? '부족' : '여유');
+                        const statusColor = status === '부족' ? '#e74c3c' : '#2ecc71';
+
+                        return `
+                            <tr>
+                                <td>${name}</td>
+                                <td>${quantity}</td>
+                                <td><b style="color: ${statusColor}">${status}</b></td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    snackTbody.innerHTML = '<tr><td colspan="3">간식 재고 정보가 없습니다.</td></tr>';
+                }
+            } catch (error) {
+                console.error("데이터 로드 중 오류 발생:", error);
+            }
         }
 
         /* 2. 방문객 예약 현황 */

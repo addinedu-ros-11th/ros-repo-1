@@ -62,26 +62,32 @@ async def get_map_image():
 # ---------------------------------------------------------
 # 1. 사무실 관리 (UI가 바로 렌더링할 수 있게 가공)
 # ---------------------------------------------------------
+
 @router.get("/office-status")
 async def get_office_status():
-    """프론트엔드 테이블에 바로 꽂을 수 있는 형태로 데이터를 정제해서 반환"""
-    # DB에서 원본 데이터 가져오기
-    raw_rooms = await container.admin_repository.get_meeting_room_status()
+    """프론트엔드 테이블에 회의실(5,6번) 및 간식 현황 반환"""
+    
+    # 1. 리포지토리를 통해 회의실 5, 6번 데이터 가져오기
+    # (container 설정에 따라 location_repo 접근 방식 확인 필요)
+    raw_rooms = await container.location_repo.get_admin_meeting_room_status()
     raw_snacks = await container.product_repository.get_snack_inventory()
     
-    # 백엔드에서 미리 UI용으로 가공 (데이터 정제 로직)
+    # 2. UI 규격(admin_dashboard.html)에 맞춰 데이터 매핑
     processed_rooms = []
     for r in raw_rooms:
         processed_rooms.append({
-            "name": r['name'],
-            "status": r['status'],  # '사용 중' or '비어 있음'
-            "user": r.get('user', '-'),
-            "time": r.get('time', '-')
+            "name": r['room_name'],
+            "status": r['status'],  # PENDING, APPROVED 등 DB Enum 값
+            "user": r['user_name'],
+            "time": r['res_time']
         })
+
+    # 만약 예약이 없는 경우에도 목록에 회의실 이름은 나오게 하고 싶다면 
+    # 별도의 '비어 있음' 처리 로직을 추가할 수 있습니다.
 
     return {
         "rooms": processed_rooms,
-        "snacks": raw_snacks  # SnackRepo에서 이미 가공됨
+        "snacks": raw_snacks 
     }
 
 # ---------------------------------------------------------
