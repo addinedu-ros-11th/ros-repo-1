@@ -116,7 +116,7 @@
                         <th>시작 시간</th>
                         <th>로봇명</th>
                         <th>로봇 상태 (배터리)</th>
-                        <th>진행 상황</th>
+                        <th>업무 유형</th> <th>진행 상황</th>
                         <th>종료 시간</th>
                     </tr>
                 </thead>
@@ -617,12 +617,14 @@
                 
                 const tbody = document.getElementById('sys-log-tbody');
                 if (data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5">해당 날짜의 기록이 없습니다.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6">해당 날짜의 기록이 없습니다.</td></tr>'; // colspan 6으로 수정
                     return;
                 }
 
                 tbody.innerHTML = data.map(log => {
-                    const statusInfo = getTaskStatusInfo(log.task_status);
+                    const statusInfo = getTaskStatusInfo(log.task_status); // 진행 상황 정보
+                    const typeText = getTaskTypeText(log.task_type);      // 업무 유형 한글 변환
+
                     return `
                         <tr>
                             <td>${log.start_time}</td>
@@ -631,8 +633,8 @@
                                 <div>${log.robot_status}</div>
                                 <small style="color: #7f8c8d;">🔋 ${log.battery}</small>
                             </td>
-                            <td>
-                                <span class="status-badge ${statusInfo.class}">
+                            <td style="font-weight: 500; color: #2c3e50;">${typeText}</td> 
+                            <td> <span class="status-badge ${statusInfo.class}">
                                     ${statusInfo.text}
                                 </span>
                             </td>
@@ -643,6 +645,20 @@
             } catch (e) {
                 console.error("로그 로딩 에러:", e);
             }
+        }
+
+        // 업무 유형(task_type)을 한글로 매핑하는 헬퍼 함수
+        function getTaskTypeText(type) {
+            const typeMap = {
+                'GUIDE_GUEST': '🤖 방문객 안내',
+                'SNACK_DELIVERY': '🍿 간식 배달',
+                'ITEM_DELIVERY': '📦 물품 배송',
+                'RETURN': '🔄 반납 업무',
+                'PATROL': '🛡️ 보안 순찰',
+                'MANUAL_MOVE': '🎮 수동 제어',
+                'GUEST_CHECK': '🧐 방문 확인'
+            };
+            return typeMap[type] || type || '-';
         }
 
         // 진행상황별 배지 색상

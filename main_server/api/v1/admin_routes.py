@@ -208,7 +208,6 @@ async def get_system_logs(date: str = None):
     if not date:
         date = datetime.now().strftime('%Y-%m-%d')
     
-    # 리포지토리에서 데이터 가져오기
     logs = await container.log_repository.get_system_task_logs(date)
     
     results = []
@@ -218,6 +217,7 @@ async def get_system_logs(date: str = None):
             "robot_name": l['robot_name'] or "Unknown",
             "robot_status": l['robot_status'] or "IDLE",
             "battery": f"{int(l['battery_level'])}%" if l['battery_level'] is not None else "0%",
+            "task_type": l['task_type'],  # 리포지토리에서 가져온 값을 추가
             "task_status": l['task_status'],
             "end_time": l['completed_at'].strftime('%H:%M:%S') if l['completed_at'] else "-"
         })

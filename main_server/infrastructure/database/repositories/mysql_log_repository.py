@@ -29,7 +29,7 @@ class MySQLLogRepository(BaseRepository):
     
     async def get_system_task_logs(self, target_date: str) -> List[Dict[str, Any]]:
         """
-        특정 날짜의 Task 수행 로그와 로봇 상태를 조인하여 조회
+        특정 날짜의 Task 수행 로그와 로봇 상태를 조인하여 조회 (task_type 추가)
         """
         query = """
             SELECT 
@@ -37,6 +37,7 @@ class MySQLLogRepository(BaseRepository):
                 r.name AS robot_name,
                 r.status AS robot_status,
                 r.battery_level,
+                t.task_type,      -- 이 부분을 추가해야 합니다!
                 t.status AS task_status,
                 t.completed_at
             FROM Tasks t
@@ -44,4 +45,4 @@ class MySQLLogRepository(BaseRepository):
             WHERE DATE(t.created_at) = %s
             ORDER BY t.created_at DESC
         """
-        return await self._execute(query, (target_date,))
+        return await self._execute(query, (target_date,), fetch="all")
