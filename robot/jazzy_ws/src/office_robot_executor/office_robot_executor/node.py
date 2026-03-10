@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 import time
@@ -108,6 +109,8 @@ class OfficeRobotExecutor(Node):
             "obstacle_slow_linear_vel_param", "FollowPath.desired_linear_vel"
         )
         self.declare_parameter("obstacle_slow_linear_vel", 0.06)
+        self.declare_parameter("obstacle_auto_resume_enabled", True)
+        self.declare_parameter("obstacle_auto_resume_delay_sec", 0.6)
         self.declare_parameter("dynamic_nav_profile_enabled", False)
         self.declare_parameter("dynamic_nav_profile_scan_topic", "/scan")
         self.declare_parameter("dynamic_nav_profile_robot_width_m", 0.12)
@@ -349,6 +352,17 @@ class OfficeRobotExecutor(Node):
         self.obstacle_slow_linear_vel = max(
             0.01,
             self.get_parameter("obstacle_slow_linear_vel")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.obstacle_auto_resume_enabled = (
+            self.get_parameter("obstacle_auto_resume_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.obstacle_auto_resume_delay_sec = max(
+            0.0,
+            self.get_parameter("obstacle_auto_resume_delay_sec")
             .get_parameter_value()
             .double_value,
         )
@@ -903,6 +917,11 @@ class OfficeRobotExecutor(Node):
             self.obstacle_slow_controller_node
         )
         self._obstacle_slow_param_client = None
+        self._obstacle_auto_resume_timer = None
+        self._obstacle_auto_resume_action: Optional[Dict[str, Any]] = None
+        self._obstacle_auto_resume_task_id: Optional[Any] = None
+        self._obstacle_auto_resume_status = ""
+        self._obstacle_auto_resume_reason = ""
         self._dynamic_nav_profile_manager: Optional[DynamicNavProfileManager] = None
         self._yield_right_active = False
         self._yield_right_phase = ""
@@ -1346,6 +1365,7 @@ class OfficeRobotExecutor(Node):
         self._stop_nav_retry()
         self._stop_localization_recovery("safety_lock")
         self._reset_yield_right_state(reset_attempts=True)
+        self._capture_obstacle_auto_resume_context(source)
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -1405,6 +1425,7 @@ class OfficeRobotExecutor(Node):
         self._publish_status("IDLE", payload, event="SAFETY_RESUMED")
         self._publish_display("대기", "idle")
         self._current_task_id = None
+        self._schedule_obstacle_auto_resume(source)
 
     def _run_next_action(self) -> None:
         self._stop_local_qr_scan()
@@ -2772,6 +2793,7 @@ class OfficeRobotExecutor(Node):
         self._stop_guide_display()
         self._stop_nav_retry()
         self._stop_localization_recovery("sequence_cancel")
+        self._clear_obstacle_auto_resume_context()
         self._reset_yield_right_state(reset_attempts=True)
         if self._action_timer is not None:
             self._action_timer.cancel()
@@ -2914,6 +2936,110 @@ class OfficeRobotExecutor(Node):
         self._yield_right_original_params = None
         self._yield_right_original_goal_target = None
         self._yield_right_detour_goal_target = None
+
+    def _capture_obstacle_auto_resume_context(self, source: str) -> None:
+        if not self.obstacle_auto_resume_enabled:
+            self._clear_obstacle_auto_resume_context()
+            return
+        if self._last_safety_source != "obstacle":
+            self._clear_obstacle_auto_resume_context()
+            return
+        if self._current_action is None:
+            self._clear_obstacle_auto_resume_context()
+            return
+
+        action_name = self._normalize_action_name(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        )
+        if action_name not in {"GOTO", "LEAD_GUEST"}:
+            self._clear_obstacle_auto_resume_context()
+            return
+
+        self._clear_obstacle_auto_resume_context(cancel_timer=False)
+        self._obstacle_auto_resume_action = copy.deepcopy(self._current_action)
+        self._obstacle_auto_resume_task_id = self._current_task_id
+        self._obstacle_auto_resume_status = self.current_status
+        self._obstacle_auto_resume_reason = self._last_obstacle_reason or source
+        self.get_logger().info(
+            "Captured obstacle auto-resume context "
+            f"(task_id={self._obstacle_auto_resume_task_id}, action={action_name}, "
+            f"reason={self._obstacle_auto_resume_reason}, target={self._goal_target})."
+        )
+
+    def _schedule_obstacle_auto_resume(self, source: str) -> None:
+        if not self.obstacle_auto_resume_enabled:
+            self._clear_obstacle_auto_resume_context()
+            return
+        if self._last_safety_source != "obstacle":
+            self._clear_obstacle_auto_resume_context()
+            return
+        if self._obstacle_auto_resume_action is None:
+            return
+
+        if self._obstacle_auto_resume_timer is not None:
+            self._obstacle_auto_resume_timer.cancel()
+            self._obstacle_auto_resume_timer = None
+
+        delay_sec = max(0.0, self.obstacle_auto_resume_delay_sec)
+
+        def _resume() -> None:
+            self._execute_obstacle_auto_resume()
+
+        self._obstacle_auto_resume_timer = self.create_timer(delay_sec, _resume)
+        self.get_logger().info(
+            "Scheduled obstacle auto-resume "
+            f"(task_id={self._obstacle_auto_resume_task_id}, delay_sec={delay_sec:.2f}, "
+            f"reason={self._obstacle_auto_resume_reason}, source={source})."
+        )
+
+    def _execute_obstacle_auto_resume(self) -> None:
+        if self._obstacle_auto_resume_timer is not None:
+            self._obstacle_auto_resume_timer.cancel()
+            self._obstacle_auto_resume_timer = None
+
+        action = self._obstacle_auto_resume_action
+        if action is None:
+            return
+        if self._safety_locked:
+            return
+        if self._current_action is not None or self._action_queue:
+            self.get_logger().warn(
+                "Skipping obstacle auto-resume because executor is already busy "
+                f"(task_id={self._obstacle_auto_resume_task_id})."
+            )
+            self._clear_obstacle_auto_resume_context(cancel_timer=False)
+            return
+
+        self._current_task_id = self._obstacle_auto_resume_task_id
+        self._action_queue = [copy.deepcopy(action)]
+        self.current_status = "ASSIGNED"
+        payload = self._task_id_payload(
+            {
+                "reason": "obstacle_auto_resume",
+                "reason_code": "obstacle_auto_resume",
+                "resumed_action": self._normalize_action_name(
+                    action.get("action", action.get("type", ""))
+                ),
+            }
+        )
+        self._publish_event("OBSTACLE_AUTO_RESUME", payload)
+        self._publish_status("ASSIGNED", payload, event="OBSTACLE_AUTO_RESUME")
+        self.get_logger().info(
+            "Resuming original goal after obstacle clear "
+            f"(task_id={self._current_task_id}, action={payload['resumed_action']}, "
+            f"reason={self._obstacle_auto_resume_reason})."
+        )
+        self._clear_obstacle_auto_resume_context(cancel_timer=False)
+        self._run_next_action()
+
+    def _clear_obstacle_auto_resume_context(self, cancel_timer: bool = True) -> None:
+        if cancel_timer and self._obstacle_auto_resume_timer is not None:
+            self._obstacle_auto_resume_timer.cancel()
+            self._obstacle_auto_resume_timer = None
+        self._obstacle_auto_resume_action = None
+        self._obstacle_auto_resume_task_id = None
+        self._obstacle_auto_resume_status = ""
+        self._obstacle_auto_resume_reason = ""
         if reset_attempts:
             self._yield_right_attempt_count = 0
 
@@ -3831,6 +3957,7 @@ class OfficeRobotExecutor(Node):
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_failed")
+        self._clear_obstacle_auto_resume_context()
         self._reset_yield_right_state(reset_attempts=True)
         self._action_queue = []
         self._current_action = None

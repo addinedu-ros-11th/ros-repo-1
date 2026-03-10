@@ -43,6 +43,8 @@
     - `chair` / `plant` / `bag`: distance-based threshold only; without distance they fall back to Nav2 static avoidance.
     - runtime today:
       - `STOP` threshold enforces lock/zero-velocity.
+      - obstacle-driven `STOP` stores the active `GOTO` / `LEAD_GUEST` goal and resumes it
+        automatically after clear when `obstacle_auto_resume_enabled=true`.
       - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
       - `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
@@ -132,6 +134,8 @@
 - `obstacle_slow_controller_node` (default `controller_server`)
 - `obstacle_slow_linear_vel_param` (default `FollowPath.desired_linear_vel`)
 - `obstacle_slow_linear_vel` (default `0.06`)
+- `obstacle_auto_resume_enabled` (default `true`)
+- `obstacle_auto_resume_delay_sec` (default `0.6`)
 - `enable_led_server` (default `true`)
 
 ## Standard Run
