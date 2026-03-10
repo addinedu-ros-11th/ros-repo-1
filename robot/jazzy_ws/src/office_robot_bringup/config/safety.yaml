@@ -11,7 +11,7 @@ office_robot_safety:
     stop_publish_count: 10
     obstacle_enabled: true
     obstacle_topic: obstacles
-    obstacle_presence_stop_classes: person,robot
+    obstacle_presence_stop_classes: person
     obstacle_confidence_threshold: 0.6
     obstacle_timeout_sec: 1.5
     obstacle_clear_hold_sec: 1.0

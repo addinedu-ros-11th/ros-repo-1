@@ -1,10 +1,13 @@
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
+from geometry_msgs.msg import Point
 from rclpy.parameter import Parameter
 from rclpy.parameter_client import AsyncParameterClient
 from sensor_msgs.msg import LaserScan
+from visualization_msgs.msg import Marker, MarkerArray
 
 from .scan_analyzer import ScanSpaceSample, analyze_scan_space
 
@@ -29,6 +32,8 @@ class DynamicNavProfileSettings:
 class DynamicNavProfileManager:
     PROFILE_BASELINE = "BASELINE"
     PROFILE_WIDE = "WIDE"
+    _PARAM_SERVICE_TIMEOUT_SEC = 0.5
+    _RETRY_TIMER_PERIOD_SEC = 0.5
 
     _PARAM_LOOKAHEAD = "FollowPath.lookahead_dist"
     _PARAM_MIN_LOOKAHEAD = "FollowPath.min_lookahead_dist"
@@ -56,6 +61,8 @@ class DynamicNavProfileManager:
 
         self._param_client: Optional[AsyncParameterClient] = None
         self._scan_sub = None
+        self._marker_pub = None
+        self._retry_timer = None
         if self._settings.enabled:
             self._param_client = AsyncParameterClient(node, controller_node_full_name)
             self._scan_sub = node.create_subscription(
@@ -63,6 +70,11 @@ class DynamicNavProfileManager:
                 self._settings.scan_topic,
                 self._on_scan,
                 10,
+            )
+            self._marker_pub = node.create_publisher(MarkerArray, "nav_profile_markers", 10)
+            self._retry_timer = node.create_timer(
+                self._RETRY_TIMER_PERIOD_SEC,
+                self._on_retry_timer,
             )
 
         self._nav_active = False
@@ -93,8 +105,14 @@ class DynamicNavProfileManager:
         self._exit_count = 0
         if not active:
             self._request_state(self.PROFILE_BASELINE, reason)
+            self._publish_deleteall_markers()
             return
         self._ensure_baseline(reason)
+        self._request_state(
+            self.PROFILE_BASELINE,
+            f"{reason}:nav_start_sync",
+            force=True,
+        )
 
     def get_status_fields(self) -> Dict[str, Any]:
         if not self._settings.enabled:
@@ -122,6 +140,7 @@ class DynamicNavProfileManager:
         )
         self._last_sample = sample
         self._last_sample_mono = time.monotonic()
+        self._publish_markers(msg, sample)
         if not sample.valid:
             self._enter_count = 0
             self._exit_count = 0
@@ -159,7 +178,7 @@ class DynamicNavProfileManager:
             return
         if self._baseline_params is not None or self._pending_get:
             return
-        if not self._param_client.wait_for_services(timeout_sec=0.1):
+        if not self._param_client.wait_for_services(timeout_sec=self._PARAM_SERVICE_TIMEOUT_SEC):
             self._node.get_logger().warn(
                 "Dynamic nav profile baseline read skipped: parameter service unavailable "
                 f"(node={self._controller_node_full_name}, reason={reason})."
@@ -211,7 +230,7 @@ class DynamicNavProfileManager:
             self._deferred_reason = ""
             self._request_state(deferred_state, deferred_reason)
 
-    def _request_state(self, target_state: str, reason: str) -> None:
+    def _request_state(self, target_state: str, reason: str, force: bool = False) -> None:
         if not self._settings.enabled or self._param_client is None:
             return
         target_state = self.PROFILE_WIDE if target_state == self.PROFILE_WIDE else self.PROFILE_BASELINE
@@ -227,15 +246,21 @@ class DynamicNavProfileManager:
             self._ensure_baseline(reason)
             return
 
-        if target_state == self._current_state and self._last_applied_params is not None:
+        if (
+            not force
+            and target_state == self._current_state
+            and self._last_applied_params is not None
+        ):
             return
 
         target_params = self._target_params_for_state(target_state)
-        if self._last_applied_params == target_params:
+        if not force and self._last_applied_params == target_params:
             self._current_state = target_state
             return
 
-        if not self._param_client.wait_for_services(timeout_sec=0.1):
+        if not self._param_client.wait_for_services(timeout_sec=self._PARAM_SERVICE_TIMEOUT_SEC):
+            self._deferred_state = target_state
+            self._deferred_reason = reason
             self._node.get_logger().warn(
                 "Dynamic nav profile apply skipped: parameter service unavailable "
                 f"(node={self._controller_node_full_name}, target_state={target_state}, reason={reason})."
@@ -302,6 +327,8 @@ class DynamicNavProfileManager:
                 f"(state={target_state}, reason={reason}, params={target_params})."
             )
         else:
+            self._deferred_state = target_state
+            self._deferred_reason = reason
             self._node.get_logger().warn(
                 "Dynamic nav profile apply rejected "
                 f"(state={target_state}, reason={reason}, detail={failure_reason})."
@@ -333,6 +360,168 @@ class DynamicNavProfileManager:
             else "NAV_PROFILE_BASELINE_RESTORED"
         )
         self._publish_event_cb(event_name, payload)
+
+    def _on_retry_timer(self) -> None:
+        if not self._settings.enabled or self._param_client is None:
+            return
+        if self._pending_get or self._pending_set:
+            return
+        if self._baseline_params is None:
+            self._ensure_baseline("retry_timer")
+            return
+        if self._deferred_state is None:
+            return
+        deferred_state = self._deferred_state
+        deferred_reason = self._deferred_reason or "retry_timer"
+        self._deferred_state = None
+        self._deferred_reason = ""
+        self._request_state(deferred_state, deferred_reason, force=True)
+
+    def _publish_deleteall_markers(self) -> None:
+        if self._marker_pub is None:
+            return
+        msg = MarkerArray()
+        marker = Marker()
+        marker.action = Marker.DELETEALL
+        msg.markers.append(marker)
+        self._marker_pub.publish(msg)
+
+    def _publish_markers(self, scan_msg: LaserScan, sample: ScanSpaceSample) -> None:
+        if self._marker_pub is None:
+            return
+
+        frame_id = str(scan_msg.header.frame_id or "base_footprint")
+        stamp = self._node.get_clock().now().to_msg()
+        markers = MarkerArray()
+
+        markers.markers.append(
+            self._build_line_marker(
+                marker_id=1,
+                frame_id=frame_id,
+                stamp=stamp,
+                ns="nav_profile",
+                color=(0.2, 0.9, 0.2, 0.95),
+                angle_deg=90.0,
+                distance=sample.left_clear_m,
+            )
+        )
+        markers.markers.append(
+            self._build_line_marker(
+                marker_id=2,
+                frame_id=frame_id,
+                stamp=stamp,
+                ns="nav_profile",
+                color=(0.2, 0.6, 1.0, 0.95),
+                angle_deg=-90.0,
+                distance=sample.right_clear_m,
+            )
+        )
+        markers.markers.append(
+            self._build_line_marker(
+                marker_id=3,
+                frame_id=frame_id,
+                stamp=stamp,
+                ns="nav_profile",
+                color=(1.0, 0.9, 0.2, 0.95),
+                angle_deg=0.0,
+                distance=sample.forward_clear_m,
+            )
+        )
+        markers.markers.append(
+            self._build_text_marker(
+                marker_id=10,
+                frame_id=frame_id,
+                stamp=stamp,
+                ns="nav_profile",
+                text=self._marker_text(sample),
+                z=0.45,
+                color=(1.0, 1.0, 1.0, 0.95),
+            )
+        )
+        self._marker_pub.publish(markers)
+
+    def _marker_text(self, sample: ScanSpaceSample) -> str:
+        lookahead = None
+        if self._last_applied_params is not None:
+            lookahead = self._last_applied_params.get(self._PARAM_LOOKAHEAD)
+        width_text = (
+            f"{sample.estimated_width_m:.2f}" if sample.estimated_width_m is not None else "n/a"
+        )
+        forward_text = (
+            f"{sample.forward_clear_m:.2f}" if sample.forward_clear_m is not None else "n/a"
+        )
+        lookahead_text = f"{lookahead:.2f}" if isinstance(lookahead, float) else "n/a"
+        return (
+            f"profile={self._current_state}\n"
+            f"width={width_text}m forward={forward_text}m\n"
+            f"lookahead={lookahead_text}m"
+        )
+
+    @staticmethod
+    def _build_line_marker(
+        *,
+        marker_id: int,
+        frame_id: str,
+        stamp: Any,
+        ns: str,
+        color: tuple[float, float, float, float],
+        angle_deg: float,
+        distance: Optional[float],
+    ) -> Marker:
+        marker = Marker()
+        marker.header.frame_id = frame_id
+        marker.header.stamp = stamp
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.02
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.points.append(Point(x=0.0, y=0.0, z=0.02))
+        if distance is None:
+            marker.points.append(Point(x=0.0, y=0.0, z=0.02))
+            return marker
+        radians = math.radians(angle_deg)
+        marker.points.append(
+            Point(
+                x=float(distance) * math.cos(radians),
+                y=float(distance) * math.sin(radians),
+                z=0.02,
+            )
+        )
+        return marker
+
+    @staticmethod
+    def _build_text_marker(
+        *,
+        marker_id: int,
+        frame_id: str,
+        stamp: Any,
+        ns: str,
+        text: str,
+        z: float,
+        color: tuple[float, float, float, float],
+    ) -> Marker:
+        marker = Marker()
+        marker.header.frame_id = frame_id
+        marker.header.stamp = stamp
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.TEXT_VIEW_FACING
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+        marker.pose.position.z = z
+        marker.scale.z = 0.12
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.text = text
+        return marker
 
 
 def _parameter_value_to_python(parameter_value: Any) -> Any:

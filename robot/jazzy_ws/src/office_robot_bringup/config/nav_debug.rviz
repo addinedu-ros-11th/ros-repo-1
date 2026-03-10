@@ -156,6 +156,13 @@ Visualization Manager:
         rviz_debug_overlay: true
       Topic:
         Value: debug_markers
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Dynamic Nav Profile
+      Namespaces:
+        nav_profile: true
+      Topic:
+        Value: nav_profile_markers
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

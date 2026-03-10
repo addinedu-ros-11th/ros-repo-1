@@ -113,6 +113,15 @@ def generate_launch_description() -> LaunchDescription:
     startup_initial_pose_covariance_yaw = LaunchConfiguration(
         "startup_initial_pose_covariance_yaw"
     )
+    manual_initial_pose_refine_enabled = LaunchConfiguration(
+        "manual_initial_pose_refine_enabled"
+    )
+    manual_initial_pose_refine_cooldown_sec = LaunchConfiguration(
+        "manual_initial_pose_refine_cooldown_sec"
+    )
+    manual_initial_pose_refine_ignore_self_sec = LaunchConfiguration(
+        "manual_initial_pose_refine_ignore_self_sec"
+    )
     nav2_lifecycle_check_enabled = LaunchConfiguration("nav2_lifecycle_check_enabled")
     nav2_required_active_nodes = LaunchConfiguration("nav2_required_active_nodes")
     nav2_lifecycle_get_state_timeout_sec = LaunchConfiguration(
@@ -243,7 +252,7 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="FollowPath.desired_linear_vel",
             ),
             DeclareLaunchArgument("obstacle_slow_linear_vel", default_value="0.06"),
-            DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="true"),
+            DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="false"),
             DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
             DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
             DeclareLaunchArgument(
@@ -306,6 +315,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("startup_initial_pose_yaw", default_value="0.0"),
             DeclareLaunchArgument("startup_initial_pose_covariance_xy", default_value="0.25"),
             DeclareLaunchArgument("startup_initial_pose_covariance_yaw", default_value="0.5"),
+            DeclareLaunchArgument("manual_initial_pose_refine_enabled", default_value="false"),
+            DeclareLaunchArgument("manual_initial_pose_refine_cooldown_sec", default_value="3.0"),
+            DeclareLaunchArgument(
+                "manual_initial_pose_refine_ignore_self_sec", default_value="1.0"
+            ),
             DeclareLaunchArgument("nav2_lifecycle_check_enabled", default_value="true"),
             DeclareLaunchArgument(
                 "nav2_required_active_nodes",
@@ -396,7 +410,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("safety_stop_publish_count", default_value="10"),
             DeclareLaunchArgument("obstacle_enabled", default_value="true"),
             DeclareLaunchArgument("obstacle_topic", default_value="obstacles"),
-            DeclareLaunchArgument("obstacle_presence_stop_classes", default_value="person,robot"),
+            DeclareLaunchArgument("obstacle_presence_stop_classes", default_value="person"),
             Node(
                 package="pinky_led",
                 executable="led_server",
@@ -540,6 +554,9 @@ def generate_launch_description() -> LaunchDescription:
                             "startup_initial_pose_yaw": startup_initial_pose_yaw,
                             "startup_initial_pose_covariance_xy": startup_initial_pose_covariance_xy,
                             "startup_initial_pose_covariance_yaw": startup_initial_pose_covariance_yaw,
+                            "manual_initial_pose_refine_enabled": manual_initial_pose_refine_enabled,
+                            "manual_initial_pose_refine_cooldown_sec": manual_initial_pose_refine_cooldown_sec,
+                            "manual_initial_pose_refine_ignore_self_sec": manual_initial_pose_refine_ignore_self_sec,
                             "nav2_lifecycle_check_enabled": nav2_lifecycle_check_enabled,
                             "nav2_required_active_nodes": nav2_required_active_nodes,
                             "nav2_lifecycle_get_state_timeout_sec": nav2_lifecycle_get_state_timeout_sec,
