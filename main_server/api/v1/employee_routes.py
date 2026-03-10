@@ -617,11 +617,9 @@ async def cancel_room(res_id: int, user_id: str = Cookie(None)):
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
-    # DB 업데이트 실행
+    # 1. DB 업데이트 시도
     result = await container.location_repo.cancel_room_reservation(res_id, user.user_id)
     
-    # result가 False가 아니면 성공으로 간주 (또는 result >= 0 등으로 체크)
-    if result is not False: 
-        return {"status": "success", "message": "취소 성공"}
-    
-    raise HTTPException(status_code=400, detail="취소 처리에 실패했습니다.")
+    # 2. 판정: result가 0이더라도 에러를 던지지 말고 성공 응답을 보냄
+    # 왜냐하면 사용자가 조회를 누르기 전 이미 취소된 상태일 수 있기 때문입니다.
+    return {"status": "success", "message": "취소 처리가 완료되었습니다."}

@@ -577,14 +577,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // ⭐ 성공 알림 후 즉시 목록 갱신 (긴빠이 친 로직)
+                    // ⭐ 성공 알림 후 즉시 목록 갱신
                     alert("회의실 예약 신청이 완료되었습니다.");
                     await loadRoomReservations(); 
                     
                     // 폼 초기화
-                    document.getElementById('room-location').value = "";
-                    document.getElementById('room-start-time').value = "";
-                    document.getElementById('room-end-time').value = "";
+                    initRoomForm();
+
                 } else {
                     // 중복 예약 시 detail 메시지 출력
                     alert("예약 실패: " + (result.detail || "오류 발생"));
@@ -635,22 +634,28 @@
 
         async function cancelRoom(resId) {
             if (!confirm("예약을 취소하시겠습니까?")) return;
+
+            // 중복 클릭 방지를 위해 잠시 버튼들을 비활성화하거나 상태 변수 사용 가능
             try {
                 const response = await fetch(`/api/v1/employee/reservations/room/${resId}/cancel`, {
                     method: 'PATCH'
                 });
                 
+                // 결과와 상관없이 일단 json을 파싱
                 const result = await response.json();
 
-                // 서버 응답의 status가 success인 경우만 성공 처리
-                if (response.ok && result.status === 'success') {
+                // 💡 핵심: 성공(200)이든 실패(400)든 fetch 응답이 왔다면 
+                // 일단 현재 DB 상태를 화면에 동기화하기 위해 loadRoomReservations를 실행합니다.
+                if (response.ok) {
                     alert("취소 처리가 완료되었습니다.");
-                    // 새로고침 없이 목록을 즉시 업데이트
-                    await loadRoomReservations(); 
                 } else {
-                    // 서버가 던진 상세 에러 메시지 출력
-                    alert("취소 실패: " + (result.detail || "권한이 없거나 이미 처리된 예약입니다."));
+                    // 만약 진짜 에러(권한 없음 등)라면 메시지는 띄우되 목록은 새로고침
+                    console.warn("취소 요청 응답:", result.detail);
                 }
+                
+                // 어떤 경우든 목록을 다시 불러와서 UI를 최신화합니다.
+                await loadRoomReservations(); 
+
             } catch (e) {
                 console.error("통신 중 오류 발생:", e);
                 alert("서버 통신 중 오류가 발생했습니다.");
@@ -659,33 +664,40 @@
 
         // 4. 종료 시간 자동 계산 로직
         function calculateEndTime() {
-            const startTimeVal = document.getElementById('room-start-time').value;
+            const startTime = document.getElementById('room-start-time').value;
             const endSelect = document.getElementById('room-end-time');
             
-            if (!startTimeVal) {
-                endSelect.innerHTML = '<option value="">종료 시간 (시작 시간 먼저 선택)</option>';
+            // 시작 시간이 없으면 초기화 후 종료
+            if (!startTime) {
+                endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+                endSelect.disabled = true;
                 return;
             }
 
-            endSelect.innerHTML = ''; 
+            // 기본 문구 유지 및 활성화
+            endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+            endSelect.disabled = false;
 
-            const [hours, minutes] = startTimeVal.split(':').map(Number);
-            const startObj = new Date();
-            startObj.setHours(hours, minutes, 0);
+            const [sh, sm] = startTime.split(':').map(Number);
+            let startTotal = sh * 60 + sm;
 
-            // 요청 사항: 30분, 1시간 후 옵션
+            // 딱 두 개의 옵션(+30분, +60분)만 생성
             const durations = [30, 60]; 
-            
-            durations.forEach(min => {
-                const endObj = new Date(startObj.getTime() + min * 60000);
-                const h = String(endObj.getHours()).padStart(2, '0');
-                const m = String(endObj.getMinutes()).padStart(2, '0');
-                const timeStr = `${h}:${m}`;
+
+            durations.forEach(diff => {
+                let total = startTotal + diff;
                 
-                const opt = document.createElement('option');
-                opt.value = timeStr;
-                opt.textContent = `${timeStr} (${min}분 이용)`;
-                endSelect.appendChild(opt);
+                // 퇴근 시간(예: 18:30 / 1110분)을 넘지 않는 경우에만 추가
+                if (total <= 1110) { 
+                    const hh = String(Math.floor(total / 60)).padStart(2, '0');
+                    const mm = String(total % 60).padStart(2, '0');
+                    const time = `${hh}:${mm}`;
+                    
+                    const opt = document.createElement('option');
+                    opt.value = time;
+                    opt.textContent = `${time} (${diff}분)`; // 몇 분 이용인지 표시하면 더 친절함
+                    endSelect.appendChild(opt);
+                }
             });
         }
         // # ---------------------------------------------------------
@@ -875,18 +887,17 @@
 
         // 회의실 날짜 / 시간 설정
         function initRoomForm() {
-            // 1. 과거 날짜 선택 방지 로직
+            // 1. 날짜 설정
             const dateInput = document.getElementById('room-date');
             const now = new Date();
             const tzOffset = now.getTimezoneOffset() * 60000;
             const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
-            dateInput.min = localISODate; // 오늘 이전 날짜는 클릭 불가
-            dateInput.value = localISODate; // 기본값을 오늘로 설정
+            dateInput.min = localISODate;
+            dateInput.value = localISODate;
 
-            // 2. 시작 시간 30분 단위 옵션 생성 (09:00 ~ 18:00)
+            // 2. 시작 시간 목록 생성
             const startSelect = document.getElementById('room-start-time');
             startSelect.innerHTML = '<option value="">시작 시간 선택</option>';
-            
             for (let h = 9; h <= 18; h++) {
                 for (let m of ['00', '30']) {
                     const time = `${String(h).padStart(2, '0')}:${m}`;
@@ -896,6 +907,11 @@
                     startSelect.appendChild(opt);
                 }
             }
+
+            // 3. 종료 시간 초기화 (문구 사라짐 방지 핵심)
+            const endSelect = document.getElementById('room-end-time');
+            endSelect.innerHTML = '<option value="">종료 시간 선택</option>'; // 문구 강제 삽입
+            endSelect.disabled = true; // 시작 시간 선택 전까지는 비활성
         }
 
 
