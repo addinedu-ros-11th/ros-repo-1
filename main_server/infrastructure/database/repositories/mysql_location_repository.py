@@ -210,10 +210,22 @@ class MySQLLocationRepository(BaseRepository):
         return await self._execute(query, (location_id, res_date))
     
     async def get_admin_meeting_room_status(self) -> List[Dict[str, Any]]:
+
+        update_query = """
+            UPDATE room_reservation 
+            SET status = CASE 
+                WHEN end_time <= CURTIME() AND reservation_date = CURDATE() THEN 'EXPIRED'
+                WHEN start_time <= CURTIME() AND status = 'PENDING' AND reservation_date = CURDATE() THEN 'CHECKED_IN'
+                ELSE status
+            END
+            WHERE reservation_date = CURDATE() AND status NOT IN ('CANCLE', 'EXPIRED')
         """
-        관리자용: 회의실(ID 5, 6)의 예약 현황 및 상태 조회
+        await self._execute(update_query, is_write=True)
+        
         """
-        # %s 대신 직접적인 값을 넣거나, 인자를 정확히 전달해야 합니다.
+        관리자용: 오늘 날짜의 회의실(ID 5, 6) 예약 현황 조회
+        정렬: 시작 시간순 -> 같은 시간일 경우 ID 내림차순 (6번 먼저)
+        """
         query = """
             SELECT 
                 l.name AS room_name,
@@ -224,10 +236,11 @@ class MySQLLocationRepository(BaseRepository):
             JOIN Locations l ON r.location_id = l.location_id
             JOIN Users u ON r.user_id = u.user_id
             WHERE r.location_id IN (5, 6) 
-            AND r.reservation_date = CURDATE()
+            AND r.reservation_date = CURDATE()  -- 1. 당일 예약만 필터링
             AND r.status != 'CANCLE'
-            ORDER BY r.start_time ASC
+            ORDER BY 
+                r.start_time ASC,                 -- 2. 시간순 정렬
+                r.location_id DESC                -- 3. 같은 시간일 때 6번(큰 숫자) 먼저
         """
-        # 중요: SQL 내부의 % 기호는 Python format string과 충돌할 수 있으므로 %%로 이스케이프하거나
-        # 인자가 없다면 아래와 같이 쿼리만 전달합니다.
+        # 인자가 필요 없는 쿼리이므로 query만 전달
         return await self._execute(query)

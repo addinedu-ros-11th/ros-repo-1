@@ -341,3 +341,28 @@ body {
 .status-badge.error { background-color: #e74c3c; }
 .status-badge.busy { background-color: #e67e22; }
 .status-badge.free { background-color: #2ecc71; }
+
+/* -----------회의실 예약 현황------------*/
+/* 예약중 - 파란색 */
+.status-badge.pending { 
+    background-color: #3498db; 
+    color: white; 
+}
+
+/* 사용중 - 초록색 */
+.status-badge.busy { 
+    background-color: #2ecc71; 
+    color: white; 
+}
+
+/* 만료됨 - 노란색 (가독성을 위해 글자는 검정) */
+.status-badge.expired { 
+    background-color: #f1c40f; 
+    color: #333; 
+}
+
+/* (참고) 취소 등 기타 상태 - 회색 */
+.status-badge.free { 
+    background-color: #95a5a6; 
+    color: white; 
+}

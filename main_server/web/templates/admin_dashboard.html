@@ -421,25 +421,43 @@
                 const res = await fetch('/api/v1/admin/office-status');
                 const data = await res.json();
                 
-                // 1. 회의실 현황 렌더링
                 const roomTbody = document.getElementById('meeting-room-tbody');
                 if (data.rooms && data.rooms.length > 0) {
                     roomTbody.innerHTML = data.rooms.map(room => {
-                        // 상태에 따른 배지 클래스 결정
-                        const statusClass = (room.status === 'CANCLE' || room.status === 'EXPIRED') ? 'free' : 'busy';
+                        let statusText = "";
+                        let statusClass = "";
+
+                        // DB 상태값에 따른 한글 이름 및 스타일 클래스 매핑
+                        switch(room.status) {
+                            case 'PENDING':
+                                statusText = "예약중";
+                                statusClass = "pending"; // 파란색
+                                break;
+                            case 'CHECKED_IN':
+                                statusText = "사용중";
+                                statusClass = "busy";    // 초록색
+                                break;
+                            case 'EXPIRED':
+                                statusText = "만료됨";
+                                statusClass = "expired"; // 노란색
+                                break;
+                            default:
+                                statusText = room.status; // 예외 상황 대비
+                                statusClass = "free";    // 기본 회색
+                        }
+
                         return `
                             <tr>
                                 <td>${room.name}</td>
-                                <td><span class="status-badge ${statusClass}">${room.status}</span></td>
+                                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                                 <td>${room.user}</td>
                                 <td>${room.time}</td>
                             </tr>
                         `;
                     }).join('');
                 } else {
-                    roomTbody.innerHTML = '<tr><td colspan="4">현재 예약된 회의실이 없습니다.</td></tr>';
+                    roomTbody.innerHTML = '<tr><td colspan="4">오늘 예약된 내역이 없습니다.</td></tr>';
                 }
-
                 // 2. 간식 현황 렌더링 (DB 컬럼명 확인: name, quantity_in_stock, status)
                 const snackTbody = document.getElementById('snack-status-tbody');
                 if (data.snacks && data.snacks.length > 0) {
