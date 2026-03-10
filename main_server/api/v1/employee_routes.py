@@ -338,10 +338,12 @@ async def get_my_tasks(user_id: str = Cookie(None)):
     
     return [
         {
-            "task_id": t.id,  # [수정] t.task_id 대신 t.id 사용
+            "task_id": t.id,
             "task_type": t.task_type,
             "status": t.status,
             "created_at": t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "-",
+            # 이 필드가 추가되어야 프론트에서 종료 시간을 표시할 수 있습니다.
+            "completed_at": t.completed_at.strftime("%Y-%m-%d %H:%M") if getattr(t, 'completed_at', None) else "-",
             "details": t.details
         }
         for t in tasks
