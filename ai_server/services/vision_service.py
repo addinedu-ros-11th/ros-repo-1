@@ -426,6 +426,7 @@ class VisionService:
             return {
                 "object_name": "none",
                 "confidence": 0.0,
+                "class_id": -1,
                 "box": {"x": 0, "y": 0, "width": 0, "height": 0},
             }
 
@@ -435,6 +436,7 @@ class VisionService:
         return {
             "object_name": "none",
             "confidence": 0.0,
+            "class_id": -1,
             "box": {"x": 0, "y": 0, "width": 0, "height": 0},
         }
 
