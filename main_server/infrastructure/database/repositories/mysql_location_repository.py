@@ -200,3 +200,11 @@ class MySQLLocationRepository(BaseRepository):
             WHERE reservation_id = %s AND user_id = %s
         """
         return await self._execute(query, (res_id, user_pk), is_write=True)
+    
+    async def get_room_reservations_by_location(self, location_id: int, res_date: str):
+        query = """
+            SELECT * FROM room_reservation 
+            WHERE location_id = %s AND reservation_date = %s 
+            AND status != 'CANCLE'
+        """
+        return await self._execute(query, (location_id, res_date))

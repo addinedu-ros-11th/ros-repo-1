@@ -526,39 +526,66 @@ async def get_my_info(user_id: str = Cookie(None)):
 # ---------------------------------------------------------
 # 6.회의실 예약
 # ---------------------------------------------------------
-# employee_routes.py
 
 @router.post("/reservations/room")
 async def create_room_reservation(request: RoomReservationRequest):
-    """회의실 예약 데이터 저장"""
+    """회의실 예약 데이터 저장 (중복 체크 포함 통합 버전)"""
     try:
-        # 1. 쿠키에서 넘어온 계정명(str)으로 유저의 실제 PK(int) 조회
+        # 1. 유저 조회
         user = await container.user_repo.get_user_by_username(request.user_id)
         if not user:
             raise HTTPException(status_code=404, detail="사용자 정보를 찾을 수 없습니다.")
         
-        user_pk = user.user_id # DB의 room_reservation.user_id(int)에 들어갈 값
+        user_pk = user.user_id 
 
-        # 2. location_repo의 새로운 메서드 호출 (execute_query -> _execute 반영된 버전)
+        # 2. 중복 예약 확인
+        existing_reservations = await container.location_repo.get_room_reservations_by_location(
+            request.location_id, str(request.reservation_date)
+        )
+        
+        # 시간 비교를 위한 정규화 (9:00 -> 09:00)
+        def normalize_time(t):
+            t_str = str(t)
+            parts = t_str.split(':')
+            return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+
+        req_start = normalize_time(request.start_time)
+        req_end = normalize_time(request.end_time)
+
+        for res in existing_reservations:
+            if res['status'] == 'CANCLE':
+                continue
+            
+            exist_start = normalize_time(res['start_time'])
+            exist_end = normalize_time(res['end_time'])
+
+            # 겹침 조건 확인
+            if (req_start < exist_end) and (req_end > exist_start):
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"이미 해당 시간에 예약이 존재합니다. ({exist_start} ~ {exist_end})"
+                )
+
+        # 3. 저장 진행 (Repository 함수 인자 명칭에 맞춤)
+        # mysql_location_repository.py의 create_room_reservation 함수 호출
         success = await container.location_repo.create_room_reservation(
             user_pk=user_pk,
             location_id=request.location_id,
-            res_date=request.reservation_date,
+            res_date=str(request.reservation_date),
             start_t=request.start_time,
             end_t=request.end_time
         )
         
-        # _execute 메서드는 성공 시 보통 rowcount나 lastrowid를 반환합니다.
         if success is not None:
             return {"status": "success", "message": "예약이 완료되었습니다."}
         else:
-            raise HTTPException(status_code=500, detail="DB 저장에 실패했습니다.")
+            raise HTTPException(status_code=500, detail="DB 저장 실패")
             
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        logger.error(f"Error saving room reservation: {e}")
+        logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
-    
-# employee_routes.py
 
 @router.get("/reservations/room/my")
 async def get_my_room_reservations(user_id: str = Cookie(None)):
@@ -586,9 +613,15 @@ async def get_my_room_reservations(user_id: str = Cookie(None)):
 
 @router.patch("/reservations/room/{res_id}/cancel")
 async def cancel_room(res_id: int, user_id: str = Cookie(None)):
-    """취소 버튼 클릭 시 상태 업데이트"""
     user = await container.user_repo.get_user_by_username(user_id)
-    success = await container.location_repo.cancel_room_reservation(res_id, user.user_id)
-    if success:
-        return {"message": "취소 성공"}
-    raise HTTPException(status_code=400, detail="취소 처리 실패")
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    # DB 업데이트 실행
+    result = await container.location_repo.cancel_room_reservation(res_id, user.user_id)
+    
+    # result가 False가 아니면 성공으로 간주 (또는 result >= 0 등으로 체크)
+    if result is not False: 
+        return {"status": "success", "message": "취소 성공"}
+    
+    raise HTTPException(status_code=400, detail="취소 처리에 실패했습니다.")
