@@ -85,8 +85,8 @@
                         <table class="res-table excel-style">
                             <thead>
                                 <tr>
-                                    <th>회의실</th>
                                     <th>예약 날짜</th>
+                                    <th>회의실</th>
                                     <th>예약 시간</th>
                                     <th>종료 시간</th>
                                     <th>상태/관리</th>
@@ -102,9 +102,6 @@
         <div class="panel combined-control-panel">
             <div class="res-list-header">
                 <div class="control-section-title" style="margin: 0;">🤖 로봇 업무 수행 현황</div>
-                <button class="btn-refresh btn-call-header" onclick="robotAction('call')">
-                    로봇 호출 ⚡
-                </button>
             </div>
 
             <div class="table-wrapper">
@@ -527,7 +524,7 @@
         // # 3.5 회의실 예약
         // # ---------------------------------------------------------
         
-        // 1. DB에서 회의실 목록 가져오기 (방문 예약의 목적지 로드 방식과 동일하게 연동)
+        // 1. DB에서 회의실 목록 가져오기 (ID 5, 6만 필터링)
         async function loadRoomOptions() {
             const select = document.getElementById('room-location');
             if (!select) return;
@@ -536,12 +533,21 @@
                 const response = await fetch('/api/v1/employee/locations');
                 const locations = await response.json();
                 
+                // 기존 옵션이 있다면 초기화 (회의실 선택 문구 유지)
+                select.innerHTML = '<option value="">회의실 선택</option>';
+                
                 locations.forEach(loc => {
-                    const opt = document.createElement('option');
-                    opt.value = loc.location_id;
-                    opt.textContent = `${loc.name} (${loc.type})`;
-                    select.appendChild(opt);
+                    // ⭐ 수정 포인트: location_id가 5 또는 6인 경우만 리스트에 추가
+                    if (loc.location_id === 5 || loc.location_id === 6) {
+                        const opt = document.createElement('option');
+                        opt.value = loc.location_id;
+                        // 관리자 페이지와 통일감을 위해 (회의실) 등 타입 표시 유지 혹은 이름만 표시
+                        opt.textContent = loc.name; 
+                        select.appendChild(opt);
+                    }
                 });
+                
+                console.log("✅ 회의실 필터링 완료 (ID 5, 6만 표시)");
             } catch (e) {
                 console.error("목적지 목록 로드 실패:", e);
             }
@@ -595,28 +601,44 @@
         
         //회의실 예약 현황 로드 함수
         async function loadRoomReservations() {
-            // 테이블 바디 ID 확인 (HTML에 있는 ID와 일치해야 함)
             const tbody = document.getElementById('room-table-body') || document.getElementById('my-room-res-list');
-            
             if (!tbody) return;
 
             try {
                 const response = await fetch('/api/v1/employee/reservations/room/my');
-                const data = await response.json();
+                let data = await response.json();
                 
                 tbody.innerHTML = '';
 
-                if (!data || data.length === 0) {
+                // 1. [필터링] 오늘 날짜보다 이전인 예약은 제외
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // 비교를 위해 시/분/초 초기화
+
+                let filteredData = data.filter(res => {
+                    const resDate = new Date(res.reservation_date);
+                    resDate.setHours(0, 0, 0, 0);
+                    return resDate >= today; // 오늘을 포함하여 미래의 예약만 남김
+                });
+
+                // 2. [정렬] 날짜순 -> 날짜가 같으면 시간순
+                filteredData.sort((a, b) => {
+                    if (a.reservation_date !== b.reservation_date) {
+                        return a.reservation_date.localeCompare(b.reservation_date);
+                    }
+                    return a.start_time.localeCompare(b.start_time);
+                });
+
+                if (!filteredData || filteredData.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">예약 내역이 없습니다.</td></tr>';
                     return;
                 }
 
-                data.forEach(res => {
+                // 3. 렌더링 (정렬 및 필터링된 filteredData 사용)
+                filteredData.forEach(res => {
                     let statusText = "";
                     let statusClass = "";
-                    let showCancelBtn = (res.status === 'PENDING'); // PENDING일 때만 true
+                    let showCancelBtn = (res.status === 'PENDING');
 
-                    // 1. 상태값 한글화 및 클래스 매핑
                     switch(res.status) {
                         case 'PENDING':
                             statusText = "예약중";
@@ -639,16 +661,14 @@
                             statusClass = "idle";
                     }
 
-                    // 2. 시간 포맷 정리 (09:00:00 -> 09:00)
                     const formatTime = (t) => t ? String(t).split(':').slice(0, 2).join(':') : '-';
                     const sTime = formatTime(res.start_time);
                     const eTime = formatTime(res.end_time);
 
-                    // 3. 행 생성 (순서: 회의실 | 날짜 | 시작 | 종료 | 상태/관리)
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${res.room_name || '-'}</td>
                         <td>${res.reservation_date || '-'}</td>
+                        <td>${res.room_name || '-'}</td>
                         <td>${sTime}</td>
                         <td>${eTime}</td>
                         <td>
