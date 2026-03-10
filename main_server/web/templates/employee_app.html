@@ -12,7 +12,7 @@
     <div class="container">
         <div class="panel reservation-panel">
             <div class="tab-menu">
-                <button class="tab-btn active" onclick="switchTab(event, 'visit-section')">방문 예약 및 현황</button>
+                <button class="tab-btn active" onclick="switchTab(event, 'visit-section')">방문 예약</button>
                 <button class="tab-btn" onclick="switchTab(event, 'room-section')">회의실 예약</button>
             </div>
 
@@ -595,39 +595,78 @@
         
         //회의실 예약 현황 로드 함수
         async function loadRoomReservations() {
-            const tbody = document.getElementById('room-table-body');
+            // 테이블 바디 ID 확인 (HTML에 있는 ID와 일치해야 함)
+            const tbody = document.getElementById('room-table-body') || document.getElementById('my-room-res-list');
+            
+            if (!tbody) return;
+
             try {
                 const response = await fetch('/api/v1/employee/reservations/room/my');
                 const data = await response.json();
+                
                 tbody.innerHTML = '';
 
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">예약 내역이 없습니다.</td></tr>';
+                    return;
+                }
+
                 data.forEach(res => {
-                    const isCancelled = res.status === 'CANCLE';
-                    const row = document.createElement('tr');
-                    
-                    // 시간 끝에 : 가 붙는 문제를 방지하기 위한 정규화 (09:00:00 -> 09:00)
+                    let statusText = "";
+                    let statusClass = "";
+                    let showCancelBtn = (res.status === 'PENDING'); // PENDING일 때만 true
+
+                    // 1. 상태값 한글화 및 클래스 매핑
+                    switch(res.status) {
+                        case 'PENDING':
+                            statusText = "예약중";
+                            statusClass = "pending"; 
+                            break;
+                        case 'CHECKED_IN':
+                            statusText = "사용중";
+                            statusClass = "moving";    
+                            break;
+                        case 'EXPIRED':
+                            statusText = "만료됨";
+                            statusClass = "busy"; 
+                            break;
+                        case 'CANCLE':
+                            statusText = "취소됨";
+                            statusClass = "error";    
+                            break;
+                        default:
+                            statusText = res.status;
+                            statusClass = "idle";
+                    }
+
+                    // 2. 시간 포맷 정리 (09:00:00 -> 09:00)
                     const formatTime = (t) => t ? String(t).split(':').slice(0, 2).join(':') : '-';
                     const sTime = formatTime(res.start_time);
                     const eTime = formatTime(res.end_time);
 
+                    // 3. 행 생성 (순서: 회의실 | 날짜 | 시작 | 종료 | 상태/관리)
+                    const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${res.room_name}</td>
-                        <td>${res.reservation_date}</td>
+                        <td>${res.room_name || '-'}</td>
+                        <td>${res.reservation_date || '-'}</td>
                         <td>${sTime}</td>
                         <td>${eTime}</td>
                         <td>
-                            <span class="status-badge ${isCancelled ? 'expired' : 'complete'}">
-                                ${res.status}
-                            </span>
-                            ${!isCancelled ? 
-                                `<button class="btn-cancel" onclick="cancelRoom(${res.reservation_id})" 
-                                        style="margin-left:8px; border-radius:4px; border:1px solid #ff4d4f; color:#ff4d4f; background:#fff; cursor:pointer;">취소</button>` 
-                                : ''}
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                                <span class="status-badge ${statusClass}">
+                                    ${statusText}
+                                </span>
+                                ${showCancelBtn ? 
+                                    `<button class="btn-cancel" onclick="cancelRoom(${res.reservation_id})" 
+                                            style="padding:2px 8px; border-radius:4px; border:1px solid #ff4d4f; color:#ff4d4f; background:#fff; cursor:pointer; font-size:11px;">취소</button>` 
+                                    : ''}
+                            </div>
                         </td>
                     `;
                     tbody.appendChild(row);
                 });
             } catch (e) {
+                console.error("데이터 로드 중 오류:", e);
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">데이터 로드 중 오류가 발생했습니다.</td></tr>';
             }
         }
@@ -644,8 +683,6 @@
                 // 결과와 상관없이 일단 json을 파싱
                 const result = await response.json();
 
-                // 💡 핵심: 성공(200)이든 실패(400)든 fetch 응답이 왔다면 
-                // 일단 현재 DB 상태를 화면에 동기화하기 위해 loadRoomReservations를 실행합니다.
                 if (response.ok) {
                     alert("취소 처리가 완료되었습니다.");
                 } else {
@@ -845,9 +882,10 @@
         }
 
         async function initPage() {
-            console.log("🚀 페이지 초기화 시작 (병렬 로드)");
+            console.log("🚀 페이지 초기화 시작");
 
-            const savedTab = localStorage.getItem('activeTab') || 'visit-section';
+            const savedTab = 'visit-section';
+
             if (typeof switchTab === 'function') {
                 switchTab(null, savedTab);
             }
@@ -887,18 +925,20 @@
 
         // 회의실 날짜 / 시간 설정
         function initRoomForm() {
-            // 1. 날짜 설정
+            // 1. 날짜 설정 (기존 유지)
             const dateInput = document.getElementById('room-date');
-            const now = new Date();
-            const tzOffset = now.getTimezoneOffset() * 60000;
-            const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
-            dateInput.min = localISODate;
-            dateInput.value = localISODate;
+            if (dateInput) {
+                const now = new Date();
+                const tzOffset = now.getTimezoneOffset() * 60000;
+                const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
+                dateInput.min = localISODate;
+                dateInput.value = localISODate;
+            }
 
-            // 2. 시작 시간 목록 생성
+            // 2. 시작 시간 목록 생성 (09:00 ~ 20:00)
             const startSelect = document.getElementById('room-start-time');
             startSelect.innerHTML = '<option value="">시작 시간 선택</option>';
-            for (let h = 9; h <= 18; h++) {
+            for (let h = 9; h <= 20; h++) {
                 for (let m of ['00', '30']) {
                     const time = `${String(h).padStart(2, '0')}:${m}`;
                     const opt = document.createElement('option');
@@ -908,12 +948,47 @@
                 }
             }
 
-            // 3. 종료 시간 초기화 (문구 사라짐 방지 핵심)
+            // 3. 종료 시간 초기화
             const endSelect = document.getElementById('room-end-time');
-            endSelect.innerHTML = '<option value="">종료 시간 선택</option>'; // 문구 강제 삽입
-            endSelect.disabled = true; // 시작 시간 선택 전까지는 비활성
-        }
+            endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+            endSelect.disabled = true;
 
+            // 4. 시작 시간에 따른 종료 시간 제한 (정확히 +30분, +60분만)
+            startSelect.onchange = function() {
+                const startTime = this.value;
+                
+                if (!startTime) {
+                    endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+                    endSelect.disabled = true;
+                    return;
+                }
+
+                endSelect.disabled = false;
+                endSelect.innerHTML = '<option value="">종료 시간 선택</option>'; // 초기화 후 옵션 추가
+
+                // 시작 시간을 분 단위 숫자로 변환 (예: "09:00" -> 540)
+                const [h, m] = startTime.split(':').map(Number);
+                const startTotalMinutes = h * 60 + m;
+
+                // 정확히 30분 뒤와 60분 뒤만 배열로 정의
+                const validDurations = [30, 60]; 
+
+                validDurations.forEach(diff => {
+                    const total = startTotalMinutes + diff;
+                    const endH = Math.floor(total / 60);
+                    const endM = total % 60;
+
+                    // 시스템 마감 시간인 21:00까지만 허용
+                    if (total <= 21 * 60) {
+                        const timeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                        const opt = document.createElement('option');
+                        opt.value = timeStr;
+                        opt.textContent = timeStr; // 다른 문구 없이 시간만 깔끔하게 표시
+                        endSelect.appendChild(opt);
+                    }
+                });
+            };
+        }
 
         // 페이지 로드 시 initPage 실행
         document.addEventListener('DOMContentLoaded', initPage, function() {initRoomForm();});

@@ -412,3 +412,10 @@ body, html {
     color: #999;
     font-style: italic;
 }
+
+.status-badge.idle { background-color: #95a5a6; color: white; }
+.status-badge.moving { background-color: #2ecc71; color: white; }
+.status-badge.error { background-color: #e74c3c; color: white; }
+.status-badge.busy { background-color: #e67e22; color: white; }
+.status-badge.free { background-color: #2ecc71; color: white; }
+.status-badge.pending {background-color: #3498db; color: white; }
