@@ -38,7 +38,7 @@ office_robot_executor:
     obstacle_slow_controller_node: controller_server
     obstacle_slow_linear_vel_param: FollowPath.desired_linear_vel
     obstacle_slow_linear_vel: 0.06
-    dynamic_nav_profile_enabled: true
+    dynamic_nav_profile_enabled: false
     dynamic_nav_profile_scan_topic: /scan
     dynamic_nav_profile_robot_width_m: 0.12
     dynamic_nav_profile_wide_width_enter_m: 0.38
@@ -82,6 +82,9 @@ office_robot_executor:
     startup_initial_pose_yaw: 0.0
     startup_initial_pose_covariance_xy: 0.25
     startup_initial_pose_covariance_yaw: 0.5
+    manual_initial_pose_refine_enabled: false
+    manual_initial_pose_refine_cooldown_sec: 3.0
+    manual_initial_pose_refine_ignore_self_sec: 1.0
     nav2_lifecycle_check_enabled: true
     nav2_required_active_nodes: planner_server,controller_server,bt_navigator,behavior_server
     nav2_lifecycle_get_state_timeout_sec: 0.15

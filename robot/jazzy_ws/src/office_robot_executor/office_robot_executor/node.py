@@ -156,6 +156,9 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("startup_initial_pose_yaw", 0.0)
         self.declare_parameter("startup_initial_pose_covariance_xy", 0.25)
         self.declare_parameter("startup_initial_pose_covariance_yaw", 0.5)
+        self.declare_parameter("manual_initial_pose_refine_enabled", False)
+        self.declare_parameter("manual_initial_pose_refine_cooldown_sec", 3.0)
+        self.declare_parameter("manual_initial_pose_refine_ignore_self_sec", 1.0)
         self.declare_parameter("nav2_lifecycle_check_enabled", True)
         self.declare_parameter(
             "nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"
@@ -572,6 +575,23 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.manual_initial_pose_refine_enabled = (
+            self.get_parameter("manual_initial_pose_refine_enabled")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.manual_initial_pose_refine_cooldown_sec = max(
+            0.0,
+            self.get_parameter("manual_initial_pose_refine_cooldown_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.manual_initial_pose_refine_ignore_self_sec = max(
+            0.0,
+            self.get_parameter("manual_initial_pose_refine_ignore_self_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self.nav2_lifecycle_check_enabled = (
             self.get_parameter("nav2_lifecycle_check_enabled")
             .get_parameter_value()
@@ -822,6 +842,8 @@ class OfficeRobotExecutor(Node):
         self._localization_recovery_until_mono = 0.0
         self._localization_recovery_cycle_count = 0
         self._last_localization_recovery_mono = 0.0
+        self._manual_initial_pose_ignore_until_mono = 0.0
+        self._last_manual_initial_pose_refine_mono = 0.0
         self._localization_spin_allow_without_action = False
         self._startup_localization_bootstrap_timer = None
         self._startup_localization_bootstrap_done = False
@@ -915,6 +937,12 @@ class OfficeRobotExecutor(Node):
         self.stop_pub = self.create_publisher(Twist, self.stop_cmd_vel_topic, 10)
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, self.startup_initial_pose_topic, 10
+        )
+        self.manual_initial_pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped,
+            self.startup_initial_pose_topic,
+            self._on_manual_initial_pose,
+            10,
         )
         self.amcl_pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, self.amcl_pose_topic, self._on_amcl_pose, 10
@@ -1244,6 +1272,7 @@ class OfficeRobotExecutor(Node):
                     }
                 ),
             )
+            self._publish_display(self._build_safety_display_text(), "pause")
         elif state == "YIELD_RIGHT":
             self._set_obstacle_slow_mode(False, "yield_right")
             self._maybe_start_robot_yield_right(payload)
@@ -1352,7 +1381,7 @@ class OfficeRobotExecutor(Node):
         )
         self._publish_event("SAFETY_STOPPED", payload)
         self._publish_status("WAITING", payload, event="SAFETY_STOPPED")
-        self._publish_display("일시정지", "pause")
+        self._publish_display(self._build_safety_display_text(), "pause")
 
     def _exit_safety_lock(self, source: str) -> None:
         self._stop_nav_retry()
@@ -2388,6 +2417,11 @@ class OfficeRobotExecutor(Node):
             )
 
     def _publish_startup_initial_pose(self) -> None:
+        if self.manual_initial_pose_refine_ignore_self_sec > 0.0:
+            self._manual_initial_pose_ignore_until_mono = max(
+                self._manual_initial_pose_ignore_until_mono,
+                time.monotonic() + self.manual_initial_pose_refine_ignore_self_sec,
+            )
         message = PoseWithCovarianceStamped()
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = self.frame_id or "map"
@@ -2420,6 +2454,60 @@ class OfficeRobotExecutor(Node):
             f"yaw={self.startup_initial_pose_yaw:.3f}, topic={self.startup_initial_pose_topic})."
         )
         self._call_nomotion_update(0, "startup_initial_pose")
+
+    def _on_manual_initial_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        now = time.monotonic()
+        if now < self._manual_initial_pose_ignore_until_mono:
+            return
+        if (
+            self.manual_initial_pose_refine_cooldown_sec > 0.0
+            and self._last_manual_initial_pose_refine_mono > 0.0
+            and (now - self._last_manual_initial_pose_refine_mono)
+            < self.manual_initial_pose_refine_cooldown_sec
+        ):
+            self.get_logger().info(
+                "Ignoring repeated manual initial pose within refine cooldown "
+                f"({self.manual_initial_pose_refine_cooldown_sec:.1f}s)."
+            )
+            return
+
+        self._last_manual_initial_pose_refine_mono = now
+        pose = msg.pose.pose
+        yaw = self._yaw_from_quaternion(pose.orientation)
+        payload = {
+            "topic": self.startup_initial_pose_topic,
+            "frame_id": (msg.header.frame_id or self.frame_id or "map").strip() or "map",
+            "x": float(pose.position.x),
+            "y": float(pose.position.y),
+            "yaw": float(yaw),
+            "source": "manual_initial_pose",
+        }
+        self.get_logger().warn(
+            "Manual initial pose received; refreshing localization/navigation "
+            f"(x={payload['x']:.3f}, y={payload['y']:.3f}, yaw={payload['yaw']:.3f}, "
+            f"topic={self.startup_initial_pose_topic})."
+        )
+        self._publish_event(
+            "MANUAL_INITIAL_POSE_REFINEMENT_STARTED", self._task_id_payload(payload)
+        )
+        self._call_nomotion_update(0, "manual_initial_pose")
+        self._request_nav2_lifecycle_startup(0, "manual_initial_pose")
+        if not self.manual_initial_pose_refine_enabled:
+            self.get_logger().info(
+                "Manual initial pose refinement spin is disabled; only refreshing Nav2 lifecycle."
+            )
+            return
+        if self._safety_locked:
+            self.get_logger().info(
+                "Skipping manual initial pose refinement spin because safety lock is active."
+            )
+            return
+        if self._current_action is not None or self._action_queue:
+            self.get_logger().info(
+                "Skipping manual initial pose refinement spin because an action is active."
+            )
+            return
+        self._start_localization_spin(0, "manual_initial_pose", allow_without_action=True)
 
     def _on_nav_goal_feedback(self, feedback_msg: Any) -> None:
         feedback = getattr(feedback_msg, "feedback", None)
@@ -3914,6 +4002,34 @@ class OfficeRobotExecutor(Node):
         if self._last_obstacle_box is not None:
             data["obstacle_box"] = dict(self._last_obstacle_box)
         return data
+
+    def _build_safety_display_text(self) -> str:
+        if self._last_safety_source == "command":
+            return "원격 일시정지"
+
+        obstacle_class = (self._last_obstacle_class or "").strip().lower()
+        obstacle_labels = {
+            "person": "사람",
+            "robot": "로봇",
+            "chair": "의자",
+            "plant": "화분",
+            "bag": "가방",
+        }
+        label = obstacle_labels.get(obstacle_class)
+        distance = self._last_obstacle_distance
+        if label and isinstance(distance, (int, float)) and math.isfinite(distance):
+            return f"{label} {distance:.1f}m 정지"
+        if label:
+            return f"{label} 감지로 정지"
+
+        reason = (self._last_obstacle_reason or "").strip().lower()
+        if "yield" in reason:
+            return "로봇 감지로 양보"
+        if "slow" in reason:
+            return "장애물 감속"
+        if reason:
+            return "장애물로 정지"
+        return "일시정지"
 
     def _set_nav_profile_active(self, active: bool, reason: str) -> None:
         if self._dynamic_nav_profile_manager is None:
