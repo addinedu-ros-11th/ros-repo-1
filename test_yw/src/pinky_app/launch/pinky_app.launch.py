@@ -33,12 +33,13 @@ def generate_launch_description() -> LaunchDescription:
         'yaml_filename': map_yaml_file,
         'base_frame_id': [frame_prefix, 'base_footprint'],
         'odom_frame_id': [frame_prefix, 'odom'],
-        'global_frame_id': 'map', 
+        'global_frame_id': [frame_prefix, 'map'], 
         'robot_base_frame': [frame_prefix, 'base_footprint'],
         'local_frame': [frame_prefix, 'odom'],
         # local_costmap과 global_costmap의 global_frame을 구분하기 위해
         # 아래와 같이 명시적으로 경로를 지정하거나, 공통 분모를 찾아 처리합니다.
-        'global_frame': 'map', 
+        'local_costmap.local_costmap.ros__parameters.global_frame': [frame_prefix, 'odom'],
+        'global_frame': [frame_prefix, 'map'], 
         'scan_topic': 'scan'
     }
 

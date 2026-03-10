@@ -24,7 +24,7 @@
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
                 <!-- AMCL 프레임 명시적 주입 -->
-                <param name="global_frame_id" value="map"/>
+                <!-- <param name="global_frame_id" value="map"/> -->
                 <param name="odom_frame_id" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
                 <param name="base_frame_id" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
                 <remap from="tf" to="/tf"/>
@@ -44,7 +44,7 @@
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
                 <!-- AMCL 프레임 명시적 주입 -->
-                <param name="global_frame_id" value="map"/>
+                <!-- <param name="global_frame_id" value="map"/> -->
                 <param name="odom_frame_id" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
                 <param name="base_frame_id" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
                 <remap from="tf" to="/tf"/>
