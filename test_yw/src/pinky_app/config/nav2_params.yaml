@@ -1,9 +1,9 @@
 amcl:
   ros__parameters:
-    alpha1: 0.15
-    alpha2: 0.15
-    alpha3: 0.15
-    alpha4: 0.15
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
     alpha5: 0.15
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
@@ -17,8 +17,8 @@ amcl:
     laser_min_range: 0.05
     laser_model_type: "likelihood_field"
     max_beams: 60
-    max_particles: 800
-    min_particles: 200
+    max_particles: 3000
+    min_particles: 500
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
@@ -32,13 +32,6 @@ amcl:
     transform_tolerance: 1.0
     update_min_a: 0.05
     update_min_d: 0.05
-    max_particles: 3000
-    min_particles: 500
-    alpha1: 0.05
-    alpha2: 0.05
-    alpha3: 0.05
-    alpha4: 0.05
-    transform_tolerance: 1.0
 
 
 bt_navigator:
@@ -187,7 +180,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
-        inflation_radius: 0.20
+        inflation_radius: 0.003
       always_send_full_costmap: True
 
 map_saver:
@@ -271,3 +264,14 @@ velocity_smoother:
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
     enable_stamped_cmd_vel: false
+
+lifecycle_manager_localization:
+  ros__parameters:
+    autostart: true
+    node_names: ['map_server', 'amcl']
+
+lifecycle_manager_navigation:
+  ros__parameters:
+    autostart: true
+    node_names: ['controller_server', 'smoother_server', 'planner_server', 'behavior_server', 'bt_navigator', 'waypoint_follower', 'velocity_smoother']
+

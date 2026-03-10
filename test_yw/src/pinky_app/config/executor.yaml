@@ -1,7 +1,7 @@
-# Pinky Executor & Navigation 파라미터
+# Pinky Executor & Navigation parameters
 /**:
   ros__parameters:
-    # 로봇 기본 정보
+    # Robot Basic Information
     robot_name: "robot02" 
     robot_id: 2
     mock_mode: false
@@ -9,14 +9,14 @@
     initial_battery: 100.0
     battery_topic: "battery/present"
 
-    # 초기 위치 설정 (Initial Pose)
+    # Initial Pose
     init_x: 0.0
     init_y: 0.0
     init_yaw: 0.0
     spin_speed: 0.6
     spin_duration: 11.0
 
-    # 내비게이션(Nav2) 설정
+    # Navigation (Nav2)
     use_nav2: true
     nav2_action_name: "navigate_to_pose"
     frame_id: "map"
@@ -29,7 +29,7 @@
     nav2_retry_attempts: 3
     nav2_retry_delay_sec: 2.0
     
-    # 정지 및 안전 설정
+    # Safety & Stop
     stop_cmd_vel_topic: "cmd_vel"
     stop_publish_count: 10
     stop_publish_hz: 20.0
@@ -37,7 +37,7 @@
     ai_link_topic: "ai_link"
     include_ai_link_in_status: true
     
-    # 위치 추정(Localization) 품질 관리
+    # Localization
     localization_required: true
     amcl_pose_topic: "amcl_pose"
     odom_topic: "odom"
@@ -49,7 +49,7 @@
     nav2_require_map_odom_tf: true
     nav2_tf_lookup_timeout_sec: 0.1
     
-    # 위치 추정 복구 (Localization Recovery)
+    # Localization Recovery
     localization_recovery_enabled: true
     localization_recovery_max_cycles: 2
     localization_recovery_cooldown_sec: 8.0
@@ -62,27 +62,42 @@
     localization_not_ready_event_name: "LOCALIZATION_NOT_READY"
     localization_not_ready_event_min_interval_sec: 2.0
     
-    # Nav2 Lifecycle 관리
+    # Nav2 Lifecycle
     nav2_lifecycle_check_enabled: true
     nav2_required_active_nodes: "planner_server,controller_server,bt_navigator,behavior_server"
     nav2_lifecycle_get_state_timeout_sec: 0.2
     nav2_lifecycle_reactivate_enabled: true
     nav2_lifecycle_manager_service_name: "lifecycle_manager_navigation/manage_nodes"
-    nav2_lifecycle_manager_wait_sec: 1.0
+    nav2_lifecycle_manager_wait_sec: 0.5
     
-    # 디스플레이 및 안내
+    # Display & Guidance
     enable_display: true
     display_topic: "display"
+    led_topic: "led_command"
     guide_display_period_sec: 2.0
     emit_command_received_event: true
     default_goto_success_event: "ARRIVED_AT_DESTINATION"
     
-    # QR 스캔 설정
+    # Employee Verification
+    employee_verification_enabled: true
+    employee_verification_topic: "employee_verification"
+    employee_verification_min_confidence: 0.5
+    employee_verification_greeting_text: "Hello, Employee"
+    employee_verification_feedback_hold_sec: 5.0
+    employee_verification_cooldown_sec: 5.0
+    employee_verification_qr_fallback_enabled: true
+    employee_verification_qr_prompt_text: "Please scan QR Code"
+    employee_verification_qr_on_success_event: "QR_SCANNED"
+    employee_verification_qr_purpose: "VISITOR_SCAN"
+
+    # QR Scan Settings
     qr_scan_local_enabled: true
     qr_scan_image_topic: "camera/image_raw/compressed"
-    qr_scan_timeout_sec: 15.0
+    qr_scan_timeout_sec: 10.0
     qr_scan_poll_period_sec: 0.2
     qr_always_scan_enabled: true
     qr_always_scan_event_name: "QR_DETECTED"
     qr_always_scan_poll_period_sec: 1.0
     qr_always_scan_min_interval_sec: 3.0
+
+    # scenario_node does not need hardcoded locations anymore as it receives them from main_server.

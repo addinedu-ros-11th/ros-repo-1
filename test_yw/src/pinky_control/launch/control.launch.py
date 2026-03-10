@@ -37,6 +37,15 @@ def generate_launch_description():
             output="screen"
         ),
 
+        # 3. Display Node (LCD Driver)
+        Node(
+            package="pinky_control",
+            executable="display_node",
+            name="display_node",
+            parameters=[params_file],
+            output="screen"
+        ),
+
         # 3. Initial Pose Setter (Auto-localization)
         Node(
             package="pinky_control",

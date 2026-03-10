@@ -49,6 +49,12 @@ class PinkyExecutor(Node):
         self._ai_link_alive: Optional[bool] = None
         self._latest_qr_image: Optional[bytes] = None
         
+        # Employee Verification State
+        self._employee_verification_suppress_until_mono = 0.0
+        self._employee_verification_last_employee_id = ""
+        self._employee_feedback_timer = None
+        self._idle_led_hold_until_mono = 0.0
+
         # Display/LED State
         self._guide_display_timer = None
         self._guide_display_toggle = False
@@ -56,6 +62,14 @@ class PinkyExecutor(Node):
 
         # --- ROS Subscriptions ---
         self.command_sub = self.create_subscription(String, "commands", self._on_commands, 10)
+        self.employee_verification_sub = None
+        if self.p['employee_verification_enabled']:
+            self.employee_verification_sub = self.create_subscription(
+                String,
+                self.p['employee_verification_topic'],
+                self._on_employee_verification,
+                10
+            )
         self.odom_sub = self.create_subscription(Odometry, self.p['odom_topic'], self._on_odom, 10)
         self.battery_sub = self.create_subscription(Float32, self.p['battery_topic'], self._on_battery, 10)
         self.amcl_pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.p['amcl_pose_topic'], self._on_amcl_pose, 10)
@@ -68,9 +82,17 @@ class PinkyExecutor(Node):
             self.qr_sub = self.create_subscription(CompressedImage, self.p['qr_scan_image_topic'], self._on_qr_image, 10)
 
         # --- ROS Publishers ---
-        self.status_pub = self.create_publisher(String, "status", 10)
-        self.event_pub = self.create_publisher(String, "event", 10)
+        # Use Transient Local QoS for status and event so late-joining subscribers get the last message
+        self.latching_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE
+        )
+        
+        self.status_pub = self.create_publisher(String, "status", self.latching_qos)
+        self.event_pub = self.create_publisher(String, "event", self.latching_qos)
         self.display_pub = self.create_publisher(String, self.p['display_topic'], 10)
+        self.led_pub = self.create_publisher(String, self.p['led_topic'], 10)
         self.stop_pub = self.create_publisher(Twist, self.p['stop_cmd_vel_topic'], 10)
 
         # --- Timers ---
@@ -80,7 +102,7 @@ class PinkyExecutor(Node):
             self.create_timer(self.p['qr_always_scan_poll_period_sec'], self._poll_always_qr_scan)
 
         self.get_logger().info(f"Pinky Executor {self.robot_name} (ID:{self.robot_id}) ready.")
-        self._publish_display("준비 완료", "check")
+        self._publish_display("Ready", "check")
 
     def _declare_params(self):
         params = [
@@ -100,7 +122,7 @@ class PinkyExecutor(Node):
             ("localization_allow_degraded_covariance", True), ("nav2_require_map_odom_tf", True),
             ("nav2_tf_lookup_timeout_sec", 0.1), ("localization_recovery_enabled", True),
             ("localization_recovery_max_cycles", 2), ("localization_recovery_spin_duration_sec", 4.0),
-            ("localization_recovery_spin_angular_speed", 0.8), ("display_topic", "display"),
+            ("localization_recovery_spin_angular_speed", 0.8), ("display_topic", "display"), ("led_topic", "led_command"),
             ("qr_scan_local_enabled", True), ("qr_scan_image_topic", "camera/image_raw/compressed"),
             ("qr_scan_timeout_sec", 15.0), ("qr_scan_poll_period_sec", 0.2),
             ("qr_always_scan_enabled", True), ("qr_always_scan_poll_period_sec", 1.0),
@@ -112,7 +134,12 @@ class PinkyExecutor(Node):
             ("nav2_lifecycle_check_enabled", True), ("nav2_lifecycle_reactivate_enabled", True),
             ("nav2_lifecycle_manager_service_name", "lifecycle_manager_navigation/manage_nodes"),
             ("nav2_required_active_nodes", "planner_server,controller_server,bt_navigator,behavior_server"),
-            ("nav2_lifecycle_get_state_timeout_sec", 0.2), ("nav2_lifecycle_manager_wait_sec", 1.0)
+            ("nav2_lifecycle_get_state_timeout_sec", 0.2), ("nav2_lifecycle_manager_wait_sec", 1.0),
+            ("employee_verification_enabled", False), ("employee_verification_topic", "employee_verification"),
+            ("employee_verification_min_confidence", 0.5), ("employee_verification_greeting_text", "Hello, Employee"),
+            ("employee_verification_feedback_hold_sec", 5.0), ("employee_verification_cooldown_sec", 5.0),
+            ("employee_verification_qr_fallback_enabled", True), ("employee_verification_qr_prompt_text", "Please scan \n QR Code"),
+            ("employee_verification_qr_on_success_event", "QR_SCANNED"), ("employee_verification_qr_purpose", "VISITOR_SCAN")
         ]
         for name, default in params:
             self.declare_parameter(name, default)
@@ -170,7 +197,14 @@ class PinkyExecutor(Node):
         except: 
             return
         
-        if not self._is_for_this_robot(payload): return
+        incoming_task_id = payload.get("task_id", payload.get("sequence_id"))
+        
+        # 1. Ignore if it's the exact same task already running
+        if incoming_task_id is not None and incoming_task_id == self._current_task_id:
+            return
+
+        if not self._is_for_this_robot(payload): 
+            return
         
         try:
             cmd_type = str(payload.get("type", "")).upper().strip()
@@ -186,17 +220,21 @@ class PinkyExecutor(Node):
             if cmd_type == "CANCEL":
                 self._cancel_active_sequence("User Cancel"); return
 
-            if not actions: return
+            if not actions: 
+                return
+                
+            # 2. Preemption: If a NEW task comes in while busy, cancel the old one
+            if self._action_queue or self._current_action:
+                self.get_logger().info(f"Preempting Task {self._current_task_id} for New Task {incoming_task_id}")
+                self._cancel_active_sequence("Preempted", notify_server=False)
+
             if self._safety_locked:
                 self._publish_status(self.current_status, event="ACTION_FAILED", extra={"reason": "safety_locked"})
                 return
-            
-            if self._action_queue or self._current_action:
-                self.get_logger().warn("Executor busy, rejecting sequence.")
-                return
 
             self._action_queue = actions
-            self._current_task_id = payload.get("task_id", payload.get("sequence_id"))
+            self._current_task_id = incoming_task_id
+            self.get_logger().info(f"Accepted Task {self._current_task_id}")
             self._publish_status("ASSIGNED")
             self._run_next_action()
         except Exception as e:
@@ -208,18 +246,109 @@ class PinkyExecutor(Node):
         self._safety_locked = enabled
         if self._safety_locked:
             self.get_logger().warn(f"Safety Lock Engaged (Source: {source})")
-            self._publish_display("일시정지", "pause")
+            self._publish_display("Paused", "pause")
             if self.current_status in ["MOVING", "GUIDING", "WAITING"]:
                 self._cancel_active_sequence(f"Safety Lock ({source})")
             self._publish_status("WAITING", event="SAFETY_STOPPED")
         else:
             self.get_logger().info(f"Safety Lock Released (Source: {source})")
-            self._publish_display("대기", "idle")
+            self._publish_display("Idle", "idle")
             self._publish_status("IDLE", event="SAFETY_RESUMED")
 
     def _on_safety_lock(self, msg: Bool): self._set_safety_lock(msg.data, "topic")
     def _on_ai_link(self, msg: Bool): self._ai_link_alive = msg.data
     def _on_battery(self, msg: Float32): self.battery = msg.data
+
+    def _on_employee_verification(self, msg: String):
+        try:
+            payload = json.loads(msg.data)
+        except: return
+        
+        # FleetManager sends data as it comes from AI server
+        # data = {"robot_id": ..., "content": {"person_type": ..., "confidence": ..., "employee_id": ...}, "type": "face_recognition"}
+        # Some systems might use "EMPLOYEE_RESULT" as a wrapper type
+        msg_type = str(payload.get("type", "")).strip().lower()
+        
+        # Check if this is a face/employee related message
+        if msg_type not in ["face_recognition", "employee_result"]: 
+            return
+        
+        content = payload.get("content", payload.get("payload", {}))
+        if not isinstance(content, dict): return
+        
+        person_type = str(content.get("person_type", "")).strip().lower()
+        confidence = self._to_float(content.get("confidence")) or 0.0
+        
+        if person_type != "employee":
+            self._handle_employee_verification_non_employee(person_type=person_type or "unknown", confidence=confidence)
+            return
+            
+        if confidence < self.p['employee_verification_min_confidence']:
+            self._handle_employee_verification_non_employee(person_type="employee_low_confidence", confidence=confidence)
+            return
+            
+        employee_id = str(content.get("employee_id", "")).strip()
+        if time.monotonic() < self._employee_verification_suppress_until_mono:
+            return
+            
+        self._handle_employee_verification(employee_id=employee_id, confidence=confidence)
+
+    def _handle_employee_verification(self, employee_id: str, confidence: float):
+        self._employee_verification_suppress_until_mono = time.monotonic() + self.p['employee_verification_cooldown_sec']
+        self._employee_verification_last_employee_id = employee_id
+        self._idle_led_hold_until_mono = time.monotonic() + self.p['employee_verification_feedback_hold_sec']
+        
+        self._publish_led({"color": "GREEN", "mode": "SOLID"})
+        self._publish_display(self.p['employee_verification_greeting_text'], "display")
+        
+        self._publish_event("EMPLOYEE_VERIFIED", {
+            "employee_id": employee_id,
+            "confidence": float(confidence),
+            "source": "employee_verification"
+        })
+        self.get_logger().info(f"Employee Verified: {employee_id} (conf:{confidence:.2f})")
+        self._schedule_employee_feedback_restore()
+
+    def _handle_employee_verification_non_employee(self, person_type: str, confidence: float):
+        if not self.p['employee_verification_enabled']: return
+        
+        now = time.monotonic()
+        if now < self._employee_verification_suppress_until_mono: return
+        
+        # Only show feedback if IDLE
+        if self.current_status != "IDLE":
+            return
+
+        self.get_logger().info(f"Non-employee detected ({person_type}, conf:{confidence:.2f}). Waiting for server instructions.")
+        
+        # Prevent multiple logs for the same person
+        self._employee_verification_suppress_until_mono = now + self.p['employee_verification_cooldown_sec']
+        
+        # Optional: Just show immediate visual feedback that someone is detected
+        # The actual QR_SCAN command will come from main_server's GUEST_CHECK task
+        self._publish_display("Unknown Person", "wait")
+        self._publish_led({"color": "YELLOW", "mode": "BLINK", "rate": 2.0})
+
+    def _schedule_employee_feedback_restore(self):
+        if self._employee_feedback_timer: self._employee_feedback_timer.cancel()
+        self._employee_feedback_timer = self.create_timer(self.p['employee_verification_feedback_hold_sec'], self._restore_employee_feedback)
+
+    def _restore_employee_feedback(self):
+        if self._employee_feedback_timer: self._employee_feedback_timer.cancel(); self._employee_feedback_timer = None
+        if self.current_status == "IDLE":
+            self._publish_display("Idle", "idle")
+            self._publish_led({"command": "clear", "mode": "OFF"})
+
+    def _publish_led(self, params: Dict):
+        try:
+            self.led_pub.publish(String(data=json.dumps(params)))
+        except: pass
+
+    def _to_float(self, val: Any) -> Optional[float]:
+        try:
+            f = float(val)
+            return f if math.isfinite(f) else None
+        except: return None
 
     def _on_odom(self, msg: Odometry):
         self.location = (msg.pose.pose.position.x, msg.pose.pose.position.y)
@@ -237,7 +366,7 @@ class PinkyExecutor(Node):
                 
             if not self._action_queue:
                 self.current_status = "IDLE"; self._current_task_id = self._current_action = None
-                self._publish_display("대기", "idle"); self._stop_guide_display(); self._publish_status("IDLE")
+                self._publish_display("Idle", "idle"); self._stop_guide_display(); self._publish_status("IDLE")
                 return
 
             action_data = self._action_queue.pop(0)
@@ -250,25 +379,52 @@ class PinkyExecutor(Node):
 
             if action in ["GOTO", "LEAD_GUEST"]:
                 self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
-                self._publish_display("이동 중" if action == "GOTO" else "안내 중", "delivery" if action == "GOTO" else "guide")
+                self._publish_display("Moving" if action == "GOTO" else "Guiding", "delivery" if action == "GOTO" else "guide")
                 if action == "LEAD_GUEST": self._start_guide_display()
                 self._publish_status(self.current_status)
-                self.nav_handler.send_goto(float(params.get("x", 0.0)), float(params.get("y", 0.0)), float(params.get("yaw", 0.0)), self._on_goto_finished)
+                
+                # Support both 'yaw' and 'theta' from main_server
+                target_x = float(params.get("x", 0.0))
+                target_y = float(params.get("y", 0.0))
+                target_yaw = float(params.get("yaw", params.get("theta", 0.0)))
+                
+                self.nav_handler.send_goto(target_x, target_y, target_yaw, self._on_goto_finished)
                 
             elif action == "QR_SCAN":
-                self.current_status = "WAITING"; self._publish_display("QR 스캔 중", "qr"); self._publish_status("WAITING")
+                self.current_status = "WAITING"; self._publish_display("Scan QR Code", "qr"); self._publish_status("WAITING")
                 self._start_qr_scan_loop(on_success)
-                
+
             elif action == "DISPLAY_TEXT":
-                text = params.get("text", "안내중")
+                text = params.get("text", "Information")
                 duration = float(params.get("duration", self.p['execution_delay_sec']))
                 self._publish_display(text, "display"); self._publish_status("WAITING")
                 if duration > 0: self._action_timer = self.create_timer(duration, self._run_next_action)
-                
-            elif action == "SET_LED":
-                self._current_led = {"color": params.get("color", "OFF"), "mode": params.get("mode", "SOLID")}
-                self.get_logger().info(f"LED Changed: {self._current_led}")
+
+            elif action == "WAIT_FOR_USER":
+                self.current_status = "WAITING"; self._publish_display(params.get("text", "Waiting for User"), "wait")
+                self._publish_status("WAITING", extra={"waiting_for": params.get("type", "user_confirm")})
+                # No timer, waits for manual RESUME or next command
+
+            elif action == "PLAY_SOUND":
+                self.get_logger().info(f"Playing Sound: {params.get('name', 'default')}")
                 self._run_next_action()
+
+            elif action in ["QR_SCAN_SUCCESS", "QR_SCAN_FAILED"]:
+                self.current_status = "WAITING"
+                text = "Success" if action == "QR_SCAN_SUCCESS" else "Failed"
+                icon = "qr_success" if action == "QR_SCAN_SUCCESS" else "qr_failed"
+                self._publish_display(text, icon)
+                self._action_timer = self.create_timer(2.0, self._run_next_action)
+
+            elif action == "SET_LED":
+                self._current_led = {
+                    "color": params.get("color", "OFF"), 
+                    "mode": params.get("mode", "SOLID"),
+                    "rate": params.get("rate", 1.0)
+                }
+                self._publish_led(self._current_led)
+                self._run_next_action()
+
                 
             elif action == "WAIT":
                 self.current_status = "WAITING"; self._publish_status("WAITING")
@@ -287,41 +443,66 @@ class PinkyExecutor(Node):
     def _on_goto_finished(self, success: bool, msg: str, feedback: Optional[Dict]):
         if success:
             event = self._current_action.get("on_success", self.p['default_goto_success_event'])
+            self._publish_event(event, {"task_id": self._current_task_id}) 
             self._publish_status(self.current_status, event=event)
             self._run_next_action()
         else:
             self.get_logger().error(f"Navigation failed: {msg}")
+            self.current_status = "ERROR"
             self._publish_status("ERROR", event="ACTION_FAILED", extra={"reason": msg})
-            self._cancel_active_sequence(msg)
+            # Failure here cancels the rest of the sequence
+            self._cancel_active_sequence(f"Nav Failure: {msg}")
 
     def _start_qr_scan_loop(self, on_success: Optional[str]):
-        start_time = time.monotonic()
-        def _poll():
-            if self._safety_locked or self.current_status != "WAITING": return
-            if time.monotonic() - start_time > self.p['qr_scan_timeout_sec']:
-                self._publish_status("WAITING", event="ACTION_FAILED", extra={"reason": "qr_timeout"})
-                self._run_next_action(); return
+        self._qr_scan_start_time = time.monotonic()
+        self._qr_scan_on_success = on_success
+        # Use repeating timer for polling
+        self._action_timer = self.create_timer(self.p['qr_scan_poll_period_sec'], self._poll_qr_scan)
+
+    def _poll_qr_scan(self):
+        if self._safety_locked or self.current_status != "WAITING":
+            if self._action_timer: self._action_timer.cancel(); self._action_timer = None
+            return
+
+        # Check timeout (now 5 seconds as per YAML)
+        if time.monotonic() - self._qr_scan_start_time > self.p['qr_scan_timeout_sec']:
+            self.get_logger().warn("QR Scan Timeout - Reverting to Idle")
+            if self._action_timer: self._action_timer.cancel(); self._action_timer = None
             
-            decoded = self.qr_handler.decode(self._latest_qr_image)
-            if decoded:
-                event = on_success or "QR_SCANNED"
-                self._publish_status(self.current_status, event=event, extra={"scanned_data": decoded})
-                self._run_next_action(); return
+            # Show "Failed" for a moment then go to next (Idle)
+            self._publish_display("Failed", "qr_failed")
+            self._publish_status("WAITING", event="ACTION_FAILED", extra={"reason": "qr_timeout"})
             
-            # Manually handle one-shot by creating a new timer for each poll
-            self._action_timer = self.create_timer(self.p['qr_scan_poll_period_sec'], _poll)
-        _poll()
+            # CRITICAL: Clear current action so we are not 'busy' during display delay
+            self._current_action = None 
+            self._action_timer = self.create_timer(2.0, self._run_next_action)
+            return
+
+        decoded = self.qr_handler.decode(self._latest_qr_image)
+        if decoded:
+            self.get_logger().info(f"QR Decoded: {decoded}")
+            if self._action_timer: self._action_timer.cancel(); self._action_timer = None
+            
+            self._publish_display("Success", "qr_success")
+            event = self._qr_scan_on_success or "QR_SCANNED"
+            self._publish_status(self.current_status, event=event, extra={"scanned_data": decoded})
+            
+            # CRITICAL: Clear current action so we are not 'busy' during display delay
+            self._current_action = None
+            self._action_timer = self.create_timer(2.0, self._run_next_action)
 
     def _poll_always_qr_scan(self):
         if self.current_status == "WAITING": return
         decoded = self.qr_handler.decode(self._latest_qr_image)
         if decoded: self._publish_event(self.p['qr_always_scan_event_name'], {"scanned_data": decoded})
 
-    def _cancel_active_sequence(self, reason: str):
+    def _cancel_active_sequence(self, reason: str, notify_server: bool = True):
         self._action_queue = []; self._current_action = None
         if self._action_timer: self._action_timer.cancel()
         self.nav_handler.cancel_goal(); self._stop_guide_display(); self._publish_zero_cmd_vel()
-        self.current_status = "IDLE"; self._publish_status("IDLE", event="SEQUENCE_CANCELED", extra={"reason": reason})
+        self.current_status = "IDLE"
+        if notify_server:
+            self._publish_status("IDLE", event="SEQUENCE_CANCELED", extra={"reason": reason})
         self._current_task_id = None
 
     def _publish_zero_cmd_vel(self):
@@ -330,9 +511,22 @@ class PinkyExecutor(Node):
             self.stop_pub.publish(msg); time.sleep(1.0 / self.p['stop_publish_hz'])
 
     def _is_for_this_robot(self, payload: Dict) -> bool:
-        t_id, t_name = payload.get("robot_id"), payload.get("robot_name")
-        if t_id is not None and int(t_id) != self.robot_id: return False
-        if t_name is not None and t_name != self.robot_name: return False
+        t_id = payload.get("robot_id")
+        t_name = payload.get("robot_name")
+        
+        # Robust ID check
+        if t_id is not None:
+            try:
+                # Try integer comparison first
+                if int(t_id) != self.robot_id:
+                    return False
+            except (ValueError, TypeError):
+                # If t_id is not an integer (e.g. string name sent as ID), rely on robot_name or ignore
+                self.get_logger().warn(f"Received non-integer robot_id: {t_id}. Relying on robot_name check.")
+        
+        if t_name is not None and str(t_name).strip() != self.robot_name: 
+            return False
+            
         return True
 
     def _extract_actions(self, payload: Dict) -> List[Dict]:
@@ -360,7 +554,7 @@ class PinkyExecutor(Node):
         self._stop_guide_display()
         def _tick():
             self._guide_display_toggle = not self._guide_display_toggle
-            self._publish_display("안내 중" if self._guide_display_toggle else "Follow Me", "guide")
+            self._publish_display("Guiding" if self._guide_display_toggle else "Follow Me", "guide")
         self._guide_display_timer = self.create_timer(self.p['guide_display_period_sec'], _tick)
 
     def _stop_guide_display(self):

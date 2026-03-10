@@ -25,6 +25,7 @@ setup(
             "executor_node = pinky_control.executor_node:main",
             "safety_node = pinky_control.safety_node:main",
             "camera_node = pinky_control.camera_node:main",
+            "display_node = pinky_control.display_node:main",
             "initial_pose_setter = pinky_control.initial_pose_setter:main",
         ],
     },
