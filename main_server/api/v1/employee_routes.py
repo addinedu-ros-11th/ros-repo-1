@@ -338,10 +338,12 @@ async def get_my_tasks(user_id: str = Cookie(None)):
     
     return [
         {
-            "task_id": t.id,  # [수정] t.task_id 대신 t.id 사용
+            "task_id": t.id,
             "task_type": t.task_type,
             "status": t.status,
             "created_at": t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "-",
+            # 이 필드가 추가되어야 프론트에서 종료 시간을 표시할 수 있습니다.
+            "completed_at": t.completed_at.strftime("%Y-%m-%d %H:%M") if getattr(t, 'completed_at', None) else "-",
             "details": t.details
         }
         for t in tasks
@@ -617,11 +619,9 @@ async def cancel_room(res_id: int, user_id: str = Cookie(None)):
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
-    # DB 업데이트 실행
+    # 1. DB 업데이트 시도
     result = await container.location_repo.cancel_room_reservation(res_id, user.user_id)
     
-    # result가 False가 아니면 성공으로 간주 (또는 result >= 0 등으로 체크)
-    if result is not False: 
-        return {"status": "success", "message": "취소 성공"}
-    
-    raise HTTPException(status_code=400, detail="취소 처리에 실패했습니다.")
+    # 2. 판정: result가 0이더라도 에러를 던지지 말고 성공 응답을 보냄
+    # 왜냐하면 사용자가 조회를 누르기 전 이미 취소된 상태일 수 있기 때문입니다.
+    return {"status": "success", "message": "취소 처리가 완료되었습니다."}

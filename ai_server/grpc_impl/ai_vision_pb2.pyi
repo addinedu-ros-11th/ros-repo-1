@@ -37,14 +37,16 @@ class ImageRequest(_message.Message):
     def __init__(self, image_id: _Optional[str] = ..., image_data: _Optional[bytes] = ...) -> None: ...
 
 class ObjectDetectionResponse(_message.Message):
-    __slots__ = ("object_name", "confidence", "box")
+    __slots__ = ("object_name", "confidence", "box", "class_id")
     OBJECT_NAME_FIELD_NUMBER: _ClassVar[int]
     CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
     BOX_FIELD_NUMBER: _ClassVar[int]
+    CLASS_ID_FIELD_NUMBER: _ClassVar[int]
     object_name: str
     confidence: float
     box: BoundingBox
-    def __init__(self, object_name: _Optional[str] = ..., confidence: _Optional[float] = ..., box: _Optional[_Union[BoundingBox, _Mapping]] = ...) -> None: ...
+    class_id: int
+    def __init__(self, object_name: _Optional[str] = ..., confidence: _Optional[float] = ..., box: _Optional[_Union[BoundingBox, _Mapping]] = ..., class_id: _Optional[int] = ...) -> None: ...
 
 class BoundingBox(_message.Message):
     __slots__ = ("x", "y", "width", "height")

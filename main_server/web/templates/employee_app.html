@@ -12,7 +12,7 @@
     <div class="container">
         <div class="panel reservation-panel">
             <div class="tab-menu">
-                <button class="tab-btn active" onclick="switchTab(event, 'visit-section')">방문 예약 및 현황</button>
+                <button class="tab-btn active" onclick="switchTab(event, 'visit-section')">방문 예약</button>
                 <button class="tab-btn" onclick="switchTab(event, 'room-section')">회의실 예약</button>
             </div>
 
@@ -85,8 +85,8 @@
                         <table class="res-table excel-style">
                             <thead>
                                 <tr>
-                                    <th>회의실</th>
                                     <th>예약 날짜</th>
+                                    <th>회의실</th>
                                     <th>예약 시간</th>
                                     <th>종료 시간</th>
                                     <th>상태/관리</th>
@@ -102,18 +102,16 @@
         <div class="panel combined-control-panel">
             <div class="res-list-header">
                 <div class="control-section-title" style="margin: 0;">🤖 로봇 업무 수행 현황</div>
-                <button class="btn-refresh btn-call-header" onclick="robotAction('call')">
-                    로봇 호출 ⚡
-                </button>
             </div>
 
             <div class="table-wrapper">
                 <table class="res-table excel-style" id="robot-task-table">
                     <thead>
                         <tr>
+                            <th>시작 시간</th>
                             <th>업무 유형</th>
-                            <th>상태</th>
-                            <th>관리</th>
+                            <th>진행 상황</th>
+                            <th>종료 시간</th>
                         </tr>
                     </thead>
                     <tbody id="robot-task-body">
@@ -228,9 +226,8 @@
         }
 
         // # ---------------------------------------------------------
-        // # 2. 로봇 업무 현황
+        // # 2. 로봇 업무 현황 (종료 시간/취소됨 조건부 표시)
         // # ---------------------------------------------------------
-
         async function loadMyRobotTasks() {
             const tbody = document.getElementById('robot-task-body');
             if (!tbody) return;
@@ -240,71 +237,74 @@
                 if (!response.ok) throw new Error("Failed to fetch tasks");
                 
                 const tasks = await response.json();
-                console.log("실제 받은 Task 데이터:", tasks); // 디버깅용: 콘솔에서 status 값을 확인하세요
 
-                if (tasks.length === 0) {
+                const allowedTypes = ['SNACK_DELIVERY', 'ITEM_DELIVERY', 'MANUAL_MOVE'];
+                const filteredTasks = tasks.filter(t => allowedTypes.includes(t.task_type));
+
+                if (filteredTasks.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">수행 중인 업무가 없습니다.</td></tr>';
                     return;
                 }
 
+                const typeMap = {
+                    'SNACK_DELIVERY': '간식 배달',
+                    'ITEM_DELIVERY': '물품 배달',
+                    'MANUAL_MOVE': '장소 이동'
+                };
+
+                const statusMap = {
+                    'PENDING': '접수중',
+                    'ASSIGNED': '로봇 배정',
+                    'IN_PROGRESS': '이동중',
+                    'ARRIVED': '목적지 도착',
+                    'COMPLETED': '완료',
+                    'CANCELLED': '취소',
+                    'FAILED': '실패'
+                };
+
                 tbody.innerHTML = ''; 
-                tasks.forEach(task => {
+                filteredTasks.forEach(task => {
                     const row = document.createElement('tr');
                     row.id = `task-${task.task_id}`;
 
-                    const detailsText = task.details ? JSON.stringify(task.details) : "-";
+                    const statusText = statusMap[task.status] || task.status;
                     
-                    // 버튼 부분: 전용 클래스(robot-btn) 적용 및 인라인 스타일 제거
-                    let actionHtml = `
-                        <div style="display: flex; gap: 4px; justify-content: center;">
-                            <button class="robot-btn btn-robot-confirm" 
-                                onclick="updateTaskStatus('${task.task_id}', 'COMPLETED')">수령 확인</button>
-                            <button class="robot-btn btn-robot-cancel" 
-                                onclick="updateTaskStatus('${task.task_id}', 'CANCELLED')">취소</button>
-                        </div>
-                    `;
+                    let actionHtml = `<div><span class="robot-status-badge">${statusText}</span></div>`;
+                    
+                    if (!['COMPLETED', 'CANCELLED', 'FAILED'].includes(task.status)) {
+                        actionHtml += `
+                            <div style="display: flex; gap: 4px; justify-content: center; align-items: center; margin-top: 4px;">
+                                <button class="robot-btn btn-robot-confirm" 
+                                    onclick="updateTaskStatus('${task.task_id}', 'COMPLETED')">수령 확인</button>
+                                <button class="robot-btn btn-robot-cancel" 
+                                    onclick="updateTaskStatus('${task.task_id}', 'CANCELLED')">취소</button>
+                            </div>
+                        `;
+                    }
+
+                    // --- [핵심 수정 부분: 종료 시간 표시 로직] ---
+                    const startTime = task.created_at || "-";
+                    let endTime = "-";
+
+                    if (task.completed_at && task.completed_at !== "-") {
+                        // 종료 시간이 실제로 존재하는 경우
+                        endTime = task.completed_at;
+                    } else if (task.status === 'CANCELLED') {
+                        // 종료 시간은 없지만 상태가 취소인 경우
+                        endTime = "취소됨";
+                    }
+                    // ------------------------------------------
 
                     row.innerHTML = `
-                        <td class="col-type">${task.task_type}</td>
-                        <td class="col-status"><span class="status-badge">${task.status}</span></td>
-                        <td class="col-action">${actionHtml}</td>
+                        <td class="col-time" style="text-align: center !important;">${startTime}</td>
+                        <td class="col-type" style="text-align: center !important;">${typeMap[task.task_type] || task.task_type}</td>
+                        <td class="col-status" style="text-align: center !important;">${actionHtml}</td>
+                        <td class="col-time" style="text-align: center !important;">${endTime}</td>
                     `;
                     tbody.appendChild(row);
                 });
             } catch (e) {
                 console.error("로봇 작업 목록 로드 실패:", e);
-            }
-        }
-
-        // 중복된 updateTaskStatus를 하나로 합치고 기능을 확정합니다.
-        async function updateTaskStatus(taskId, newStatus) {
-            const isCompleted = (newStatus === 'COMPLETED');
-            const confirmMsg = isCompleted ? "수령 확인하시겠습니까?" : "취소하시겠습니까?";
-            
-            if (!confirm(confirmMsg)) return;
-
-            try {
-                const response = await fetch('/api/v1/employee/confirm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        task_id: parseInt(taskId),
-                        // 백엔드 TaskManager/Repository의 수령 확인 액션은 'RECEIVE' 또는 'LOAD'입니다.
-                        // 요구사항에 맞춰 COMPLETED로 수정하기 위해 'RECEIVE'를 보냅니다.
-                        action_type: isCompleted ? 'RECEIVE' : 'CANCEL' 
-                    })
-                });
-                
-                const result = await response.json();
-                if (response.ok && (result.status === 'success' || result.status === 'ok')) {
-                    alert(isCompleted ? "수령 확인되었습니다." : "취소되었습니다.");
-                    await loadMyRobotTasks(); // 목록 새로고침
-                } else {
-                    alert("처리 실패: " + (result.message || "권한이 없거나 상태를 변경할 수 없습니다."));
-                }
-            } catch (e) {
-                console.error("상태 업데이트 실패:", e);
-                alert("서버 통신 중 오류가 발생했습니다.");
             }
         }
 
@@ -527,7 +527,7 @@
         // # 3.5 회의실 예약
         // # ---------------------------------------------------------
         
-        // 1. DB에서 회의실 목록 가져오기 (방문 예약의 목적지 로드 방식과 동일하게 연동)
+        // 1. DB에서 회의실 목록 가져오기 (ID 5, 6만 필터링)
         async function loadRoomOptions() {
             const select = document.getElementById('room-location');
             if (!select) return;
@@ -536,12 +536,21 @@
                 const response = await fetch('/api/v1/employee/locations');
                 const locations = await response.json();
                 
+                // 기존 옵션이 있다면 초기화 (회의실 선택 문구 유지)
+                select.innerHTML = '<option value="">회의실 선택</option>';
+                
                 locations.forEach(loc => {
-                    const opt = document.createElement('option');
-                    opt.value = loc.location_id;
-                    opt.textContent = `${loc.name} (${loc.type})`;
-                    select.appendChild(opt);
+                    // ⭐ 수정 포인트: location_id가 5 또는 6인 경우만 리스트에 추가
+                    if (loc.location_id === 5 || loc.location_id === 6) {
+                        const opt = document.createElement('option');
+                        opt.value = loc.location_id;
+                        // 관리자 페이지와 통일감을 위해 (회의실) 등 타입 표시 유지 혹은 이름만 표시
+                        opt.textContent = loc.name; 
+                        select.appendChild(opt);
+                    }
                 });
+                
+                console.log("✅ 회의실 필터링 완료 (ID 5, 6만 표시)");
             } catch (e) {
                 console.error("목적지 목록 로드 실패:", e);
             }
@@ -577,14 +586,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // ⭐ 성공 알림 후 즉시 목록 갱신 (긴빠이 친 로직)
+                    // ⭐ 성공 알림 후 즉시 목록 갱신
                     alert("회의실 예약 신청이 완료되었습니다.");
                     await loadRoomReservations(); 
                     
                     // 폼 초기화
-                    document.getElementById('room-location').value = "";
-                    document.getElementById('room-start-time').value = "";
-                    document.getElementById('room-end-time').value = "";
+                    initRoomForm();
+
                 } else {
                     // 중복 예약 시 detail 메시지 출력
                     alert("예약 실패: " + (result.detail || "오류 발생"));
@@ -596,61 +604,118 @@
         
         //회의실 예약 현황 로드 함수
         async function loadRoomReservations() {
-            const tbody = document.getElementById('room-table-body');
+            const tbody = document.getElementById('room-table-body') || document.getElementById('my-room-res-list');
+            if (!tbody) return;
+
             try {
                 const response = await fetch('/api/v1/employee/reservations/room/my');
-                const data = await response.json();
+                let data = await response.json();
+                
                 tbody.innerHTML = '';
 
-                data.forEach(res => {
-                    const isCancelled = res.status === 'CANCLE';
-                    const row = document.createElement('tr');
-                    
-                    // 시간 끝에 : 가 붙는 문제를 방지하기 위한 정규화 (09:00:00 -> 09:00)
+                // 1. [필터링] 오늘 날짜보다 이전인 예약은 제외
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // 비교를 위해 시/분/초 초기화
+
+                let filteredData = data.filter(res => {
+                    const resDate = new Date(res.reservation_date);
+                    resDate.setHours(0, 0, 0, 0);
+                    return resDate >= today; // 오늘을 포함하여 미래의 예약만 남김
+                });
+
+                // 2. [정렬] 날짜순 -> 날짜가 같으면 시간순
+                filteredData.sort((a, b) => {
+                    if (a.reservation_date !== b.reservation_date) {
+                        return a.reservation_date.localeCompare(b.reservation_date);
+                    }
+                    return a.start_time.localeCompare(b.start_time);
+                });
+
+                if (!filteredData || filteredData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">예약 내역이 없습니다.</td></tr>';
+                    return;
+                }
+
+                // 3. 렌더링 (정렬 및 필터링된 filteredData 사용)
+                filteredData.forEach(res => {
+                    let statusText = "";
+                    let statusClass = "";
+                    let showCancelBtn = (res.status === 'PENDING');
+
+                    switch(res.status) {
+                        case 'PENDING':
+                            statusText = "예약중";
+                            statusClass = "pending"; 
+                            break;
+                        case 'CHECKED_IN':
+                            statusText = "사용중";
+                            statusClass = "moving";    
+                            break;
+                        case 'EXPIRED':
+                            statusText = "만료됨";
+                            statusClass = "busy"; 
+                            break;
+                        case 'CANCLE':
+                            statusText = "취소됨";
+                            statusClass = "error";    
+                            break;
+                        default:
+                            statusText = res.status;
+                            statusClass = "idle";
+                    }
+
                     const formatTime = (t) => t ? String(t).split(':').slice(0, 2).join(':') : '-';
                     const sTime = formatTime(res.start_time);
                     const eTime = formatTime(res.end_time);
 
+                    const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${res.room_name}</td>
-                        <td>${res.reservation_date}</td>
+                        <td>${res.reservation_date || '-'}</td>
+                        <td>${res.room_name || '-'}</td>
                         <td>${sTime}</td>
                         <td>${eTime}</td>
                         <td>
-                            <span class="status-badge ${isCancelled ? 'expired' : 'complete'}">
-                                ${res.status}
-                            </span>
-                            ${!isCancelled ? 
-                                `<button class="btn-cancel" onclick="cancelRoom(${res.reservation_id})" 
-                                        style="margin-left:8px; border-radius:4px; border:1px solid #ff4d4f; color:#ff4d4f; background:#fff; cursor:pointer;">취소</button>` 
-                                : ''}
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                                <span class="status-badge ${statusClass}">
+                                    ${statusText}
+                                </span>
+                                ${showCancelBtn ? 
+                                    `<button class="btn-cancel" onclick="cancelRoom(${res.reservation_id})" 
+                                            style="padding:2px 8px; border-radius:4px; border:1px solid #ff4d4f; color:#ff4d4f; background:#fff; cursor:pointer; font-size:11px;">취소</button>` 
+                                    : ''}
+                            </div>
                         </td>
                     `;
                     tbody.appendChild(row);
                 });
             } catch (e) {
+                console.error("데이터 로드 중 오류:", e);
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">데이터 로드 중 오류가 발생했습니다.</td></tr>';
             }
         }
 
         async function cancelRoom(resId) {
             if (!confirm("예약을 취소하시겠습니까?")) return;
+
+            // 중복 클릭 방지를 위해 잠시 버튼들을 비활성화하거나 상태 변수 사용 가능
             try {
                 const response = await fetch(`/api/v1/employee/reservations/room/${resId}/cancel`, {
                     method: 'PATCH'
                 });
                 
+                // 결과와 상관없이 일단 json을 파싱
                 const result = await response.json();
 
-                // 서버 응답의 status가 success인 경우만 성공 처리
-                if (response.ok && result.status === 'success') {
+                if (response.ok) {
                     alert("취소 처리가 완료되었습니다.");
-                    // 새로고침 없이 목록을 즉시 업데이트
-                    await loadRoomReservations(); 
                 } else {
-                    // 서버가 던진 상세 에러 메시지 출력
-                    alert("취소 실패: " + (result.detail || "권한이 없거나 이미 처리된 예약입니다."));
+                    // 만약 진짜 에러(권한 없음 등)라면 메시지는 띄우되 목록은 새로고침
+                    console.warn("취소 요청 응답:", result.detail);
                 }
+                
+                // 어떤 경우든 목록을 다시 불러와서 UI를 최신화합니다.
+                await loadRoomReservations(); 
+
             } catch (e) {
                 console.error("통신 중 오류 발생:", e);
                 alert("서버 통신 중 오류가 발생했습니다.");
@@ -659,33 +724,40 @@
 
         // 4. 종료 시간 자동 계산 로직
         function calculateEndTime() {
-            const startTimeVal = document.getElementById('room-start-time').value;
+            const startTime = document.getElementById('room-start-time').value;
             const endSelect = document.getElementById('room-end-time');
             
-            if (!startTimeVal) {
-                endSelect.innerHTML = '<option value="">종료 시간 (시작 시간 먼저 선택)</option>';
+            // 시작 시간이 없으면 초기화 후 종료
+            if (!startTime) {
+                endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+                endSelect.disabled = true;
                 return;
             }
 
-            endSelect.innerHTML = ''; 
+            // 기본 문구 유지 및 활성화
+            endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+            endSelect.disabled = false;
 
-            const [hours, minutes] = startTimeVal.split(':').map(Number);
-            const startObj = new Date();
-            startObj.setHours(hours, minutes, 0);
+            const [sh, sm] = startTime.split(':').map(Number);
+            let startTotal = sh * 60 + sm;
 
-            // 요청 사항: 30분, 1시간 후 옵션
+            // 딱 두 개의 옵션(+30분, +60분)만 생성
             const durations = [30, 60]; 
-            
-            durations.forEach(min => {
-                const endObj = new Date(startObj.getTime() + min * 60000);
-                const h = String(endObj.getHours()).padStart(2, '0');
-                const m = String(endObj.getMinutes()).padStart(2, '0');
-                const timeStr = `${h}:${m}`;
+
+            durations.forEach(diff => {
+                let total = startTotal + diff;
                 
-                const opt = document.createElement('option');
-                opt.value = timeStr;
-                opt.textContent = `${timeStr} (${min}분 이용)`;
-                endSelect.appendChild(opt);
+                // 퇴근 시간(예: 18:30 / 1110분)을 넘지 않는 경우에만 추가
+                if (total <= 1110) { 
+                    const hh = String(Math.floor(total / 60)).padStart(2, '0');
+                    const mm = String(total % 60).padStart(2, '0');
+                    const time = `${hh}:${mm}`;
+                    
+                    const opt = document.createElement('option');
+                    opt.value = time;
+                    opt.textContent = `${time} (${diff}분)`; // 몇 분 이용인지 표시하면 더 친절함
+                    endSelect.appendChild(opt);
+                }
             });
         }
         // # ---------------------------------------------------------
@@ -833,9 +905,10 @@
         }
 
         async function initPage() {
-            console.log("🚀 페이지 초기화 시작 (병렬 로드)");
+            console.log("🚀 페이지 초기화 시작");
 
-            const savedTab = localStorage.getItem('activeTab') || 'visit-section';
+            const savedTab = 'visit-section';
+
             if (typeof switchTab === 'function') {
                 switchTab(null, savedTab);
             }
@@ -875,19 +948,20 @@
 
         // 회의실 날짜 / 시간 설정
         function initRoomForm() {
-            // 1. 과거 날짜 선택 방지 로직
+            // 1. 날짜 설정 (기존 유지)
             const dateInput = document.getElementById('room-date');
-            const now = new Date();
-            const tzOffset = now.getTimezoneOffset() * 60000;
-            const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
-            dateInput.min = localISODate; // 오늘 이전 날짜는 클릭 불가
-            dateInput.value = localISODate; // 기본값을 오늘로 설정
+            if (dateInput) {
+                const now = new Date();
+                const tzOffset = now.getTimezoneOffset() * 60000;
+                const localISODate = new Date(now - tzOffset).toISOString().split('T')[0];
+                dateInput.min = localISODate;
+                dateInput.value = localISODate;
+            }
 
-            // 2. 시작 시간 30분 단위 옵션 생성 (09:00 ~ 18:00)
+            // 2. 시작 시간 목록 생성 (09:00 ~ 20:00)
             const startSelect = document.getElementById('room-start-time');
             startSelect.innerHTML = '<option value="">시작 시간 선택</option>';
-            
-            for (let h = 9; h <= 18; h++) {
+            for (let h = 9; h <= 20; h++) {
                 for (let m of ['00', '30']) {
                     const time = `${String(h).padStart(2, '0')}:${m}`;
                     const opt = document.createElement('option');
@@ -896,8 +970,48 @@
                     startSelect.appendChild(opt);
                 }
             }
-        }
 
+            // 3. 종료 시간 초기화
+            const endSelect = document.getElementById('room-end-time');
+            endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+            endSelect.disabled = true;
+
+            // 4. 시작 시간에 따른 종료 시간 제한 (정확히 +30분, +60분만)
+            startSelect.onchange = function() {
+                const startTime = this.value;
+                
+                if (!startTime) {
+                    endSelect.innerHTML = '<option value="">종료 시간 선택</option>';
+                    endSelect.disabled = true;
+                    return;
+                }
+
+                endSelect.disabled = false;
+                endSelect.innerHTML = '<option value="">종료 시간 선택</option>'; // 초기화 후 옵션 추가
+
+                // 시작 시간을 분 단위 숫자로 변환 (예: "09:00" -> 540)
+                const [h, m] = startTime.split(':').map(Number);
+                const startTotalMinutes = h * 60 + m;
+
+                // 정확히 30분 뒤와 60분 뒤만 배열로 정의
+                const validDurations = [30, 60]; 
+
+                validDurations.forEach(diff => {
+                    const total = startTotalMinutes + diff;
+                    const endH = Math.floor(total / 60);
+                    const endM = total % 60;
+
+                    // 시스템 마감 시간인 21:00까지만 허용
+                    if (total <= 21 * 60) {
+                        const timeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                        const opt = document.createElement('option');
+                        opt.value = timeStr;
+                        opt.textContent = timeStr; // 다른 문구 없이 시간만 깔끔하게 표시
+                        endSelect.appendChild(opt);
+                    }
+                });
+            };
+        }
 
         // 페이지 로드 시 initPage 실행
         document.addEventListener('DOMContentLoaded', initPage, function() {initRoomForm();});

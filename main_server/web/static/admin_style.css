@@ -341,3 +341,127 @@ body {
 .status-badge.error { background-color: #e74c3c; }
 .status-badge.busy { background-color: #e67e22; }
 .status-badge.free { background-color: #2ecc71; }
+
+/* -----------회의실 예약 현황------------*/
+/* 예약중 - 파란색 */
+.status-badge.pending { 
+    background-color: #3498db; 
+    color: white; 
+}
+
+/* 사용중 - 초록색 */
+.status-badge.busy { 
+    background-color: #2ecc71; 
+    color: white; 
+}
+
+/* 만료됨 - 노란색 (가독성을 위해 글자는 검정) */
+.status-badge.expired { 
+    background-color: #f1c40f; 
+    color: #333; 
+}
+
+/* (참고) 취소 등 기타 상태 - 회색 */
+.status-badge.free { 
+    background-color: #95a5a6; 
+    color: white; 
+}
+
+/* ----------- 시스템 로그 ------------*/
+/* 시스템 로그 헤더 정렬 */
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #2c3e50;
+}
+
+/* 엑셀 스타일 테이블 */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.admin-table th {
+    background-color: #ecf0f1;
+    color: #2c3e50;
+    border: 1px solid #dcdde1;
+    padding: 12px;
+    text-align: center;
+}
+
+.admin-table td {
+    border: 1px solid #dcdde1;
+    padding: 10px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.admin-table tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* 날짜 선택 영역 */
+.date-filter {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.date-filter input[type="date"] {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.btn-search {
+    padding: 8px 15px;
+    background-color: #34495e;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-search:hover {
+    background-color: #2c3e50;
+}
+
+/* 방문객 관리 섹션 헤더 정렬 */
+.section-header {
+    display: flex;
+    justify-content: space-between; /* 양 끝 정렬 */
+    align-items: center;            /* 세로 중앙 정렬 (크기 맞춤) */
+    margin-bottom: 10px;            /* 표와의 간격을 좁게 조절 */
+}
+/* 제목 마진 제거 */
+.section-title {
+    margin: 0;                      /* h3 기본 마진을 없애야 버튼과 높이가 맞음 */
+    font-size: 1.2rem;
+}
+
+/* 데이터 새로고침(조회) 버튼 스타일 */
+.btn-refresh-re {
+    padding: 8px 16px;              /* 높이를 살짝 줄여 제목과 균형을 맞춤 */
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.1s;
+    line-height: 1;                 /* 텍스트 수직 중앙 정렬 보정 */
+}
+
+.btn-refresh-re:hover {
+    background-color: #2980b9;
+}
+
+.btn-refresh-re:active {
+    transform: scale(0.98);
+}

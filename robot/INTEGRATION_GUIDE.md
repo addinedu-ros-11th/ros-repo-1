@@ -50,6 +50,8 @@ This guide documents the integration contract for the robot runtime in
   - if upstream later provides `distance_m` (or equivalent keys), class-based stop/slow thresholds are applied on the same path.
   - current runtime behavior:
     - `STOP` triggers safety lock and zero-velocity hold.
+    - obstacle-driven `STOP` stores the active `GOTO` / `LEAD_GUEST` goal and auto-resumes it
+      after obstacle clear when `obstacle_auto_resume_enabled=true`.
     - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
     - `YIELD_RIGHT` triggers a short right-offset Nav2 detour and then resumes the original goal.
   - optional adaptive nav profile in `office_robot_executor`:
@@ -74,6 +76,10 @@ This guide documents the integration contract for the robot runtime in
     - `startup_initial_pose_enabled=true`
     - `startup_initial_pose_{x,y,yaw}` set to the known map pose
     - executor publishes `/{robot_ns}/initialpose` once and emits `STARTUP_INITIAL_POSE_PUBLISHED`
+  - if an operator sets RViz `2D Pose Estimate`, executor can refine localization automatically:
+    - enable `manual_initial_pose_refine_enabled=true` when you explicitly want this behavior
+    - executor listens on `/{robot_ns}/initialpose`
+    - on manual pose set, executor requests AMCL no-motion update and performs a short in-place spin
   - if not ready, recovery cycle can run:
     - call `/{robot_ns}/reinitialize_global_localization` (service name configurable)
     - rotate in place (`cmd_vel`) for active scan

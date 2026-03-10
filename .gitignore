@@ -40,6 +40,8 @@ robot/jazzy_ws/install/
 robot/jazzy_ws/log/
 robot/jazzy_ws/mujoco_menagerie/
 pip-delete-this-directory.txt
+robot/install/
+robot/log/
 
 # Unit test / coverage reports
 htmlcov/
@@ -198,3 +200,10 @@ prompt.md
 
 .*venv
 #test_yw/
+
+
+# graphviz frames
+frames_*.gv
+frames_*.pdf
+
+.vscode

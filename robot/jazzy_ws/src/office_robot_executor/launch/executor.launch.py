@@ -52,7 +52,9 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="FollowPath.desired_linear_vel",
             ),
             DeclareLaunchArgument("obstacle_slow_linear_vel", default_value="0.06"),
-            DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="true"),
+            DeclareLaunchArgument("obstacle_auto_resume_enabled", default_value="true"),
+            DeclareLaunchArgument("obstacle_auto_resume_delay_sec", default_value="0.6"),
+            DeclareLaunchArgument("dynamic_nav_profile_enabled", default_value="false"),
             DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
             DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
             DeclareLaunchArgument(
@@ -116,6 +118,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("startup_initial_pose_yaw", default_value="0.0"),
             DeclareLaunchArgument("startup_initial_pose_covariance_xy", default_value="0.25"),
             DeclareLaunchArgument("startup_initial_pose_covariance_yaw", default_value="0.5"),
+            DeclareLaunchArgument("manual_initial_pose_refine_enabled", default_value="false"),
+            DeclareLaunchArgument("manual_initial_pose_refine_cooldown_sec", default_value="3.0"),
+            DeclareLaunchArgument(
+                "manual_initial_pose_refine_ignore_self_sec", default_value="1.0"
+            ),
             DeclareLaunchArgument("nav2_lifecycle_check_enabled", default_value="true"),
             DeclareLaunchArgument(
                 "nav2_required_active_nodes",
@@ -264,6 +271,12 @@ def generate_launch_description() -> LaunchDescription:
                         "obstacle_slow_linear_vel": LaunchConfiguration(
                             "obstacle_slow_linear_vel"
                         ),
+                        "obstacle_auto_resume_enabled": LaunchConfiguration(
+                            "obstacle_auto_resume_enabled"
+                        ),
+                        "obstacle_auto_resume_delay_sec": LaunchConfiguration(
+                            "obstacle_auto_resume_delay_sec"
+                        ),
                         "dynamic_nav_profile_enabled": LaunchConfiguration(
                             "dynamic_nav_profile_enabled"
                         ),
@@ -363,6 +376,15 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "startup_initial_pose_covariance_yaw": LaunchConfiguration(
                             "startup_initial_pose_covariance_yaw"
+                        ),
+                        "manual_initial_pose_refine_enabled": LaunchConfiguration(
+                            "manual_initial_pose_refine_enabled"
+                        ),
+                        "manual_initial_pose_refine_cooldown_sec": LaunchConfiguration(
+                            "manual_initial_pose_refine_cooldown_sec"
+                        ),
+                        "manual_initial_pose_refine_ignore_self_sec": LaunchConfiguration(
+                            "manual_initial_pose_refine_ignore_self_sec"
                         ),
                         "nav2_lifecycle_check_enabled": LaunchConfiguration(
                             "nav2_lifecycle_check_enabled"

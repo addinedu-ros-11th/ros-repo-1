@@ -43,6 +43,8 @@
     - `chair` / `plant` / `bag`: distance-based threshold only; without distance they fall back to Nav2 static avoidance.
     - runtime today:
       - `STOP` threshold enforces lock/zero-velocity.
+      - obstacle-driven `STOP` stores the active `GOTO` / `LEAD_GUEST` goal and resumes it
+        automatically after clear when `obstacle_auto_resume_enabled=true`.
       - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
       - `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
@@ -104,6 +106,9 @@
 - `startup_initial_pose_enabled` (default `false`)
 - `startup_initial_pose_topic` (default `initialpose`)
 - `startup_initial_pose_x/y/yaw` (default `0.0`)
+- `manual_initial_pose_refine_enabled` (default `false`)
+- `manual_initial_pose_refine_cooldown_sec` (default `3.0`)
+- `manual_initial_pose_refine_ignore_self_sec` (default `1.0`)
 - `qr_scan_min_dwell_sec` (default `1.5`)
 - `qr_scan_confirm_count` (default `2`)
 - `qr_scan_ignore_commands_while_active` (default `true`)
@@ -129,6 +134,8 @@
 - `obstacle_slow_controller_node` (default `controller_server`)
 - `obstacle_slow_linear_vel_param` (default `FollowPath.desired_linear_vel`)
 - `obstacle_slow_linear_vel` (default `0.06`)
+- `obstacle_auto_resume_enabled` (default `true`)
+- `obstacle_auto_resume_delay_sec` (default `0.6`)
 - `enable_led_server` (default `true`)
 
 ## Standard Run

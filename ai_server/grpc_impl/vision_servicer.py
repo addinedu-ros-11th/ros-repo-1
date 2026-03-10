@@ -64,6 +64,7 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
                     width=result["box"]["width"],
                     height=result["box"]["height"],
                 ),
+                class_id=result.get("class_id", -1),
             )
         except Exception as e:
             logger.error(f"객체 인식 오류: {e}")
@@ -117,6 +118,7 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
                             width=r["box"]["width"],
                             height=r["box"]["height"],
                         ),
+                        class_id=r.get("class_id", -1),
                     )
                 )
 
@@ -222,6 +224,7 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
                         width=content.get("box", {}).get("width", 0),
                         height=content.get("box", {}).get("height", 0),
                     ),
+                    class_id=content.get("class_id", -1),
                 )
                 return ai_vision_pb2.VisionResult(
                     robot_id=robot_id,
@@ -242,6 +245,7 @@ class VisionServicer(ai_vision_pb2_grpc.VisionServiceServicer):
                                 width=obj.get("box", {}).get("width", 0),
                                 height=obj.get("box", {}).get("height", 0),
                             ),
+                            class_id=obj.get("class_id", -1),
                         )
                     )
                 multi_resp = ai_vision_pb2.MultiObjectDetectionResponse(objects=objects)

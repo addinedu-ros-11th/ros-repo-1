@@ -101,58 +101,71 @@ body, html {
 .btn-submit { grid-column: span 2; padding: 10px; background: var(--ai-blue); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 .remote-btn { padding: 8px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; font-size: 12px; }
 
-/* 호출 버튼을 상단 우측으로 (조회 버튼과 통일감) */
-.btn-call-header {
-    background-color: var(--ai-blue) !important;
-    padding: 6px 15px !important;
-}
-
-/* 로봇 현황 전용 버튼 공통 스타일 */
+/* 로봇 업무 현황 전용 미니 버튼 */
 .robot-btn {
-    padding: 6px 12px;
+    padding: 3px 6px !important;    /* 패딩을 더 줄여서 아주 콤팩트하게 만듦 */
+    font-size: 11px !important;      /* 글자 크기를 작게 설정 */
+    border-radius: 3px;
     border: none;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s;
+    font-weight: 500;
     white-space: nowrap;
 }
 
-/* 수령 확인 전용 (초록) */
 .btn-robot-confirm {
-    background-color: #28a745;
+    background-color: #34a853;
     color: white;
 }
-.btn-robot-confirm:hover { background-color: #218838; }
 
-/* 취소 전용 (빨강) */
+.btn-robot-confirm:hover {
+    background-color: #2d8e47;
+}
+
 .btn-robot-cancel {
-    background-color: #dc3545;
+    background-color: #d93025;
     color: white;
 }
-.btn-robot-cancel:hover { background-color: #c82333; }
 
-/* 테이블 레이아웃 최적화 */
-#robot-task-table {
-    table-layout: fixed;
-    width: 100%;
+.btn-robot-cancel:hover {
+    background-color: #d93025;
 }
 
-.col-type { width: 40%; text-align: left !important; padding-left: 20px !important; }
-.col-status { width: 25%; }
-.col-action { width: 35%; }
-
-/* 테이블 컬럼 비율 조정 (TH 기준) */
-#robot-task-table th:nth-child(1) { width: 40%; } /* 업무 유형 */
-#robot-task-table th:nth-child(2) { width: 25%; } /* 상태 */
-#robot-task-table th:nth-child(3) { width: 35%; } /* 관리(버튼) */
-
-/* 패널 내부 레이아웃 최적화 */
-.combined-control-panel {
-    display: flex;
-    flex-direction: column;
+/* 테이블 셀 내 간격 최적화 */
+.col-status {
+    padding: 5px !important;        /* 셀 내부 여백 축소 */
 }
+
+/* 상태 배지 텍스트 크기 */
+.robot-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background-color: #4285f4; /* 구글 블루 (하늘색) */
+    color: white !important;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    white-space: nowrap;
+}
+
+/*------------ 로봇 업무 현황 테이블 정렬 (추가) ------------*/
+.excel-style th, 
+.excel-style td {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+/* 시간 컬럼의 너비를 조금 확보하여 숫자가 깨지지 않게 조절 */
+.col-time {
+    min-width: 120px;
+    font-size: 0.9rem;
+}
+
+/* 상태 배지와 버튼 사이 간격 조절 */
+.col-status div {
+    margin-bottom: 4px;
+}
+
 /* # ---------------------------------------------------------
 # 4. AI Assistant 채팅 영역 스타일
 # --------------------------------------------------------- */
@@ -235,13 +248,25 @@ body, html {
 .reservation-panel h3 {
     margin-top: 0;
 }
+/* 제목 폰트 스타일 통일 */
+.control-section-title {
+    font-size: 1.1rem;      /* 예약 현황 제목과 크기 통일 */
+    font-weight: 700;       /* 강조 굵기 통일 */
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;               /* 아이콘과 글자 사이 간격 */
+    letter-spacing: -0.5px; /* 자간 조절 */
+}
 
-/* 2번 관련: 리스트 헤더 영역 */
+/* 헤더 배경 및 여백 통일 */
 .res-list-header {
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-    margin-bottom: 10px;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: #ffffff; /* 혹은 예약 현황 배경색과 통일 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .res-list-header h4 {
@@ -412,3 +437,10 @@ body, html {
     color: #999;
     font-style: italic;
 }
+
+.status-badge.idle { background-color: #95a5a6; color: white; }
+.status-badge.moving { background-color: #2ecc71; color: white; }
+.status-badge.error { background-color: #e74c3c; color: white; }
+.status-badge.busy { background-color: #e67e22; color: white; }
+.status-badge.free { background-color: #2ecc71; color: white; }
+.status-badge.pending {background-color: #3498db; color: white; }

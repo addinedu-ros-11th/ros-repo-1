@@ -49,6 +49,7 @@ message ObjectDetectionResponse {
   string object_name = 1;
   float confidence = 2;
   BoundingBox box = 3;
+  int32 class_id = 4;
 }
 
 message BoundingBox {
