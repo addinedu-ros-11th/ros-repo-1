@@ -51,7 +51,7 @@
                 </inertial>
             </link>
 
-            <joint name="${namespace}${side}_wheel_joint" type="continuous">
+            <joint name="${side}_wheel_joint" type="continuous">
                 <parent link="base_link"/>
                 <child link="${side}_wheel"/>
                 <axis xyz="0 1 0"/>
@@ -82,7 +82,7 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}caster_mount_fixed_joint" type="fixed">
+        <joint name="caster_mount_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="caster_mount_link"/>
             <origin xyz="-0.0585 0 -0.007" rpy="0 0 0"/>
@@ -108,7 +108,7 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}caster_rotate_joint" type="continuous">
+        <joint name="caster_rotate_joint" type="continuous">
             <parent link="caster_mount_link"/>
             <child link="caster_roate_link"/>
             <axis xyz="0 0 1"/>
@@ -135,7 +135,7 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}caster_wheel_joint" type="continuous">
+        <joint name="caster_wheel_joint" type="continuous">
             <parent link="caster_roate_link"/>
             <child link="caster_wheel"/>
             <axis xyz="0 1 0"/>
@@ -162,7 +162,7 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}robot_lamp_mount_fixed_joint" type="fixed">
+        <joint name="robot_lamp_mount_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="robot_lamp"/>
             <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -188,14 +188,14 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}rplidar_mount_fixed_joint" type="fixed">
+        <joint name="rplidar_mount_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="rplidar_mount"/>
             <origin xyz="-0.017 0 0.067" rpy="0 0 0"/>
         </joint>
 
         <link name="rplidar_link"/>
-        <joint name="${namespace}rplidar_link_fixed_joint" type="fixed">
+        <joint name="rplidar_link_fixed_joint" type="fixed">
             <parent link="rplidar_mount"/>
             <child link="rplidar_link"/>
             <origin xyz="0 0 0.030" rpy="0 0 ${pi}"/>
@@ -221,14 +221,14 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}front_camera_mount_fixed_joint" type="fixed">
+        <joint name="front_camera_mount_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="front_camera_mount"/>
             <origin xyz="0.020 0 0.0495" rpy="0 ${cam_tilt_deg/180*pi} 0"/>
         </joint>
 
         <link name="front_camera_link"/>
-        <joint name="${namespace}front_camera_fixed_joint" type="fixed">
+        <joint name="front_camera_fixed_joint" type="fixed">
             <parent link="front_camera_mount"/>
             <child link="front_camera_link"/>
             <origin xyz="0.015 0 -0.0121" rpy="0 0 0"/>
@@ -254,42 +254,42 @@
             </inertial>
         </link>
 
-        <joint name="${namespace}screen_mount_fixed_joint" type="fixed">
+        <joint name="screen_mount_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="screen_mount"/>
             <origin xyz="0.0165 0 0.071" rpy="0 ${screen_tilt_deg/180*pi} 0"/>
         </joint>
 
         <link name="ultrasonic_link"/>
-        <joint name="${namespace}ultrasonic_fixed_joint" type="fixed">
+        <joint name="ultrasonic_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="ultrasonic_link"/>
             <origin xyz="0.0267 0 0.009" rpy="0 0 0"/>
         </joint>
 
         <link name="ir_mid_link"/>
-        <joint name="${namespace}ir_mid_fixed_joint" type="fixed">
+        <joint name="ir_mid_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="ir_mid_link"/>
             <origin xyz="0.0295 0 -0.015" rpy="0 0 0"/>
         </joint>
 
         <link name="ir_l_link"/>
-        <joint name="${namespace}ir_l_fixed_joint" type="fixed">
+        <joint name="ir_l_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="ir_l_link"/>
             <origin xyz="0.0295 0.02 -0.015" rpy="0 0 0"/>
         </joint>
 
         <link name="ir_r_link"/>
-        <joint name="${namespace}ir_r_fixed_joint" type="fixed">
+        <joint name="ir_r_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="ir_r_link"/>
             <origin xyz="0.0295 -0.02 -0.015" rpy="0 0 0"/>
         </joint>
 
         <link name="imu_link"/>
-        <joint name="${namespace}imu_fixed_joint" type="fixed">
+        <joint name="imu_fixed_joint" type="fixed">
             <parent link="base_link"/>
             <child link="imu_link"/>
             <origin xyz="-0.044 0 0.0525" rpy="0 0 0"/>
