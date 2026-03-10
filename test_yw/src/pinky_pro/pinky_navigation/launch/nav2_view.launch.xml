@@ -1,8 +1,15 @@
 <?xml version='1.0' ?>
-
 <launch>
+    <arg name="namespace" default="robot02"/>
     <arg name="rviz_config_file" default="$(find-pkg-share pinky_navigation)/rviz/nav2_view.rviz"/>
 
-    <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_file)">
-    </node>
-</launch>    
+    <node pkg="rviz2" exec="rviz2" output="screen" 
+          args="-d $(var rviz_config_file)" 
+          namespace="$(var namespace)">
+        
+        <remap from="/$(var namespace)/tf" to="/tf"/>
+        <remap from="/$(var namespace)/tf_static" to="/tf_static"/>
+        <!-- <remap from="/$(var namespace)/map" to="/map"/> -->
+        
+        </node>
+</launch>
