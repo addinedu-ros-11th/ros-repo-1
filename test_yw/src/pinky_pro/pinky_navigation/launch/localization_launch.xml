@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <launch>
-    <arg name="namespace" default=""/>
+    <arg name="namespace" default="robot02"/>
     <arg name="map" default=""/>
     <arg name="use_sim_time" default="false"/>
     <arg name="params_file" default=""/>
@@ -19,16 +19,15 @@
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
+                <remap from="map" to="map"/>
             </composable_node>
             <composable_node pkg="nav2_amcl" plugin="nav2_amcl::AmclNode" name="amcl">         
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
-                <!-- AMCL 프레임 명시적 주입 -->
-                <!-- <param name="global_frame_id" value="map"/> -->
-                <param name="odom_frame_id" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
-                <param name="base_frame_id" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
+                <remap from="scan" to="scan"/>
+                <remap from="map" to="map"/>
             </composable_node>  
         </load_composable_node>
 
@@ -39,22 +38,22 @@
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
+                <remap from="map" to="map"/>
             </node>
             <node pkg="nav2_amcl" exec="amcl" name='amcl' output="screen">
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
-                <!-- AMCL 프레임 명시적 주입 -->
-                <!-- <param name="global_frame_id" value="map"/> -->
-                <param name="odom_frame_id" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
-                <param name="base_frame_id" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
+                <remap from="scan" to="scan"/>
+                <remap from="map" to="map"/>
             </node>
         </group>
 
         <node pkg="nav2_lifecycle_manager" exec="lifecycle_manager" name="lifecycle_manager_localization" output="screen">
             <param name='use_sim_time' value="$(var use_sim_time)"/>
             <param name='autostart' value="$(var autostart)"/>
+            <!-- 노드 이름에 네임스페이스가 붙은 상태이므로 상대 경로로 지정 -->
             <param name='node_names' value="$(var lifecycle_nodes)"/>
         </node>
     </group>

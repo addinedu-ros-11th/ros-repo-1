@@ -1,10 +1,10 @@
 <?xml version='1.0' ?>
 <launch>
-    <arg name="namespace" default=""/>
+    <!-- 네임스페이스를 robot02로 고정 -->
+    <arg name="namespace" default="robot02"/>
     <arg name="use_sim_time" default="False"/> 
 
     <!-- 1. Robot Description (RSP, JSP) -->
-    <!-- 여기서 upload_robot을 포함합니다. -->
     <include file="$(find-pkg-share pinky_description)/launch/upload_robot.launch.py">
         <arg name="namespace" value="$(var namespace)"/>
         <arg name="is_sim" value="$(var use_sim_time)"/>
@@ -13,7 +13,8 @@
     <!-- 2. Lidar -->
     <include file="$(find-pkg-share sllidar_ros2)/launch/sllidar_c1_launch.py">
         <arg name="serial_port" value="/dev/ttyAMA0"/>
-        <arg name="frame_id" value="$(eval '\'$(var namespace)/rplidar_link\' if \'$(var namespace)\' else \'rplidar_link\'')"/>
+        <!-- 라이다 프레임 고정 -->
+        <arg name="frame_id" value="robot02/rplidar_link"/>
         <arg name="inverted" value="false"/>
         <arg name="angle_compensate" value="true"/>
         <arg name="scan_mode" value="DenseBoost"/>
@@ -22,13 +23,14 @@
     <!-- 3. Hardware Controller -->
     <node pkg="pinky_bringup" exec="bringup" name="pinky_bringup_core" output="screen">
         <param name="use_sim_time" value="$(var use_sim_time)"/>
-        <param name="odom_frame_id" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
-        <param name="base_frame_id" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
+        <!-- 오도메트리 관련 프레임 고정 -->
+        <param name="odom_frame_id" value="robot02/odom"/>
+        <param name="base_frame_id" value="robot02/base_footprint"/>
         <remap from="tf" to="/tf"/>
         <remap from="tf_static" to="/tf_static"/>
     </node>
     
-    <!-- 4. Battery Publisher (이름 중복 방지를 위해 고정) -->
+    <!-- 4. Battery Publisher -->
     <node pkg="pinky_bringup" exec="battery_publisher" name="battery_publisher_node" output="screen">
         <param name="use_sim_time" value="$(var use_sim_time)"/>
     </node>

@@ -2,10 +2,9 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import PushRosNamespace, Node
 from launch_ros.substitutions import FindPackageShare
-from nav2_common.launch import RewrittenYaml
 
 def generate_launch_description() -> LaunchDescription:
     # --- Arguments ---
@@ -16,7 +15,7 @@ def generate_launch_description() -> LaunchDescription:
     pinky_app_share = FindPackageShare('pinky_app')
     pinky_navigation_share = FindPackageShare('pinky_navigation')
     
-    # Config files (전용 YAML 파일 경로)
+    # Config files (정적 할당된 YAML 파일 사용)
     camera_config = PathJoinSubstitution([pinky_app_share, 'config', 'camera.yaml'])
     executor_config = PathJoinSubstitution([pinky_app_share, 'config', 'executor.yaml'])
     bridge_config = PathJoinSubstitution([pinky_app_share, 'config', 'bridge.yaml'])
@@ -24,55 +23,24 @@ def generate_launch_description() -> LaunchDescription:
     default_map_file = PathJoinSubstitution([pinky_navigation_share, 'map', 'office_map.yaml'])
     map_yaml_file = LaunchConfiguration("map", default=default_map_file)
 
-    # Frame Prefix (e.g., 'robot02/')
-    frame_prefix = PythonExpression(["'", robot_ns, "/' if '", robot_ns, "' != '' else ''"])
-
-    # --- Nav2 Parameter Rewriting ---
-    param_substitutions = {
-        'use_sim_time': use_sim_time,
-        'yaml_filename': map_yaml_file,
-        'base_frame_id': [frame_prefix, 'base_footprint'],
-        'odom_frame_id': [frame_prefix, 'odom'],
-        'global_frame_id': [frame_prefix, 'map'], 
-        'robot_base_frame': [frame_prefix, 'base_footprint'],
-        'local_frame': [frame_prefix, 'odom'],
-        # local_costmap과 global_costmap의 global_frame을 구분하기 위해
-        # 아래와 같이 명시적으로 경로를 지정하거나, 공통 분모를 찾아 처리합니다.
-        'local_costmap.local_costmap.ros__parameters.global_frame': [frame_prefix, 'odom'],
-        'global_frame': [frame_prefix, 'map'], 
-        'scan_topic': 'scan'
-    }
-
-    # 추가적인 로직: local_costmap의 global_frame만 odom으로 강제 치환
-    # RewrittenYaml은 키 기반이므로, YAML 내부에서 local_costmap의 global_frame 키를
-    # 'local_global_frame' 같은 임시 이름으로 바꾸고 여기서 매핑하는 것이 가장 깔끔합니다.
-
-
-    configured_params = RewrittenYaml(
-        source_file=nav2_params_file,
-        root_key=robot_ns, 
-        param_rewrites=param_substitutions,
-        convert_types=True
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument("robot_ns", default_value="robot02"),
         DeclareLaunchArgument("use_sim_time", default_value="False"),
         DeclareLaunchArgument("map", default_value=default_map_file),
 
-        # 모든 요소를 네임스페이스 그룹으로 통합
+        # 1. 네임스페이스 종속 그룹 (Hardware, Nav2, Control)
         GroupAction([
             PushRosNamespace(robot_ns),
             
-            # 1. Hardware & RSP (Robot State Publisher)
+            # Hardware & RSP
             IncludeLaunchDescription(
                 AnyLaunchDescriptionSource(
                     PathJoinSubstitution([FindPackageShare("pinky_bringup"), "launch", "bringup_robot.launch.xml"])
                 ),
-                launch_arguments={'use_sim_time': use_sim_time, 'namespace': robot_ns}.items()
+                launch_arguments={'use_sim_time': use_sim_time, 'namespace': 'robot02'}.items()
             ),
 
-            # 2. Navigation Stack (AMCL, Map Server, Nav2)
+            # Navigation Stack
             IncludeLaunchDescription(
                 AnyLaunchDescriptionSource(
                     PathJoinSubstitution([FindPackageShare("pinky_navigation"), "launch", "bringup_launch.xml"])
@@ -80,22 +48,22 @@ def generate_launch_description() -> LaunchDescription:
                 launch_arguments={
                     'use_sim_time': use_sim_time,
                     'map': map_yaml_file,
-                    'params_file': configured_params, 
-                    'namespace': robot_ns,
+                    'params_file': nav2_params_file,
+                    'namespace': 'robot02',
                     'use_composition': 'False',
                 }.items(),
             ),
 
-            # 3. Control Logic (Executor, Safety, Camera)
+            # Control Logic
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution([FindPackageShare("pinky_control"), "launch", "control.launch.py"])
                 ),
                 launch_arguments={
                     'params_file': executor_config,
-                    'robot_name': robot_ns,
-                    'odom_frame_id': [frame_prefix, 'odom'],
-                    'base_frame_id': [frame_prefix, 'base_footprint'],
+                    'robot_name': 'robot02',
+                    'odom_frame_id': 'robot02/odom',
+                    'base_frame_id': 'robot02/base_footprint',
                 }.items()
             ),
             Node(
@@ -105,19 +73,24 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[camera_config],
                 remappings=[('tf', '/tf'), ('tf_static', '/tf_static')]
             ),
+        ]),
 
-            # 4. Comms & Bridge (AI Server Bridge & Rosbridge)
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([FindPackageShare("pinky_comms"), "launch", "bridge.launch.py"])
-                ),
-                launch_arguments={'params_file': bridge_config}.items()
+        # 2. 통신 및 브릿지 (전역 또는 명시적 네임스페이스 할당)
+        # AI Server Bridge
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution([FindPackageShare("pinky_comms"), "launch", "bridge.launch.py"])
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([FindPackageShare("pinky_bridge"), "launch", "rosbridge.launch.py"])
-                ),
-                launch_arguments={'port': '9090'}.items() # 필요 시 포트 변경
+            launch_arguments={
+                'params_file': bridge_config,
+                # 만약 bridge_node 내부에서 robot_name을 필요로 한다면 명시적으로 전달
+            }.items()
+        ),
+        # Rosbridge WebSocket (포트 충돌 방지를 위해 전역에서 실행 권장)
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution([FindPackageShare("pinky_bridge"), "launch", "rosbridge.launch.py"])
             ),
-        ])
+            launch_arguments={'port': '9090'}.items() 
+        ),
     ])

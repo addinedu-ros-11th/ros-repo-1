@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Cookie
 from typing import Dict, Any, Optional
 from main_server.container import container
-from main_server.domains.tasks.schemas import ConfirmTaskRequest
+from main_server.domains.tasks.schemas import ConfirmTaskRequest, TaskStatus
 from datetime import date, time, datetime
 from pydantic import BaseModel
 import uuid
@@ -171,7 +171,7 @@ async def process_command(request: Dict[str, Any]):
                 return {"status": "error", "message": "태스크 생성 실패"}
             
             msg = f"'{target_name}'(으)로 이동하고 있습니다."
-            if task.status == "PENDING":
+            if task.status == TaskStatus.PENDING:
                 msg = f"'{target_name}'(으)로 이동하기 위해 대기 중입니다."
 
             return {
@@ -295,30 +295,49 @@ async def process_command(request: Dict[str, Any]):
         return {"status": "error", "message": "태스크 생성 중 오류가 발생했습니다.", "ai_result": ai_result}
 
     # 결과 메시지 및 필드 보정
-    response_message = f"작업이 접수되었습니다: {task_type}"
-    
-    if task.status == "PENDING":
-        response_message = f"작업이 대기열에 등록되었습니다: {task_type}"
+    type_kor = {
+        "SNACK_DELIVERY": "간식 배달",
+        "ITEM_DELIVERY": "물품 배달",
+        "MANUAL_MOVE": "장소 이동",
+        "GUEST_GUIDE": "방문객 안내"
+    }.get(task_type, task_type)
 
-    fields = ai_result.get("fields")
-    if fields is None:
-        fields = {}
+    response_message = f"[{type_kor}] 작업이 접수되었습니다."
+    
+    if task.status == TaskStatus.PENDING:
+        response_message = f"현재 모든 로봇이 업무 중입니다. [{type_kor}] 작업을 대기열에 등록했습니다."
+
+    fields = ai_result.get("fields", {})
 
     if task_type == "SNACK_DELIVERY":
-        if task.status == "PENDING":
+        if task.status == TaskStatus.PENDING:
              response_message = "간식 배달 요청이 대기 중입니다. 로봇이 배정되는 대로 시작됩니다."
         else:
-             response_message = "간식 배달 요청이 접수되었습니다. 로봇이 탕비실에서 간식을 수령하여 요청하신 위치로 배달합니다."
+             response_message = "간식 배달을 위해 로봇이 탕비실로 이동하고 있습니다."
         
-        # 프론트엔드에 목적지가 명확히 나오도록 설정
         if not fields.get("dest_location") and not fields.get("location"):
              fields["dest_location"] = "요청자 위치"
+
+    # 로봇 정보 및 추가 메시지 구성
+    robot_info = None
+    if task.assigned_robot_id:
+        robot = await container.robot_repo.get_by_id(task.assigned_robot_id)
+        if robot:
+            robot_info = {
+                "robot_id": robot.id,
+                "name": robot.name,
+                "status": robot.status,
+                "battery": robot.battery_level
+            }
+            if task.status == TaskStatus.ASSIGNED:
+                response_message += f"\n알림: '{robot.name}' 로봇이 배차되었습니다. (배터리: {robot.battery_level}%)"
 
     return {
         "status": "success",
         "message": response_message,
         "task_id": task.id,
-        "ai_fields": fields
+        "ai_fields": fields,
+        "robot_info": robot_info
     }
 
 # ---------------------------------------------------------

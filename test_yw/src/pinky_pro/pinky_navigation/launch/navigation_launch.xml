@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <launch>
-    <arg name="namespace" default=""/>
+    <arg name="namespace" default="robot02"/>
     <arg name="use_sim_time" default="false"/>
     <arg name="params_file" default=""/>
     <arg name="autostart" default="true"/>
@@ -14,25 +14,29 @@
         <load_composable_node target="$(var container_name)" if="$(var use_composition)">    
             <composable_node pkg="nav2_controller" plugin="nav2_controller::ControllerServer" name="controller_server">            
                 <param from="$(var params_file)"/>
+                <param name='use_sim_time' value="$(var use_sim_time)"/>
+                <param name="local_costmap.global_frame" value="robot02/odom"/>
+                <param name="local_costmap.robot_base_frame" value="robot02/base_footprint"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
                 <remap from="cmd_vel" to="cmd_vel_nav"/>
             </composable_node>
             <composable_node pkg="nav2_planner" plugin="nav2_planner::PlannerServer" name="planner_server">            
                 <param from="$(var params_file)"/>
+                <param name='use_sim_time' value="$(var use_sim_time)"/>
+                <param name="global_costmap.global_frame" value="map"/>
+                <param name="global_costmap.robot_base_frame" value="robot02/base_footprint"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
             </composable_node>
-            <!-- ... 기타 구성 요소 동일하게 적용 ... -->
         </load_composable_node>
 
         <group unless="$(var use_composition)">
             <node pkg="nav2_controller" exec="controller_server" name="controller_server" output="screen">
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
-                <param name="local_costmap.local_costmap.ros__parameters.global_frame" value="$(eval '\'$(var namespace)/odom\' if \'$(var namespace)\' else \'odom\'')"/>
-                <param name="local_costmap.local_costmap.ros__parameters.robot_base_frame" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
-                
+                <param name="local_costmap.global_frame" value="robot02/odom"/>
+                <param name="local_costmap.robot_base_frame" value="robot02/base_footprint"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
                 <remap from="cmd_vel" to="cmd_vel_nav"/>
@@ -46,9 +50,8 @@
             <node pkg="nav2_planner" exec="planner_server" name="planner_server" output="screen">
                 <param from="$(var params_file)"/>
                 <param name='use_sim_time' value="$(var use_sim_time)"/>
-                <param name="global_costmap.global_costmap.ros__parameters.global_frame" value="map"/>
-                <param name="global_costmap.global_costmap.ros__parameters.robot_base_frame" value="$(eval '\'$(var namespace)/base_footprint\' if \'$(var namespace)\' else \'base_footprint\'')"/>
-
+                <param name="global_costmap.global_frame" value="map"/>
+                <param name="global_costmap.robot_base_frame" value="robot02/base_footprint"/>
                 <remap from="tf" to="/tf"/>
                 <remap from="tf_static" to="/tf_static"/>
             </node>

@@ -1,5 +1,5 @@
-# Pinky Executor & Navigation parameters
-/**:
+# Pinky Executor & Navigation parameters for robot02
+robot02:
   ros__parameters:
     # Robot Basic Information
     robot_name: "robot02" 
@@ -20,8 +20,8 @@
     use_nav2: true
     nav2_action_name: "navigate_to_pose"
     frame_id: "map"
-    odom_frame_id: "odom"
-    base_frame_id: "base_footprint"
+    odom_frame_id: "robot02/odom"
+    base_frame_id: "robot02/base_footprint"
     goal_timeout_sec: 120.0
     goal_response_timeout_sec: 10.0
     nav2_success_status_code: 4
@@ -43,8 +43,8 @@
     odom_topic: "odom"
     amcl_pose_max_age_sec: 5.0
     amcl_pose_stale_check_enabled: true
-    amcl_covariance_xy_max: 0.5
-    amcl_covariance_yaw_max: 6.0
+    amcl_covariance_xy_max: 0.8
+    amcl_covariance_yaw_max: 15.0
     localization_allow_degraded_covariance: true
     nav2_require_map_odom_tf: true
     nav2_tf_lookup_timeout_sec: 0.1
@@ -99,5 +99,3 @@
     qr_always_scan_event_name: "QR_DETECTED"
     qr_always_scan_poll_period_sec: 1.0
     qr_always_scan_min_interval_sec: 3.0
-
-    # scenario_node does not need hardcoded locations anymore as it receives them from main_server.

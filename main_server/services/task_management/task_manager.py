@@ -97,17 +97,16 @@ class TaskManager:
         # 배차 성공
         logger.info(f"[TaskManager] 태스크 {task.id} -> 로봇 {optimal_robot.name} 배차.")
         
-        # 1. 태스크 정보 업데이트 (로봇 ID, 상태)
-        # assign_and_dispatch 내부에서 robot status 업데이트 하므로 여기서는 Task Status만 먼저 업데이트?
-        # 아니면 assign_and_dispatch가 Task Status도 관리?
-        # 기존 로직: create_task_from_ai -> task_data["assigned_robot_id"] set -> task_repo.create
-        # -> assign_and_dispatch (update robot status)
-        
-        # 여기서는 이미 Task가 DB에 있음.
-        await self.task_repo.update(task.id, {
+        # 1. DB 및 메모리 객체 업데이트
+        update_data = {
             "assigned_robot_id": optimal_robot.id,
-            "status": TaskStatus.ASSIGNED # or MOVING? Existing logic used MOVING for Robot, but Task?
-        })
+            "status": TaskStatus.ASSIGNED
+        }
+        await self.task_repo.update(task.id, update_data)
+        
+        # 메모리 상의 객체 속성도 직접 갱신 (중요)
+        task.assigned_robot_id = optimal_robot.id
+        task.status = TaskStatus.ASSIGNED
         
         # 2. 실제 명령 전송
         await self.assign_and_dispatch(optimal_robot, task)

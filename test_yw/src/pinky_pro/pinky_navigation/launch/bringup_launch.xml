@@ -2,7 +2,7 @@
 <launch>
     <set_env name="RCUTILS_LOGGING_BUFFERED_STREAM" value="1"/>
 
-    <arg name="namespace" default=""/>
+    <arg name="namespace" default="robot02"/>
     <arg name="map" default=""/>
     <arg name="use_sim_time" default="False"/>
     <arg name="params_file" default="$(find-pkg-share pinky_navigation)/params/nav2_params.yaml"/>

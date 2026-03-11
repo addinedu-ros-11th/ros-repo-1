@@ -16,6 +16,15 @@ def generate_launch_description():
             executable="rosbridge_websocket",
             name="rosbridge_websocket",
             output="screen",
-            parameters=[{"port": port}, params_file],
+            parameters=[{
+                "port": port,
+                "address": "0.0.0.0",
+                "retry_startup_delay": 5.0,
+            }, params_file],
+            # 노드가 네임스페이스 안에 들어갈 경우를 대비해 전역 /tf로 강제 매핑
+            remappings=[
+                ('tf', '/tf'),
+                ('tf_static', '/tf_static')
+            ]
         ),
     ])

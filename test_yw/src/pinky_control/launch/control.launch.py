@@ -11,9 +11,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("params_file", default_value=""),
-        DeclareLaunchArgument("robot_name", default_value="pinky"),
-        DeclareLaunchArgument("odom_frame_id", default_value="odom"),
-        DeclareLaunchArgument("base_frame_id", default_value="base_footprint"),
+        DeclareLaunchArgument("robot_name", default_value="robot02"),
+        DeclareLaunchArgument("odom_frame_id", default_value="robot02/odom"),
+        DeclareLaunchArgument("base_frame_id", default_value="robot02/base_footprint"),
         
         # 1. Executor Node
         Node(
