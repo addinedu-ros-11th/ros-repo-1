@@ -18,6 +18,8 @@ from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Bool, Float32, String
 
+from .guiding_follow.manager import GuideFollowerManager, GuideFollowerSettings
+from .guiding_follow.scan_tracker import GuideFollowerSample
 from .nav_profile.manager import DynamicNavProfileManager, DynamicNavProfileSettings
 
 try:
@@ -31,6 +33,11 @@ try:  # pragma: no cover - runtime environment dependent
 except Exception:  # pragma: no cover - runtime environment dependent
     cv2 = None
     np = None
+
+try:
+    from apriltag_msgs.msg import AprilTagDetectionArray
+except Exception:  # pragma: no cover - runtime environment dependent
+    AprilTagDetectionArray = None
 
 try:
     from nav2_msgs.action import NavigateToPose
@@ -99,10 +106,11 @@ class OfficeRobotExecutor(Node):
             "forward_first_allow_reversing_param", "FollowPath.allow_reversing"
         )
         self.declare_parameter("robot_yield_right_enabled", True)
-        self.declare_parameter("robot_yield_right_offset_m", 0.18)
-        self.declare_parameter("robot_yield_right_forward_m", 0.20)
+        self.declare_parameter("robot_yield_right_offset_m", 0.08)
+        self.declare_parameter("robot_yield_right_forward_m", 0.18)
         self.declare_parameter("robot_yield_right_cooldown_sec", 5.0)
-        self.declare_parameter("robot_yield_right_max_attempts_per_action", 1)
+        self.declare_parameter("robot_yield_right_max_attempts_per_action", 2)
+        self.declare_parameter("robot_yield_right_cancel_fallback_sec", 0.35)
         self.declare_parameter("obstacle_slow_enabled", True)
         self.declare_parameter("obstacle_slow_controller_node", "controller_server")
         self.declare_parameter(
@@ -114,11 +122,17 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("dynamic_nav_profile_enabled", False)
         self.declare_parameter("dynamic_nav_profile_scan_topic", "/scan")
         self.declare_parameter("dynamic_nav_profile_robot_width_m", 0.12)
-        self.declare_parameter("dynamic_nav_profile_wide_width_enter_m", 0.38)
-        self.declare_parameter("dynamic_nav_profile_wide_width_exit_m", 0.32)
-        self.declare_parameter("dynamic_nav_profile_forward_enter_m", 0.55)
-        self.declare_parameter("dynamic_nav_profile_forward_exit_m", 0.40)
-        self.declare_parameter("dynamic_nav_profile_enter_samples", 3)
+        self.declare_parameter("dynamic_nav_profile_side_arc_center_deg", 82.0)
+        self.declare_parameter("dynamic_nav_profile_side_arc_half_width_deg", 6.0)
+        self.declare_parameter("dynamic_nav_profile_forward_arc_half_width_deg", 12.0)
+        self.declare_parameter("dynamic_nav_profile_percentile", 0.1)
+        self.declare_parameter("dynamic_nav_profile_wide_width_enter_m", 0.44)
+        self.declare_parameter("dynamic_nav_profile_wide_width_exit_m", 0.34)
+        self.declare_parameter("dynamic_nav_profile_wide_min_side_clear_enter_m", 0.15)
+        self.declare_parameter("dynamic_nav_profile_wide_min_side_clear_exit_m", 0.10)
+        self.declare_parameter("dynamic_nav_profile_forward_enter_m", 0.70)
+        self.declare_parameter("dynamic_nav_profile_forward_exit_m", 0.45)
+        self.declare_parameter("dynamic_nav_profile_enter_samples", 4)
         self.declare_parameter("dynamic_nav_profile_exit_samples", 2)
         self.declare_parameter("dynamic_nav_profile_wide_lookahead_dist", 0.32)
         self.declare_parameter("dynamic_nav_profile_wide_min_lookahead_dist", 0.15)
@@ -190,6 +204,22 @@ class OfficeRobotExecutor(Node):
         self.declare_parameter("employee_verification_qr_on_success_event", "QR_SCANNED")
         self.declare_parameter("employee_verification_qr_purpose", "VISITOR_SCAN")
         self.declare_parameter("guide_display_period_sec", 2.0)
+        self.declare_parameter("apriltag_detection_topic", "/apriltag_detections")
+        self.declare_parameter("apriltag_nav_timeout_sec", 10.0)
+        self.declare_parameter("guide_follow_monitor_enabled", True)
+        self.declare_parameter("guide_follow_scan_topic", "/scan")
+        self.declare_parameter("guide_follow_rear_center_deg", 180.0)
+        self.declare_parameter("guide_follow_rear_half_width_deg", 20.0)
+        self.declare_parameter("guide_follow_acquire_min_distance_m", 0.45)
+        self.declare_parameter("guide_follow_acquire_max_distance_m", 0.90)
+        self.declare_parameter("guide_follow_keep_min_distance_m", 0.35)
+        self.declare_parameter("guide_follow_keep_max_distance_m", 1.20)
+        self.declare_parameter("guide_follow_min_points", 5)
+        self.declare_parameter("guide_follow_min_cluster_width_m", 0.12)
+        self.declare_parameter("guide_follow_max_cluster_width_m", 0.75)
+        self.declare_parameter("guide_follow_acquire_confirm_sec", 0.8)
+        self.declare_parameter("guide_follow_lost_confirm_sec", 1.5)
+        self.declare_parameter("guide_follow_wait_display_text", "뒤따라와 주세요")
         self.declare_parameter("emit_command_received_event", True)
         self.declare_parameter("default_goto_success_event", "ARRIVED_AT_DESTINATION")
         self.declare_parameter("qr_scan_local_enabled", True)
@@ -332,6 +362,12 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .integer_value,
         )
+        self.robot_yield_right_cancel_fallback_sec = max(
+            0.0,
+            self.get_parameter("robot_yield_right_cancel_fallback_sec")
+            .get_parameter_value()
+            .double_value,
+        )
         self.obstacle_slow_enabled = (
             self.get_parameter("obstacle_slow_enabled").get_parameter_value().bool_value
         )
@@ -384,6 +420,42 @@ class OfficeRobotExecutor(Node):
             .get_parameter_value()
             .double_value,
         )
+        self.dynamic_nav_profile_side_arc_center_deg = min(
+            120.0,
+            max(
+                45.0,
+                self.get_parameter("dynamic_nav_profile_side_arc_center_deg")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.dynamic_nav_profile_side_arc_half_width_deg = min(
+            30.0,
+            max(
+                1.0,
+                self.get_parameter("dynamic_nav_profile_side_arc_half_width_deg")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.dynamic_nav_profile_forward_arc_half_width_deg = min(
+            30.0,
+            max(
+                1.0,
+                self.get_parameter("dynamic_nav_profile_forward_arc_half_width_deg")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
+        self.dynamic_nav_profile_percentile = min(
+            0.5,
+            max(
+                0.01,
+                self.get_parameter("dynamic_nav_profile_percentile")
+                .get_parameter_value()
+                .double_value,
+            ),
+        )
         self.dynamic_nav_profile_wide_width_enter_m = max(
             0.05,
             self.get_parameter("dynamic_nav_profile_wide_width_enter_m")
@@ -393,6 +465,18 @@ class OfficeRobotExecutor(Node):
         self.dynamic_nav_profile_wide_width_exit_m = max(
             0.05,
             self.get_parameter("dynamic_nav_profile_wide_width_exit_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_min_side_clear_enter_m = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_min_side_clear_enter_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.dynamic_nav_profile_wide_min_side_clear_exit_m = max(
+            0.01,
+            self.get_parameter("dynamic_nav_profile_wide_min_side_clear_exit_m")
             .get_parameter_value()
             .double_value,
         )
@@ -733,6 +817,88 @@ class OfficeRobotExecutor(Node):
         self.guide_display_period_sec = (
             self.get_parameter("guide_display_period_sec").get_parameter_value().double_value
         )
+        self.apriltag_detection_topic = (
+            self.get_parameter("apriltag_detection_topic").get_parameter_value().string_value
+            or "/apriltag_detections"
+        )
+        self.apriltag_nav_timeout_sec = max(
+            1.0,
+            self.get_parameter("apriltag_nav_timeout_sec").get_parameter_value().double_value,
+        )
+        self.guide_follow_monitor_enabled = (
+            self.get_parameter("guide_follow_monitor_enabled").get_parameter_value().bool_value
+        )
+        self.guide_follow_scan_topic = (
+            self.get_parameter("guide_follow_scan_topic").get_parameter_value().string_value
+            or "/scan"
+        )
+        self.guide_follow_rear_center_deg = (
+            self.get_parameter("guide_follow_rear_center_deg").get_parameter_value().double_value
+        )
+        self.guide_follow_rear_half_width_deg = max(
+            5.0,
+            self.get_parameter("guide_follow_rear_half_width_deg")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_acquire_min_distance_m = max(
+            0.0,
+            self.get_parameter("guide_follow_acquire_min_distance_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_acquire_max_distance_m = max(
+            self.guide_follow_acquire_min_distance_m + 0.05,
+            self.get_parameter("guide_follow_acquire_max_distance_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_keep_min_distance_m = max(
+            0.0,
+            self.get_parameter("guide_follow_keep_min_distance_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_keep_max_distance_m = max(
+            self.guide_follow_keep_min_distance_m + 0.05,
+            self.get_parameter("guide_follow_keep_max_distance_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_min_points = max(
+            1, self.get_parameter("guide_follow_min_points").get_parameter_value().integer_value
+        )
+        self.guide_follow_min_cluster_width_m = max(
+            0.0,
+            self.get_parameter("guide_follow_min_cluster_width_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_max_cluster_width_m = max(
+            self.guide_follow_min_cluster_width_m + 0.05,
+            self.get_parameter("guide_follow_max_cluster_width_m")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_acquire_confirm_sec = max(
+            0.1,
+            self.get_parameter("guide_follow_acquire_confirm_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_lost_confirm_sec = max(
+            0.1,
+            self.get_parameter("guide_follow_lost_confirm_sec")
+            .get_parameter_value()
+            .double_value,
+        )
+        self.guide_follow_wait_display_text = (
+            self.get_parameter("guide_follow_wait_display_text")
+            .get_parameter_value()
+            .string_value
+            .strip()
+            or "뒤따라와 주세요"
+        )
         self.emit_command_received_event = (
             self.get_parameter("emit_command_received_event").get_parameter_value().bool_value
         )
@@ -833,9 +999,14 @@ class OfficeRobotExecutor(Node):
         self._last_feedback_log_at = 0.0
         self._cancel_requested = False
         self._cancel_reason: Optional[str] = None
+        self._odom_x = 0.0
+        self._odom_y = 0.0
         self._odom_yaw = 0.0
         self._guide_display_timer = None
         self._guide_display_toggle = False
+        self._guide_follow_manager: Optional[GuideFollowerManager] = None
+        self._guide_follow_waiting_for_follower = False
+        self._guide_follow_pause_in_progress = False
         self._safety_locked = False
         self._last_safety_source = ""
         self._last_safety_state = "CLEAR"
@@ -881,6 +1052,10 @@ class OfficeRobotExecutor(Node):
         self._qr_always_scan_timer = None
         self._qr_always_last_data = ""
         self._qr_always_last_emit_mono = 0.0
+        self._apriltag_nav_active = False
+        self._apriltag_nav_tag_id: Optional[int] = None
+        self._apriltag_nav_target_distance = 0.1
+        self._apriltag_nav_timeout_timer = None
         self._last_localization_not_ready_event_mono = 0.0
         self._last_localization_not_ready_reason = ""
         self._last_nav_goal_start_failure_reason = ""
@@ -929,7 +1104,9 @@ class OfficeRobotExecutor(Node):
         self._yield_right_last_trigger_mono = 0.0
         self._yield_right_original_params: Optional[Dict[str, Any]] = None
         self._yield_right_original_goal_target: Optional[Dict[str, Any]] = None
-        self._yield_right_detour_goal_target: Optional[Dict[str, Any]] = None
+        self._yield_right_shift_goal_target: Optional[Dict[str, Any]] = None
+        self._yield_right_advance_goal_target: Optional[Dict[str, Any]] = None
+        self._yield_right_cancel_fallback_timer = None
         self._qr_detector = (
             cv2.QRCodeDetector()
             if (
@@ -1005,6 +1182,14 @@ class OfficeRobotExecutor(Node):
                     f"poll_sec={self.qr_always_scan_poll_period_sec:.2f}, "
                     f"dedup_sec={self.qr_always_scan_min_interval_sec:.2f})."
                 )
+        self.apriltag_detection_sub = None
+        if AprilTagDetectionArray is not None:
+            self.apriltag_detection_sub = self.create_subscription(
+                AprilTagDetectionArray,
+                self.apriltag_detection_topic,
+                self._on_apriltag_detections,
+                10,
+            )
 
         self.nav_client = None
         if self.use_nav2 and not self.mock_mode:
@@ -1027,8 +1212,14 @@ class OfficeRobotExecutor(Node):
                             enabled=True,
                             scan_topic=self.dynamic_nav_profile_scan_topic,
                             robot_width_m=self.dynamic_nav_profile_robot_width_m,
+                            side_arc_center_deg=self.dynamic_nav_profile_side_arc_center_deg,
+                            side_arc_half_width_deg=self.dynamic_nav_profile_side_arc_half_width_deg,
+                            forward_arc_half_width_deg=self.dynamic_nav_profile_forward_arc_half_width_deg,
+                            percentile=self.dynamic_nav_profile_percentile,
                             wide_width_enter_m=self.dynamic_nav_profile_wide_width_enter_m,
                             wide_width_exit_m=self.dynamic_nav_profile_wide_width_exit_m,
+                            wide_min_side_clear_enter_m=self.dynamic_nav_profile_wide_min_side_clear_enter_m,
+                            wide_min_side_clear_exit_m=self.dynamic_nav_profile_wide_min_side_clear_exit_m,
                             forward_enter_m=self.dynamic_nav_profile_forward_enter_m,
                             forward_exit_m=self.dynamic_nav_profile_forward_exit_m,
                             enter_samples=self.dynamic_nav_profile_enter_samples,
@@ -1040,6 +1231,27 @@ class OfficeRobotExecutor(Node):
                         ),
                         controller_node_full_name=self._resolve_full_node_name("controller_server"),
                         publish_event_cb=self._publish_nav_profile_event,
+                    )
+                if self.guide_follow_monitor_enabled:
+                    self._guide_follow_manager = GuideFollowerManager(
+                        node=self,
+                        settings=GuideFollowerSettings(
+                            enabled=True,
+                            scan_topic=self.guide_follow_scan_topic,
+                            rear_center_deg=self.guide_follow_rear_center_deg,
+                            rear_half_width_deg=self.guide_follow_rear_half_width_deg,
+                            acquire_min_distance_m=self.guide_follow_acquire_min_distance_m,
+                            acquire_max_distance_m=self.guide_follow_acquire_max_distance_m,
+                            keep_min_distance_m=self.guide_follow_keep_min_distance_m,
+                            keep_max_distance_m=self.guide_follow_keep_max_distance_m,
+                            min_points=self.guide_follow_min_points,
+                            min_cluster_width_m=self.guide_follow_min_cluster_width_m,
+                            max_cluster_width_m=self.guide_follow_max_cluster_width_m,
+                            acquire_confirm_sec=self.guide_follow_acquire_confirm_sec,
+                            lost_confirm_sec=self.guide_follow_lost_confirm_sec,
+                        ),
+                        on_detected_cb=self._on_guide_follow_detected,
+                        on_lost_cb=self._on_guide_follow_lost,
                     )
         self.tf_buffer = None
         self.tf_listener = None
@@ -1346,6 +1558,8 @@ class OfficeRobotExecutor(Node):
         y = float(msg.pose.pose.position.y)
         if not math.isfinite(x) or not math.isfinite(y):
             return
+        self._odom_x = x
+        self._odom_y = y
         self.location = (x, y)
         self._odom_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
 
@@ -1361,6 +1575,8 @@ class OfficeRobotExecutor(Node):
     def _enter_safety_lock(self, source: str) -> None:
         elapsed_sec = self._goal_elapsed_sec()
         self._stop_guide_display()
+        self._set_guide_follow_active(False, "safety_lock")
+        self._stop_apriltag_nav()
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("safety_lock")
@@ -1410,6 +1626,7 @@ class OfficeRobotExecutor(Node):
         self._action_queue = []
         self._current_action = None
         self._clear_nav_goal_context()
+        self._set_guide_follow_active(False, "safety_resume")
         self._stop_guide_display()
         self._cancel_requested = False
         self._cancel_reason = None
@@ -1428,10 +1645,12 @@ class OfficeRobotExecutor(Node):
         self._schedule_obstacle_auto_resume(source)
 
     def _run_next_action(self) -> None:
+        self._stop_apriltag_nav()
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("next_action")
         self._reset_yield_right_state(reset_attempts=True)
+        self._set_guide_follow_active(False, "next_action")
         self._current_action = None
         if not self._action_queue:
             if self._safety_locked:
@@ -1464,8 +1683,11 @@ class OfficeRobotExecutor(Node):
         params = action_msg.get("params", {}) or {}
         on_success = str(action_msg.get("on_success", "")).strip() or None
 
-        if action in {"GOTO", "LEAD_GUEST"}:
-            self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
+        if action in {"GOTO", "LEAD_GUEST", "APRILTAG_NAV"}:
+            if action == "LEAD_GUEST" and self._guide_follow_manager is not None:
+                self.current_status = "WAITING"
+            else:
+                self.current_status = "GUIDING" if action == "LEAD_GUEST" else "MOVING"
         elif action in {
             "DISPLAY_TEXT",
             "PAUSE",
@@ -1490,11 +1712,16 @@ class OfficeRobotExecutor(Node):
         )
 
         if action == "LEAD_GUEST":
-            self._start_guide_display()
+            if self._is_guide_follow_enabled_for_current_action():
+                self._begin_guide_follow_wait(initial=True)
+            else:
+                self._start_guide_display()
         else:
             self._stop_guide_display()
             if action == "GOTO":
                 self._publish_display("배달 중", "delivery")
+            elif action == "APRILTAG_NAV":
+                self._publish_display("태그 이동 중", "apriltag")
             elif action == "DISPLAY_TEXT":
                 text = str(params.get("text", "")).strip() or "안내중"
                 self._publish_display(text, "display")
@@ -1560,11 +1787,20 @@ class OfficeRobotExecutor(Node):
             )
             return
 
-        if action in {"GOTO", "LEAD_GUEST"} and not self.mock_mode:
+        if action in {"GOTO", "LEAD_GUEST", "APRILTAG_NAV"} and not self.mock_mode:
+            if action == "APRILTAG_NAV":
+                if not self._start_apriltag_nav(params):
+                    self._fail_current_action(
+                        "apriltag_nav_failed",
+                        {"status_code": 500, "status_text": "apriltag nav failed"},
+                    )
+                return
             if not self.use_nav2:
                 self._fail_current_action(
                     "nav2_disabled", {"status_code": 501, "status_text": "nav2 disabled"}
                 )
+                return
+            if action == "LEAD_GUEST" and self._is_guide_follow_enabled_for_current_action():
                 return
             if not self._execute_nav2_goal(params):
                 self._fail_current_action(
@@ -1598,6 +1834,7 @@ class OfficeRobotExecutor(Node):
         )
 
     def _finish_action_once(self, on_success: Optional[str]) -> None:
+        self._stop_apriltag_nav()
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_finished")
@@ -1622,6 +1859,7 @@ class OfficeRobotExecutor(Node):
             self._action_timer = None
         self._clear_nav_goal_context()
         if action_name == "LEAD_GUEST":
+            self._set_guide_follow_active(False, "lead_guest_complete")
             self._stop_guide_display()
         self._current_action = None
         if success_event:
@@ -1750,9 +1988,170 @@ class OfficeRobotExecutor(Node):
 
         self._yield_right_original_params = dict(params)
         self._yield_right_original_goal_target = None
-        self._yield_right_detour_goal_target = None
+        self._yield_right_shift_goal_target = None
+        self._yield_right_advance_goal_target = None
 
-        return self._send_nav_goal(x, y, yaw, goal_tag="primary")
+        started = self._send_nav_goal(x, y, yaw, goal_tag="primary")
+        if started and self._is_guide_follow_enabled_for_current_action():
+            self._set_guide_follow_motion_active(True, "nav_goal_started")
+        return started
+
+    def _start_apriltag_nav(self, params: Dict[str, Any]) -> bool:
+        if AprilTagDetectionArray is None or self.apriltag_detection_sub is None:
+            self.get_logger().error("APRILTAG_NAV requested but apriltag_msgs is unavailable.")
+            return False
+
+        raw_tag_id = params.get("tag_id")
+        try:
+            tag_id = int(raw_tag_id)
+        except (TypeError, ValueError):
+            self.get_logger().error("APRILTAG_NAV requires integer tag_id.")
+            return False
+
+        try:
+            target_distance = float(params.get("target_distance", 0.1))
+        except (TypeError, ValueError):
+            target_distance = 0.1
+        target_distance = max(0.0, target_distance)
+
+        self._stop_apriltag_nav()
+        self._apriltag_nav_active = True
+        self._apriltag_nav_tag_id = tag_id
+        self._apriltag_nav_target_distance = target_distance
+        self._publish_event(
+            "APRILTAG_NAV_STARTED",
+            self._task_id_payload({"tag_id": tag_id, "target_distance": target_distance}),
+        )
+        self.get_logger().info(
+            f"[APRILTAG_NAV] waiting for tag_id={tag_id}, target_distance={target_distance:.3f}"
+        )
+        self._apriltag_nav_timeout_timer = self.create_timer(
+            self.apriltag_nav_timeout_sec, self._on_apriltag_nav_timeout
+        )
+        return True
+
+    def _normalize_apriltag_detection_id(self, detection: Any) -> Optional[int]:
+        raw_id = getattr(detection, "id", None)
+        if isinstance(raw_id, (list, tuple)):
+            if not raw_id:
+                return None
+            raw_id = raw_id[0]
+        try:
+            return int(raw_id)
+        except (TypeError, ValueError):
+            return None
+
+    def _extract_apriltag_pose_stamped(self, detection: Any) -> Optional[PoseStamped]:
+        pose_field = getattr(detection, "pose", None)
+        if pose_field is None:
+            return None
+
+        header = getattr(pose_field, "header", None)
+        pose_value = getattr(pose_field, "pose", None)
+        if pose_value is None:
+            return None
+        if hasattr(pose_value, "pose"):
+            pose_value = pose_value.pose
+        if pose_value is None:
+            return None
+
+        pose_stamped = PoseStamped()
+        if header is not None:
+            pose_stamped.header = copy.deepcopy(header)
+        else:
+            pose_stamped.header.frame_id = self.frame_id
+            pose_stamped.header.stamp.sec = 0
+            pose_stamped.header.stamp.nanosec = 0
+        pose_stamped.pose = copy.deepcopy(pose_value)
+        return pose_stamped
+
+    def _on_apriltag_detections(self, msg: Any) -> None:
+        if not self._apriltag_nav_active or self._apriltag_nav_tag_id is None:
+            return
+
+        matched_detection = None
+        for detection in getattr(msg, "detections", []):
+            if self._normalize_apriltag_detection_id(detection) == self._apriltag_nav_tag_id:
+                matched_detection = detection
+                break
+
+        if matched_detection is None:
+            return
+
+        pose_stamped = self._extract_apriltag_pose_stamped(matched_detection)
+        if pose_stamped is None:
+            self.get_logger().warn("[APRILTAG_NAV] matched tag but pose extraction failed.")
+            return
+
+        source_frame = pose_stamped.header.frame_id or self.frame_id
+        if source_frame != self.frame_id:
+            if self.tf_buffer is None:
+                self.get_logger().warn(
+                    f"[APRILTAG_NAV] tag pose is in frame={source_frame}, but tf buffer is unavailable."
+                )
+                return
+            try:
+                pose_stamped = self.tf_buffer.transform(
+                    pose_stamped,
+                    self.frame_id,
+                    timeout=Duration(seconds=0.5),
+                )
+            except Exception as exc:
+                self.get_logger().warn(
+                    f"[APRILTAG_NAV] failed to transform tag pose from {source_frame} to {self.frame_id}: {exc}"
+                )
+                return
+
+        tag_pose = pose_stamped.pose
+        yaw = self._yaw_from_quaternion(tag_pose.orientation)
+        target_x = float(tag_pose.position.x) - (
+            self._apriltag_nav_target_distance * math.cos(yaw)
+        )
+        target_y = float(tag_pose.position.y) - (
+            self._apriltag_nav_target_distance * math.sin(yaw)
+        )
+        tag_id = self._apriltag_nav_tag_id
+        target_distance = self._apriltag_nav_target_distance
+        self._stop_apriltag_nav()
+        self.get_logger().info(
+            f"[APRILTAG_NAV] tag_id={tag_id} acquired in {self.frame_id}: "
+            f"target=({target_x:.3f}, {target_y:.3f}, yaw={yaw:.3f}), "
+            f"target_distance={target_distance:.3f}"
+        )
+        if not self._execute_nav2_goal({"x": target_x, "y": target_y, "yaw": yaw}):
+            self.get_logger().error("[APRILTAG_NAV] failed to start nav goal for detected tag.")
+            self._fail_current_action(
+                "apriltag_nav_goal_start_failed",
+                {
+                    "status_code": 500,
+                    "status_text": "apriltag nav goal start failed",
+                    "tag_id": tag_id,
+                },
+            )
+
+    def _on_apriltag_nav_timeout(self) -> None:
+        if not self._apriltag_nav_active:
+            self._stop_apriltag_nav()
+            return
+        tag_id = self._apriltag_nav_tag_id
+        self._stop_apriltag_nav()
+        self.get_logger().warn(f"[APRILTAG_NAV] tag_id={tag_id} not found before timeout.")
+        self._fail_current_action(
+            "apriltag_tag_not_found",
+            {
+                "status_code": 404,
+                "status_text": "apriltag not found",
+                "tag_id": tag_id,
+            },
+        )
+
+    def _stop_apriltag_nav(self) -> None:
+        if self._apriltag_nav_timeout_timer is not None:
+            self._apriltag_nav_timeout_timer.cancel()
+            self._apriltag_nav_timeout_timer = None
+        self._apriltag_nav_active = False
+        self._apriltag_nav_tag_id = None
+        self._apriltag_nav_target_distance = 0.1
 
     def _send_nav_goal(self, x: float, y: float, yaw: float, goal_tag: str) -> bool:
         if self.nav_client is None or NavigateToPose is None:
@@ -1783,8 +2182,10 @@ class OfficeRobotExecutor(Node):
             self._yield_right_original_goal_target = dict(self._goal_target)
             if goal_tag == "primary":
                 self._yield_right_attempt_count = 0
-        elif goal_tag == "yield_right_detour":
-            self._yield_right_detour_goal_target = dict(self._goal_target)
+        elif goal_tag == "yield_right_shift":
+            self._yield_right_shift_goal_target = dict(self._goal_target)
+        elif goal_tag == "yield_right_advance":
+            self._yield_right_advance_goal_target = dict(self._goal_target)
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._cancel_requested = False
@@ -2580,7 +2981,7 @@ class OfficeRobotExecutor(Node):
             self.get_logger().error(
                 f"Nav2 goal send failed: {exc} (task_id={self._current_task_id})"
             )
-            if goal_tag in {"yield_right_detour", "resume_after_yield"}:
+            if goal_tag in {"yield_right_shift", "yield_right_advance", "resume_after_yield"}:
                 self._fail_current_action(
                     "yield_goal_send_exception",
                     {
@@ -2600,7 +3001,7 @@ class OfficeRobotExecutor(Node):
             self._goal_response_started_at = None
             self._cancel_requested = False
             self._cancel_reason = None
-            if goal_tag in {"yield_right_detour", "resume_after_yield"}:
+            if goal_tag in {"yield_right_shift", "yield_right_advance", "resume_after_yield"}:
                 self.get_logger().warn(
                     f"Yield-related goal rejected (task_id={self._current_task_id}, goal_tag={goal_tag}, "
                     f"action={self.nav2_action_name})."
@@ -2623,6 +3024,30 @@ class OfficeRobotExecutor(Node):
         self.get_logger().info(
             f"Nav2 goal accepted (task_id={self._current_task_id}, action={self.nav2_action_name})."
         )
+        if (
+            goal_tag == "primary"
+            and self._yield_right_active
+            and self._yield_right_phase == "canceling_original_goal"
+        ):
+            self.get_logger().warn(
+                "Primary goal accepted while yield-right preemption was pending; "
+                f"canceling immediately (task_id={self._current_task_id})."
+            )
+            try:
+                self._cancel_requested = True
+                self._cancel_reason = "yield_right_start"
+                cancel_future = goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(
+                    lambda f: self._on_nav_cancel_response(
+                        f, "cancel:yield_right_start:accepted"
+                    )
+                )
+                self._start_yield_right_cancel_fallback()
+            except Exception as exc:
+                self.get_logger().warn(
+                    "Immediate yield-right cancel after accept failed "
+                    f"(task_id={self._current_task_id}, error={exc})."
+                )
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._on_nav_goal_result)
 
@@ -2658,13 +3083,38 @@ class OfficeRobotExecutor(Node):
             self._cancel_requested = False
             self._cancel_reason = None
             if cancel_reason == "yield_right_start":
-                self._start_robot_yield_right_detour()
-            return
+                self._start_robot_yield_right_shift()
+                return
+            if cancel_reason == "guiding_wait_follower":
+                self._clear_nav_goal_context()
+                self._set_guide_follow_motion_active(False, "guiding_wait_follower")
+                self._guide_follow_pause_in_progress = False
+                self._guide_follow_waiting_for_follower = True
+                self.current_status = "WAITING"
+                payload = self._task_id_payload(
+                    {
+                        "reason": "guide_follower_lost",
+                        "reason_code": "guide_follower_lost",
+                    }
+                )
+                self._publish_event("GUIDE_FOLLOWER_LOST", payload)
+                self._publish_status("WAITING", payload, event="GUIDE_FOLLOWER_LOST")
+                self._publish_display(self.guide_follow_wait_display_text, "guide_wait")
+                return
 
         if status_code == self.nav2_success_status_code:
-            if goal_tag == "yield_right_detour" and self._yield_right_active:
+            if goal_tag == "yield_right_shift" and self._yield_right_active:
                 self.get_logger().info(
-                    f"Yield-right detour goal succeeded (task_id={self._current_task_id}, "
+                    f"Yield-right shift goal succeeded (task_id={self._current_task_id}, "
+                    f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
+                )
+                self._start_robot_yield_right_advance()
+                self._cancel_requested = False
+                self._cancel_reason = None
+                return
+            if goal_tag == "yield_right_advance" and self._yield_right_active:
+                self.get_logger().info(
+                    f"Yield-right advance goal succeeded (task_id={self._current_task_id}, "
                     f"elapsed_sec={elapsed_sec:.3f}, target={self._goal_target})."
                 )
                 self._resume_original_goal_after_yield()
@@ -2689,11 +3139,35 @@ class OfficeRobotExecutor(Node):
             return
 
         detail = self._build_nav2_result_detail(status_code, result)
+        if (
+            goal_tag == "primary"
+            and self._yield_right_active
+            and self._yield_right_phase == "canceling_original_goal"
+        ):
+            self.get_logger().warn(
+                "Primary goal ended while yield-right preemption was pending; "
+                f"continuing with detour (task_id={self._current_task_id}, "
+                f"status={detail.get('status_text', status_code)}, error_code={detail.get('error_code')})."
+            )
+            self._cancel_requested = False
+            self._cancel_reason = None
+            self._start_robot_yield_right_shift()
+            return
+
         fallback = self._build_abort_success_detail(status_code, detail, feedback_snapshot)
         if fallback is not None:
-            if goal_tag == "yield_right_detour" and self._yield_right_active:
+            if goal_tag == "yield_right_shift" and self._yield_right_active:
                 self.get_logger().warn(
-                    f"Yield-right detour aborted but treated as success-like resume "
+                    f"Yield-right shift aborted but treated as success-like advance "
+                    f"(task_id={self._current_task_id}, fallback={fallback})."
+                )
+                self._start_robot_yield_right_advance()
+                self._cancel_requested = False
+                self._cancel_reason = None
+                return
+            if goal_tag == "yield_right_advance" and self._yield_right_active:
+                self.get_logger().warn(
+                    f"Yield-right advance aborted but treated as success-like resume "
                     f"(task_id={self._current_task_id}, fallback={fallback})."
                 )
                 self._resume_original_goal_after_yield()
@@ -2724,13 +3198,13 @@ class OfficeRobotExecutor(Node):
         )
         if feedback_snapshot:
             self.get_logger().error(f"Last Nav2 feedback before failure: {feedback_snapshot}")
-        if goal_tag == "yield_right_detour" and self._yield_right_active:
+        if goal_tag in {"yield_right_shift", "yield_right_advance"} and self._yield_right_active:
             self._publish_event(
                 "ROBOT_YIELD_RIGHT_FAILED",
                 self._task_id_payload(
                     {
-                        "reason": "yield_detour_goal_failed",
-                        "reason_code": "yield_detour_goal_failed",
+                        "reason": f"{goal_tag}_goal_failed",
+                        "reason_code": f"{goal_tag}_goal_failed",
                         "status_code": status_code,
                         "goal_status": detail.get("status_text", status_code),
                         "error_code": detail.get("error_code"),
@@ -2795,6 +3269,7 @@ class OfficeRobotExecutor(Node):
         self._stop_localization_recovery("sequence_cancel")
         self._clear_obstacle_auto_resume_context()
         self._reset_yield_right_state(reset_attempts=True)
+        self._set_guide_follow_active(False, f"cancel:{reason}")
         if self._action_timer is not None:
             self._action_timer.cancel()
             self._action_timer = None
@@ -2925,17 +3400,49 @@ class OfficeRobotExecutor(Node):
         self._end_forward_first_mode("clear_nav_goal_context")
         self._set_obstacle_slow_mode(False, "clear_nav_goal_context")
         self._set_nav_profile_active(False, "clear_nav_goal_context")
+        self._set_guide_follow_motion_active(False, "clear_nav_goal_context")
         self._goal_target = None
         self._last_nav_feedback = None
         self._last_feedback_log_at = 0.0
         self._goal_response_started_at = None
 
     def _reset_yield_right_state(self, reset_attempts: bool = False) -> None:
+        if self._yield_right_cancel_fallback_timer is not None:
+            self._yield_right_cancel_fallback_timer.cancel()
+            self._yield_right_cancel_fallback_timer = None
         self._yield_right_active = False
         self._yield_right_phase = ""
         self._yield_right_original_params = None
         self._yield_right_original_goal_target = None
-        self._yield_right_detour_goal_target = None
+        self._yield_right_shift_goal_target = None
+        self._yield_right_advance_goal_target = None
+        if reset_attempts:
+            self._yield_right_attempt_count = 0
+
+    def _start_yield_right_cancel_fallback(self) -> None:
+        if self._yield_right_cancel_fallback_timer is not None:
+            self._yield_right_cancel_fallback_timer.cancel()
+            self._yield_right_cancel_fallback_timer = None
+        if self.robot_yield_right_cancel_fallback_sec <= 0.0:
+            return
+        self._yield_right_cancel_fallback_timer = self.create_timer(
+            self.robot_yield_right_cancel_fallback_sec,
+            self._on_yield_right_cancel_fallback_timer,
+        )
+
+    def _on_yield_right_cancel_fallback_timer(self) -> None:
+        if self._yield_right_cancel_fallback_timer is not None:
+            self._yield_right_cancel_fallback_timer.cancel()
+            self._yield_right_cancel_fallback_timer = None
+        if not self._yield_right_active or self._yield_right_phase != "canceling_original_goal":
+            return
+        self.get_logger().warn(
+            "Yield-right cancel fallback expired; starting shift detour without waiting "
+            f"for primary goal cancel result (task_id={self._current_task_id})."
+        )
+        self._cancel_requested = False
+        self._cancel_reason = None
+        self._start_robot_yield_right_shift()
 
     def _capture_obstacle_auto_resume_context(self, source: str) -> None:
         if not self.obstacle_auto_resume_enabled:
@@ -3040,23 +3547,40 @@ class OfficeRobotExecutor(Node):
         self._obstacle_auto_resume_task_id = None
         self._obstacle_auto_resume_status = ""
         self._obstacle_auto_resume_reason = ""
-        if reset_attempts:
-            self._yield_right_attempt_count = 0
 
     def _maybe_start_robot_yield_right(self, payload: Dict[str, Any]) -> None:
-        if not self.robot_yield_right_enabled or self._safety_locked:
+        if not self.robot_yield_right_enabled:
+            return
+        if self._safety_locked:
+            self.get_logger().info(
+                f"Skipping yield-right because safety lock is active (task_id={self._current_task_id})."
+            )
             return
         if self._yield_right_active:
+            self.get_logger().info(
+                f"Skipping yield-right because one is already active (task_id={self._current_task_id}, phase={self._yield_right_phase})."
+            )
             return
         if self.robot_yield_right_max_attempts_per_action <= 0:
+            self.get_logger().warn("Skipping yield-right because max attempts is set to 0.")
             return
-        if self._current_goal_handle is None or self._current_action is None:
+        if self._current_action is None:
+            self.get_logger().info("Skipping yield-right because there is no current action.")
+            return
+        if self._current_goal_handle is None and self._goal_response_started_at is None:
+            self.get_logger().warn(
+                "Skipping yield-right because there is no active Nav2 goal handle "
+                f"(task_id={self._current_task_id}, action={self._current_action.get('action')})."
+            )
             return
 
         action_name = self._normalize_action_name(
             self._current_action.get("action", self._current_action.get("type", ""))
         )
         if action_name not in {"GOTO", "LEAD_GUEST"}:
+            self.get_logger().info(
+                f"Skipping yield-right because current action is not nav ({action_name})."
+            )
             return
 
         obstacle_class = str(payload.get("class_name", "")).strip().lower()
@@ -3069,16 +3593,31 @@ class OfficeRobotExecutor(Node):
             and self._yield_right_last_trigger_mono > 0.0
             and (now_mono - self._yield_right_last_trigger_mono) < self.robot_yield_right_cooldown_sec
         ):
+            self.get_logger().info(
+                f"Skipping yield-right due to cooldown (task_id={self._current_task_id}, "
+                f"elapsed={now_mono - self._yield_right_last_trigger_mono:.2f}s)."
+            )
             return
         if self._yield_right_attempt_count >= self.robot_yield_right_max_attempts_per_action:
+            self.get_logger().warn(
+                f"Skipping yield-right because attempts are exhausted "
+                f"(task_id={self._current_task_id}, attempts={self._yield_right_attempt_count})."
+            )
             return
 
-        detour_params = self._build_robot_yield_right_goal()
-        if detour_params is None:
+        detour_goals = self._build_robot_yield_right_goals()
+        if detour_goals is None:
+            self.get_logger().warn(
+                "Skipping yield-right because detour goals could not be built "
+                f"(task_id={self._current_task_id}, last_nav_feedback={self._last_nav_feedback}, "
+                f"odom=({self._odom_x:.3f}, {self._odom_y:.3f}, yaw={self._odom_yaw:.3f}))."
+            )
             return
+        shift_goal, advance_goal = detour_goals
 
         current_params = self._current_action.get("params", {}) if self._current_action else {}
         if not isinstance(current_params, dict):
+            self.get_logger().warn("Skipping yield-right because current action params are invalid.")
             return
 
         self._yield_right_active = True
@@ -3086,16 +3625,20 @@ class OfficeRobotExecutor(Node):
         self._yield_right_attempt_count += 1
         self._yield_right_last_trigger_mono = now_mono
         self._yield_right_original_params = dict(current_params)
-        self._yield_right_detour_goal_target = dict(detour_params)
+        self._yield_right_shift_goal_target = dict(shift_goal)
+        self._yield_right_advance_goal_target = dict(advance_goal)
 
         self._publish_event(
             "ROBOT_YIELD_RIGHT_START",
             self._task_id_payload(
                 {
                     "attempt": self._yield_right_attempt_count,
-                    "detour_x": detour_params["x"],
-                    "detour_y": detour_params["y"],
-                    "detour_yaw": detour_params["yaw"],
+                    "shift_x": shift_goal["x"],
+                    "shift_y": shift_goal["y"],
+                    "shift_yaw": shift_goal["yaw"],
+                    "advance_x": advance_goal["x"],
+                    "advance_y": advance_goal["y"],
+                    "advance_yaw": advance_goal["yaw"],
                     "reason": "robot_obstacle_yield_right",
                     "reason_code": "yield_right_start",
                 }
@@ -3104,11 +3647,20 @@ class OfficeRobotExecutor(Node):
         self.get_logger().warn(
             "Starting robot right-yield maneuver "
             f"(task_id={self._current_task_id}, attempt={self._yield_right_attempt_count}, "
-            f"detour=({detour_params['x']:.3f}, {detour_params['y']:.3f}, yaw={detour_params['yaw']:.3f}), "
+            f"shift=({shift_goal['x']:.3f}, {shift_goal['y']:.3f}, yaw={shift_goal['yaw']:.3f}), "
+            f"advance=({advance_goal['x']:.3f}, {advance_goal['y']:.3f}, yaw={advance_goal['yaw']:.3f}), "
             f"original_target={self._yield_right_original_goal_target})."
         )
 
         self._stop_timeout_watchdog()
+        self._publish_zero_cmd_vel_burst()
+        if self._current_goal_handle is None:
+            self.get_logger().warn(
+                "Yield-right preemption armed without a current goal handle; "
+                f"waiting for in-flight primary goal response/result (task_id={self._current_task_id})."
+            )
+            self._start_yield_right_cancel_fallback()
+            return
         try:
             self._cancel_requested = True
             self._cancel_reason = "yield_right_start"
@@ -3116,6 +3668,7 @@ class OfficeRobotExecutor(Node):
             cancel_future.add_done_callback(
                 lambda f: self._on_nav_cancel_response(f, "cancel:yield_right_start")
             )
+            self._start_yield_right_cancel_fallback()
             self._current_goal_handle = None
         except Exception as exc:
             self._cancel_requested = False
@@ -3124,13 +3677,14 @@ class OfficeRobotExecutor(Node):
             self._yield_right_phase = ""
             self.get_logger().warn(f"Failed to request yield-right cancel: {exc}")
 
-    def _build_robot_yield_right_goal(self) -> Optional[Dict[str, float]]:
+    def _build_robot_yield_right_goals(self) -> Optional[Tuple[Dict[str, float], Dict[str, float]]]:
         snapshot = self._last_nav_feedback or {}
         current_x = snapshot.get("current_x")
         current_y = snapshot.get("current_y")
         current_yaw = snapshot.get("current_yaw")
         if not isinstance(current_x, (int, float)) or not isinstance(current_y, (int, float)):
-            return None
+            current_x = self._odom_x
+            current_y = self._odom_y
         if not isinstance(current_yaw, (int, float)):
             current_yaw = self._odom_yaw
 
@@ -3139,39 +3693,108 @@ class OfficeRobotExecutor(Node):
         right_dx = math.sin(float(current_yaw))
         right_dy = -math.cos(float(current_yaw))
 
-        x = float(current_x) + (self.robot_yield_right_forward_m * forward_dx) + (
-            self.robot_yield_right_offset_m * right_dx
+        shift_x = float(current_x) + (self.robot_yield_right_offset_m * right_dx)
+        shift_y = float(current_y) + (self.robot_yield_right_offset_m * right_dy)
+        advance_x = shift_x + (self.robot_yield_right_forward_m * forward_dx)
+        advance_y = shift_y + (self.robot_yield_right_forward_m * forward_dy)
+        yaw = float(current_yaw)
+        return (
+            {"x": shift_x, "y": shift_y, "yaw": yaw},
+            {"x": advance_x, "y": advance_y, "yaw": yaw},
         )
-        y = float(current_y) + (self.robot_yield_right_forward_m * forward_dy) + (
-            self.robot_yield_right_offset_m * right_dy
-        )
-        return {"x": x, "y": y, "yaw": float(current_yaw)}
 
-    def _start_robot_yield_right_detour(self) -> None:
-        if not self._yield_right_active or not self._yield_right_detour_goal_target:
+    def _start_robot_yield_right_shift(self) -> None:
+        if not self._yield_right_active or not self._yield_right_shift_goal_target:
             return
-        detour = dict(self._yield_right_detour_goal_target)
-        self._yield_right_phase = "yield_detour_goal"
-        if self._send_nav_goal(detour["x"], detour["y"], detour["yaw"], goal_tag="yield_right_detour"):
+        if self._yield_right_cancel_fallback_timer is not None:
+            self._yield_right_cancel_fallback_timer.cancel()
+            self._yield_right_cancel_fallback_timer = None
+        shift_goal = dict(self._yield_right_shift_goal_target)
+        self._yield_right_phase = "yield_shift_goal"
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_SHIFT_START",
+            self._task_id_payload(
+                {
+                    "x": shift_goal["x"],
+                    "y": shift_goal["y"],
+                    "yaw": shift_goal["yaw"],
+                    "reason": "yield_right_shift_goal",
+                    "reason_code": "yield_right_shift_goal",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            f"Starting yield-right shift goal (task_id={self._current_task_id}, shift={shift_goal})."
+        )
+        if self._send_nav_goal(
+            shift_goal["x"], shift_goal["y"], shift_goal["yaw"], goal_tag="yield_right_shift"
+        ):
             return
 
         self._publish_event(
             "ROBOT_YIELD_RIGHT_FAILED",
             self._task_id_payload(
                 {
-                    "reason": "yield_detour_start_failed",
-                    "reason_code": "yield_detour_start_failed",
+                    "reason": "yield_shift_start_failed",
+                    "reason_code": "yield_shift_start_failed",
                     "status_code": 503,
-                    "status_text": "yield detour start failed",
+                    "status_text": "yield shift start failed",
                 }
             ),
         )
         self.get_logger().warn(
-            f"Yield-right detour start failed (task_id={self._current_task_id}, detour={detour})."
+            f"Yield-right shift start failed (task_id={self._current_task_id}, shift={shift_goal})."
         )
         self._fail_current_action(
-            "yield_detour_start_failed",
-            {"status_code": 503, "status_text": "yield detour start failed"},
+            "yield_shift_start_failed",
+            {"status_code": 503, "status_text": "yield shift start failed"},
+        )
+
+    def _start_robot_yield_right_advance(self) -> None:
+        if not self._yield_right_active or not self._yield_right_advance_goal_target:
+            return
+        advance_goal = dict(self._yield_right_advance_goal_target)
+        self._yield_right_phase = "yield_advance_goal"
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_ADVANCE_START",
+            self._task_id_payload(
+                {
+                    "x": advance_goal["x"],
+                    "y": advance_goal["y"],
+                    "yaw": advance_goal["yaw"],
+                    "reason": "yield_right_advance_goal",
+                    "reason_code": "yield_right_advance_goal",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            f"Starting yield-right advance goal (task_id={self._current_task_id}, advance={advance_goal})."
+        )
+        if self._send_nav_goal(
+            advance_goal["x"],
+            advance_goal["y"],
+            advance_goal["yaw"],
+            goal_tag="yield_right_advance",
+        ):
+            return
+
+        self._publish_event(
+            "ROBOT_YIELD_RIGHT_FAILED",
+            self._task_id_payload(
+                {
+                    "reason": "yield_advance_start_failed",
+                    "reason_code": "yield_advance_start_failed",
+                    "status_code": 503,
+                    "status_text": "yield advance start failed",
+                }
+            ),
+        )
+        self.get_logger().warn(
+            f"Yield-right advance start failed (task_id={self._current_task_id}, advance={advance_goal})."
+        )
+        self._fail_current_action(
+            "yield_advance_start_failed",
+            {"status_code": 503, "status_text": "yield advance start failed"},
         )
 
     def _resume_original_goal_after_yield(self) -> None:
@@ -3645,6 +4268,104 @@ class OfficeRobotExecutor(Node):
             self._guide_display_timer.cancel()
             self._guide_display_timer = None
 
+    def _is_guide_follow_enabled_for_current_action(self) -> bool:
+        if self._guide_follow_manager is None or not self.guide_follow_monitor_enabled:
+            return False
+        if self._current_action is None:
+            return False
+        action_name = self._normalize_action_name(
+            self._current_action.get("action", self._current_action.get("type", ""))
+        )
+        return action_name == "LEAD_GUEST"
+
+    def _set_guide_follow_active(self, active: bool, reason: str) -> None:
+        if self._guide_follow_manager is None:
+            return
+        if not active:
+            self._guide_follow_waiting_for_follower = False
+            self._guide_follow_pause_in_progress = False
+            self._guide_follow_manager.set_motion_active(False, reason)
+        self._guide_follow_manager.set_guiding_active(active, reason)
+
+    def _set_guide_follow_motion_active(self, active: bool, reason: str) -> None:
+        if self._guide_follow_manager is None:
+            return
+        self._guide_follow_manager.set_motion_active(active, reason)
+
+    def _begin_guide_follow_wait(self, *, initial: bool) -> None:
+        if not self._is_guide_follow_enabled_for_current_action():
+            return
+        self._set_guide_follow_active(True, "lead_guest_wait")
+        self._guide_follow_waiting_for_follower = True
+        self._guide_follow_pause_in_progress = False
+        self.current_status = "WAITING"
+        payload = self._task_id_payload(
+            {
+                "reason": "guide_waiting_for_follower",
+                "reason_code": "guide_waiting_for_follower",
+                "initial_wait": bool(initial),
+            }
+        )
+        self._publish_status("WAITING", payload, event="GUIDE_FOLLOW_WAITING")
+        self._publish_display(self.guide_follow_wait_display_text, "guide_wait")
+
+    def _on_guide_follow_detected(self, sample: GuideFollowerSample, resumed: bool) -> None:
+        if not self._is_guide_follow_enabled_for_current_action() or self._safety_locked:
+            return
+        if self._current_goal_handle is not None or self._goal_response_started_at is not None:
+            return
+        if self._guide_follow_pause_in_progress:
+            return
+        params = self._current_action.get("params", {}) if self._current_action else {}
+        if not isinstance(params, dict):
+            params = {}
+        self._guide_follow_waiting_for_follower = False
+        self.current_status = "GUIDING"
+        event_name = "GUIDE_FOLLOW_RESUMED" if resumed else "GUIDE_FOLLOWER_DETECTED"
+        payload = self._task_id_payload(
+            {
+                "reason": "guide_follower_detected",
+                "reason_code": "guide_follower_detected",
+                "guide_follow_distance_m": float(sample.distance_m),
+                "guide_follow_cluster_width_m": float(sample.cluster_width_m),
+                "guide_follow_cluster_points": int(sample.cluster_points),
+                "guide_follow_cluster_center_deg": float(sample.center_angle_deg),
+            }
+        )
+        self._publish_event(event_name, payload)
+        self._publish_status("GUIDING", payload, event=event_name)
+        self._start_guide_display()
+        if not self._execute_nav2_goal(params):
+            self._fail_current_action(
+                self._last_nav_goal_start_failure_reason or "nav2_goal_start_failed",
+                self._build_nav_goal_start_failure_extra(),
+            )
+
+    def _on_guide_follow_lost(self, sample: Optional[GuideFollowerSample]) -> None:
+        if not self._is_guide_follow_enabled_for_current_action():
+            return
+        if self._safety_locked or self._current_goal_handle is None:
+            return
+        if self._guide_follow_pause_in_progress:
+            return
+        self._guide_follow_pause_in_progress = True
+        self._cancel_requested = True
+        self._cancel_reason = "guiding_wait_follower"
+        self.get_logger().warn(
+            "Guide follower lost; canceling current LEAD_GUEST goal "
+            f"(task_id={self._current_task_id}, distance={getattr(sample, 'distance_m', None)})."
+        )
+        try:
+            cancel_future = self._current_goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(
+                lambda f: self._on_nav_cancel_response(f, "cancel:guiding_wait_follower")
+            )
+        except Exception as exc:
+            self._guide_follow_pause_in_progress = False
+            self._cancel_requested = False
+            self._cancel_reason = None
+            self.get_logger().warn(f"Guide follower cancel request failed: {exc}")
+
     def _start_local_qr_scan(self, on_success: Optional[str]) -> bool:
         if not self.qr_scan_local_enabled:
             return False
@@ -3952,8 +4673,10 @@ class OfficeRobotExecutor(Node):
         return fallback
 
     def _fail_current_action(self, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        self._stop_apriltag_nav()
         self._stop_timeout_watchdog()
         self._stop_guide_display()
+        self._set_guide_follow_active(False, f"action_failed:{reason}")
         self._stop_local_qr_scan()
         self._stop_nav_retry()
         self._stop_localization_recovery("action_failed")
@@ -4008,6 +4731,7 @@ class OfficeRobotExecutor(Node):
         if not self._battery_received:
             data["battery_error"] = "battery_topic_unavailable"
         data.update(self._build_safety_status_fields())
+        data.update(self._build_guide_follow_status_fields())
         data.update(self._build_nav_profile_status_fields())
         data["nav_speed_limited"] = bool(self._obstacle_slow_active)
         if self._obstacle_slow_active and self._obstacle_slow_last_applied is not None:
@@ -4128,6 +4852,14 @@ class OfficeRobotExecutor(Node):
             data["obstacle_distance"] = float(self._last_obstacle_distance)
         if self._last_obstacle_box is not None:
             data["obstacle_box"] = dict(self._last_obstacle_box)
+        return data
+
+    def _build_guide_follow_status_fields(self) -> Dict[str, Any]:
+        if self._guide_follow_manager is None:
+            return {}
+        data = self._guide_follow_manager.get_status_fields()
+        if self._guide_follow_waiting_for_follower:
+            data["guide_follow_waiting_for_follower"] = True
         return data
 
     def _build_safety_display_text(self) -> str:

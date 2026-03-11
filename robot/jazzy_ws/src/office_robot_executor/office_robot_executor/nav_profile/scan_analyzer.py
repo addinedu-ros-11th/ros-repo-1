@@ -7,6 +7,7 @@ from typing import Any, List, Optional
 class ScanSpaceSample:
     left_clear_m: Optional[float]
     right_clear_m: Optional[float]
+    min_side_clear_m: Optional[float]
     forward_clear_m: Optional[float]
     estimated_width_m: Optional[float]
     valid: bool
@@ -17,9 +18,9 @@ def analyze_scan_space(
     *,
     robot_width_m: float,
     side_arc_center_deg: float = 90.0,
-    side_arc_half_width_deg: float = 12.0,
+    side_arc_half_width_deg: float = 6.0,
     forward_arc_half_width_deg: float = 15.0,
-    percentile: float = 0.2,
+    percentile: float = 0.1,
 ) -> ScanSpaceSample:
     ranges = list(getattr(scan_msg, "ranges", []) or [])
     if not ranges:
@@ -60,14 +61,20 @@ def analyze_scan_space(
     left_clear = _percentile(left_values, percentile)
     right_clear = _percentile(right_values, percentile)
     forward_clear = _percentile(forward_values, percentile)
+    min_side_clear = None
+    if left_clear is not None and right_clear is not None:
+        min_side_clear = float(min(left_clear, right_clear))
 
     estimated_width = None
-    if left_clear is not None and right_clear is not None:
-        estimated_width = float(left_clear + right_clear + max(0.0, robot_width_m))
+    if min_side_clear is not None:
+        # Use the tighter side as the corridor-width proxy so corners and
+        # asymmetric openings are not misclassified as wide corridors.
+        estimated_width = float((2.0 * min_side_clear) + max(0.0, robot_width_m))
 
     return ScanSpaceSample(
         left_clear_m=left_clear,
         right_clear_m=right_clear,
+        min_side_clear_m=min_side_clear,
         forward_clear_m=forward_clear,
         estimated_width_m=estimated_width,
         valid=estimated_width is not None and forward_clear is not None,

@@ -52,11 +52,27 @@ def generate_launch_description() -> LaunchDescription:
     dynamic_nav_profile_enabled = LaunchConfiguration("dynamic_nav_profile_enabled")
     dynamic_nav_profile_scan_topic = LaunchConfiguration("dynamic_nav_profile_scan_topic")
     dynamic_nav_profile_robot_width_m = LaunchConfiguration("dynamic_nav_profile_robot_width_m")
+    dynamic_nav_profile_side_arc_center_deg = LaunchConfiguration(
+        "dynamic_nav_profile_side_arc_center_deg"
+    )
+    dynamic_nav_profile_side_arc_half_width_deg = LaunchConfiguration(
+        "dynamic_nav_profile_side_arc_half_width_deg"
+    )
+    dynamic_nav_profile_forward_arc_half_width_deg = LaunchConfiguration(
+        "dynamic_nav_profile_forward_arc_half_width_deg"
+    )
+    dynamic_nav_profile_percentile = LaunchConfiguration("dynamic_nav_profile_percentile")
     dynamic_nav_profile_wide_width_enter_m = LaunchConfiguration(
         "dynamic_nav_profile_wide_width_enter_m"
     )
     dynamic_nav_profile_wide_width_exit_m = LaunchConfiguration(
         "dynamic_nav_profile_wide_width_exit_m"
+    )
+    dynamic_nav_profile_wide_min_side_clear_enter_m = LaunchConfiguration(
+        "dynamic_nav_profile_wide_min_side_clear_enter_m"
+    )
+    dynamic_nav_profile_wide_min_side_clear_exit_m = LaunchConfiguration(
+        "dynamic_nav_profile_wide_min_side_clear_exit_m"
     )
     dynamic_nav_profile_forward_enter_m = LaunchConfiguration(
         "dynamic_nav_profile_forward_enter_m"
@@ -167,6 +183,34 @@ def generate_launch_description() -> LaunchDescription:
         "employee_verification_qr_purpose"
     )
     guide_display_period_sec = LaunchConfiguration("guide_display_period_sec")
+    guide_follow_monitor_enabled = LaunchConfiguration("guide_follow_monitor_enabled")
+    guide_follow_scan_topic = LaunchConfiguration("guide_follow_scan_topic")
+    guide_follow_rear_center_deg = LaunchConfiguration("guide_follow_rear_center_deg")
+    guide_follow_rear_half_width_deg = LaunchConfiguration("guide_follow_rear_half_width_deg")
+    guide_follow_acquire_min_distance_m = LaunchConfiguration(
+        "guide_follow_acquire_min_distance_m"
+    )
+    guide_follow_acquire_max_distance_m = LaunchConfiguration(
+        "guide_follow_acquire_max_distance_m"
+    )
+    guide_follow_keep_min_distance_m = LaunchConfiguration(
+        "guide_follow_keep_min_distance_m"
+    )
+    guide_follow_keep_max_distance_m = LaunchConfiguration(
+        "guide_follow_keep_max_distance_m"
+    )
+    guide_follow_min_points = LaunchConfiguration("guide_follow_min_points")
+    guide_follow_min_cluster_width_m = LaunchConfiguration(
+        "guide_follow_min_cluster_width_m"
+    )
+    guide_follow_max_cluster_width_m = LaunchConfiguration(
+        "guide_follow_max_cluster_width_m"
+    )
+    guide_follow_acquire_confirm_sec = LaunchConfiguration(
+        "guide_follow_acquire_confirm_sec"
+    )
+    guide_follow_lost_confirm_sec = LaunchConfiguration("guide_follow_lost_confirm_sec")
+    guide_follow_wait_display_text = LaunchConfiguration("guide_follow_wait_display_text")
     enable_ui_bridge = LaunchConfiguration("enable_ui_bridge")
     lcd_enabled = LaunchConfiguration("lcd_enabled")
     led_enabled = LaunchConfiguration("led_enabled")
@@ -248,11 +292,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="FollowPath.allow_reversing",
             ),
             DeclareLaunchArgument("robot_yield_right_enabled", default_value="true"),
-            DeclareLaunchArgument("robot_yield_right_offset_m", default_value="0.18"),
-            DeclareLaunchArgument("robot_yield_right_forward_m", default_value="0.20"),
+            DeclareLaunchArgument("robot_yield_right_offset_m", default_value="0.08"),
+            DeclareLaunchArgument("robot_yield_right_forward_m", default_value="0.18"),
             DeclareLaunchArgument("robot_yield_right_cooldown_sec", default_value="5.0"),
             DeclareLaunchArgument(
-                "robot_yield_right_max_attempts_per_action", default_value="1"
+                "robot_yield_right_max_attempts_per_action", default_value="2"
             ),
             DeclareLaunchArgument("obstacle_slow_enabled", default_value="true"),
             DeclareLaunchArgument(
@@ -269,18 +313,34 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("dynamic_nav_profile_scan_topic", default_value="/scan"),
             DeclareLaunchArgument("dynamic_nav_profile_robot_width_m", default_value="0.12"),
             DeclareLaunchArgument(
-                "dynamic_nav_profile_wide_width_enter_m", default_value="0.38"
+                "dynamic_nav_profile_side_arc_center_deg", default_value="82.0"
             ),
             DeclareLaunchArgument(
-                "dynamic_nav_profile_wide_width_exit_m", default_value="0.32"
+                "dynamic_nav_profile_side_arc_half_width_deg", default_value="6.0"
             ),
             DeclareLaunchArgument(
-                "dynamic_nav_profile_forward_enter_m", default_value="0.55"
+                "dynamic_nav_profile_forward_arc_half_width_deg", default_value="12.0"
+            ),
+            DeclareLaunchArgument("dynamic_nav_profile_percentile", default_value="0.10"),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_width_enter_m", default_value="0.44"
             ),
             DeclareLaunchArgument(
-                "dynamic_nav_profile_forward_exit_m", default_value="0.40"
+                "dynamic_nav_profile_wide_width_exit_m", default_value="0.34"
             ),
-            DeclareLaunchArgument("dynamic_nav_profile_enter_samples", default_value="3"),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_min_side_clear_enter_m", default_value="0.15"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_wide_min_side_clear_exit_m", default_value="0.10"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_forward_enter_m", default_value="0.70"
+            ),
+            DeclareLaunchArgument(
+                "dynamic_nav_profile_forward_exit_m", default_value="0.45"
+            ),
+            DeclareLaunchArgument("dynamic_nav_profile_enter_samples", default_value="4"),
             DeclareLaunchArgument("dynamic_nav_profile_exit_samples", default_value="2"),
             DeclareLaunchArgument(
                 "dynamic_nav_profile_wide_lookahead_dist", default_value="0.32"
@@ -386,6 +446,36 @@ def generate_launch_description() -> LaunchDescription:
                 "employee_verification_qr_purpose", default_value="VISITOR_SCAN"
             ),
             DeclareLaunchArgument("guide_display_period_sec", default_value="2.0"),
+            DeclareLaunchArgument("guide_follow_monitor_enabled", default_value="true"),
+            DeclareLaunchArgument("guide_follow_scan_topic", default_value="/scan"),
+            DeclareLaunchArgument("guide_follow_rear_center_deg", default_value="180.0"),
+            DeclareLaunchArgument("guide_follow_rear_half_width_deg", default_value="20.0"),
+            DeclareLaunchArgument(
+                "guide_follow_acquire_min_distance_m", default_value="0.45"
+            ),
+            DeclareLaunchArgument(
+                "guide_follow_acquire_max_distance_m", default_value="0.90"
+            ),
+            DeclareLaunchArgument(
+                "guide_follow_keep_min_distance_m", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
+                "guide_follow_keep_max_distance_m", default_value="1.20"
+            ),
+            DeclareLaunchArgument("guide_follow_min_points", default_value="5"),
+            DeclareLaunchArgument(
+                "guide_follow_min_cluster_width_m", default_value="0.12"
+            ),
+            DeclareLaunchArgument(
+                "guide_follow_max_cluster_width_m", default_value="0.75"
+            ),
+            DeclareLaunchArgument(
+                "guide_follow_acquire_confirm_sec", default_value="0.8"
+            ),
+            DeclareLaunchArgument("guide_follow_lost_confirm_sec", default_value="1.5"),
+            DeclareLaunchArgument(
+                "guide_follow_wait_display_text", default_value="뒤따라와 주세요"
+            ),
             DeclareLaunchArgument("enable_ui_bridge", default_value="true"),
             DeclareLaunchArgument("lcd_enabled", default_value="true"),
             DeclareLaunchArgument("led_enabled", default_value="true"),
@@ -550,8 +640,14 @@ def generate_launch_description() -> LaunchDescription:
                             "dynamic_nav_profile_enabled": dynamic_nav_profile_enabled,
                             "dynamic_nav_profile_scan_topic": dynamic_nav_profile_scan_topic,
                             "dynamic_nav_profile_robot_width_m": dynamic_nav_profile_robot_width_m,
+                            "dynamic_nav_profile_side_arc_center_deg": dynamic_nav_profile_side_arc_center_deg,
+                            "dynamic_nav_profile_side_arc_half_width_deg": dynamic_nav_profile_side_arc_half_width_deg,
+                            "dynamic_nav_profile_forward_arc_half_width_deg": dynamic_nav_profile_forward_arc_half_width_deg,
+                            "dynamic_nav_profile_percentile": dynamic_nav_profile_percentile,
                             "dynamic_nav_profile_wide_width_enter_m": dynamic_nav_profile_wide_width_enter_m,
                             "dynamic_nav_profile_wide_width_exit_m": dynamic_nav_profile_wide_width_exit_m,
+                            "dynamic_nav_profile_wide_min_side_clear_enter_m": dynamic_nav_profile_wide_min_side_clear_enter_m,
+                            "dynamic_nav_profile_wide_min_side_clear_exit_m": dynamic_nav_profile_wide_min_side_clear_exit_m,
                             "dynamic_nav_profile_forward_enter_m": dynamic_nav_profile_forward_enter_m,
                             "dynamic_nav_profile_forward_exit_m": dynamic_nav_profile_forward_exit_m,
                             "dynamic_nav_profile_enter_samples": dynamic_nav_profile_enter_samples,
@@ -613,6 +709,20 @@ def generate_launch_description() -> LaunchDescription:
                             "employee_verification_qr_on_success_event": employee_verification_qr_on_success_event,
                             "employee_verification_qr_purpose": employee_verification_qr_purpose,
                             "guide_display_period_sec": guide_display_period_sec,
+                            "guide_follow_monitor_enabled": guide_follow_monitor_enabled,
+                            "guide_follow_scan_topic": guide_follow_scan_topic,
+                            "guide_follow_rear_center_deg": guide_follow_rear_center_deg,
+                            "guide_follow_rear_half_width_deg": guide_follow_rear_half_width_deg,
+                            "guide_follow_acquire_min_distance_m": guide_follow_acquire_min_distance_m,
+                            "guide_follow_acquire_max_distance_m": guide_follow_acquire_max_distance_m,
+                            "guide_follow_keep_min_distance_m": guide_follow_keep_min_distance_m,
+                            "guide_follow_keep_max_distance_m": guide_follow_keep_max_distance_m,
+                            "guide_follow_min_points": guide_follow_min_points,
+                            "guide_follow_min_cluster_width_m": guide_follow_min_cluster_width_m,
+                            "guide_follow_max_cluster_width_m": guide_follow_max_cluster_width_m,
+                            "guide_follow_acquire_confirm_sec": guide_follow_acquire_confirm_sec,
+                            "guide_follow_lost_confirm_sec": guide_follow_lost_confirm_sec,
+                            "guide_follow_wait_display_text": guide_follow_wait_display_text,
                             "emit_command_received_event": emit_command_received_event,
                             "qr_scan_local_enabled": qr_scan_local_enabled,
                             "qr_scan_image_topic": qr_scan_image_topic,

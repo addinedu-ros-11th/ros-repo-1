@@ -838,6 +838,12 @@ class OfficeRobotSafety(Node):
             if self._last_obstacle_detail is not None:
                 detail = dict(self._last_obstacle_detail)
             reason = reason_override or str(detail.get("reason") or "obstacle_lock")
+        elif self._obstacle_state == "YIELD_RIGHT":
+            source = "obstacle"
+            state = "YIELD_RIGHT"
+            if self._last_obstacle_detail is not None:
+                detail = dict(self._last_obstacle_detail)
+            reason = reason_override or str(detail.get("reason") or "obstacle_yield_right")
         elif self._obstacle_state == "SLOW":
             source = "obstacle"
             state = "SLOW"

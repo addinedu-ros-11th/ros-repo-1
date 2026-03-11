@@ -33,6 +33,10 @@ This guide documents the integration contract for the robot runtime in
   - the same QR payload must be decoded `qr_scan_confirm_count` consecutive polls before success.
   - while `QR_SCAN` is active, new commands from `/{robot_ns}/commands` are ignored when
     `qr_scan_ignore_commands_while_active=true`.
+- `LEAD_GUEST` behavior:
+  - with `guide_follow_monitor_enabled=true`, rear LiDAR follower presence is required before motion starts.
+  - during guiding, if the rear follower disappears for `guide_follow_lost_confirm_sec`, the current Nav2 goal is canceled and the robot waits.
+  - when rear follower presence is reacquired for `guide_follow_acquire_confirm_sec`, the same destination is resumed automatically.
 - Employee verification relay behavior:
   - direct `/{robot_ns}/employee_verification` handling is disabled by default.
   - employee UI feedback should come from the normal command path (`SET_LED`, `DISPLAY_TEXT`) unless
@@ -96,6 +100,13 @@ This guide documents the integration contract for the robot runtime in
   - `nav_profile_state` (`BASELINE` / `WIDE`)
   - `nav_profile_width_m`
   - `nav_profile_forward_clear_m`
+- Guiding follow fields:
+  - `guide_follow_state` (`INACTIVE` / `WAITING` / `FOLLOWING` / `LOST`)
+  - `guide_follow_waiting_for_follower`
+  - `guide_follow_distance_m`
+  - `guide_follow_cluster_width_m`
+  - `guide_follow_cluster_points`
+  - `guide_follow_cluster_center_deg`
 - Events:
   - `NAV_PROFILE_WIDE_APPLIED`
   - `NAV_PROFILE_BASELINE_RESTORED`

@@ -17,8 +17,14 @@ class DynamicNavProfileSettings:
     enabled: bool
     scan_topic: str
     robot_width_m: float
+    side_arc_center_deg: float
+    side_arc_half_width_deg: float
+    forward_arc_half_width_deg: float
+    percentile: float
     wide_width_enter_m: float
     wide_width_exit_m: float
+    wide_min_side_clear_enter_m: float
+    wide_min_side_clear_exit_m: float
     forward_enter_m: float
     forward_exit_m: float
     enter_samples: int
@@ -126,6 +132,8 @@ class DynamicNavProfileManager:
         ):
             if self._last_sample.estimated_width_m is not None:
                 data["nav_profile_width_m"] = float(self._last_sample.estimated_width_m)
+            if self._last_sample.min_side_clear_m is not None:
+                data["nav_profile_min_side_clear_m"] = float(self._last_sample.min_side_clear_m)
             if self._last_sample.forward_clear_m is not None:
                 data["nav_profile_forward_clear_m"] = float(self._last_sample.forward_clear_m)
         return data
@@ -137,6 +145,10 @@ class DynamicNavProfileManager:
         sample = analyze_scan_space(
             msg,
             robot_width_m=self._settings.robot_width_m,
+            side_arc_center_deg=self._settings.side_arc_center_deg,
+            side_arc_half_width_deg=self._settings.side_arc_half_width_deg,
+            forward_arc_half_width_deg=self._settings.forward_arc_half_width_deg,
+            percentile=self._settings.percentile,
         )
         self._last_sample = sample
         self._last_sample_mono = time.monotonic()
@@ -148,10 +160,12 @@ class DynamicNavProfileManager:
 
         width_m = float(sample.estimated_width_m)
         forward_m = float(sample.forward_clear_m)
+        min_side_m = float(sample.min_side_clear_m) if sample.min_side_clear_m is not None else 0.0
         desired_state = self._current_state
 
         if (
             width_m >= self._settings.wide_width_enter_m
+            and min_side_m >= self._settings.wide_min_side_clear_enter_m
             and forward_m >= self._settings.forward_enter_m
         ):
             self._enter_count += 1
@@ -160,6 +174,7 @@ class DynamicNavProfileManager:
                 desired_state = self.PROFILE_WIDE
         elif (
             width_m <= self._settings.wide_width_exit_m
+            or min_side_m <= self._settings.wide_min_side_clear_exit_m
             or forward_m <= self._settings.forward_exit_m
         ):
             self._exit_count += 1
@@ -354,6 +369,8 @@ class DynamicNavProfileManager:
                 payload["nav_profile_width_m"] = float(self._last_sample.estimated_width_m)
             if self._last_sample.forward_clear_m is not None:
                 payload["nav_profile_forward_clear_m"] = float(self._last_sample.forward_clear_m)
+            if self._last_sample.min_side_clear_m is not None:
+                payload["nav_profile_min_side_clear_m"] = float(self._last_sample.min_side_clear_m)
         event_name = (
             "NAV_PROFILE_WIDE_APPLIED"
             if target_state == self.PROFILE_WIDE
@@ -401,7 +418,7 @@ class DynamicNavProfileManager:
                 stamp=stamp,
                 ns="nav_profile",
                 color=(0.2, 0.9, 0.2, 0.95),
-                angle_deg=90.0,
+                angle_deg=self._settings.side_arc_center_deg,
                 distance=sample.left_clear_m,
             )
         )
@@ -412,7 +429,7 @@ class DynamicNavProfileManager:
                 stamp=stamp,
                 ns="nav_profile",
                 color=(0.2, 0.6, 1.0, 0.95),
-                angle_deg=-90.0,
+                angle_deg=-self._settings.side_arc_center_deg,
                 distance=sample.right_clear_m,
             )
         )
@@ -447,13 +464,16 @@ class DynamicNavProfileManager:
         width_text = (
             f"{sample.estimated_width_m:.2f}" if sample.estimated_width_m is not None else "n/a"
         )
+        side_text = (
+            f"{sample.min_side_clear_m:.2f}" if sample.min_side_clear_m is not None else "n/a"
+        )
         forward_text = (
             f"{sample.forward_clear_m:.2f}" if sample.forward_clear_m is not None else "n/a"
         )
         lookahead_text = f"{lookahead:.2f}" if isinstance(lookahead, float) else "n/a"
         return (
             f"profile={self._current_state}\n"
-            f"width={width_text}m forward={forward_text}m\n"
+            f"width={width_text}m side_min={side_text}m forward={forward_text}m\n"
             f"lookahead={lookahead_text}m"
         )
 

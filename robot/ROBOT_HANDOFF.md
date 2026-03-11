@@ -48,6 +48,10 @@
       - `SLOW` lowers Nav2 `FollowPath.desired_linear_vel` at runtime.
       - `YIELD_RIGHT` inserts a short right-offset Nav2 detour before resuming the original goal.
     - lock source is merged (`command_lock OR obstacle_lock`) to avoid accidental unlock.
+  - `LEAD_GUEST` can use rear LiDAR follower monitoring:
+    - waits for a rear follower candidate before initial motion
+    - pauses guiding when follower is lost
+    - resumes the same goal when follower presence returns
   - `/{robot_ns}/status` may carry latest safety metadata:
     - `event`
     - `safety_source`
@@ -125,6 +129,20 @@
 - `dynamic_nav_profile_wide_min_lookahead_dist` (default `0.15`)
 - `dynamic_nav_profile_wide_max_lookahead_dist` (default `0.40`)
 - `dynamic_nav_profile_wide_rotate_to_heading_min_angle` (default `0.45`)
+- `guide_follow_monitor_enabled` (default `true`)
+- `guide_follow_scan_topic` (default `/scan`)
+- `guide_follow_rear_center_deg` (default `180.0`)
+- `guide_follow_rear_half_width_deg` (default `20.0`)
+- `guide_follow_acquire_min_distance_m` (default `0.45`)
+- `guide_follow_acquire_max_distance_m` (default `0.90`)
+- `guide_follow_keep_min_distance_m` (default `0.35`)
+- `guide_follow_keep_max_distance_m` (default `1.20`)
+- `guide_follow_min_points` (default `5`)
+- `guide_follow_min_cluster_width_m` (default `0.12`)
+- `guide_follow_max_cluster_width_m` (default `0.75`)
+- `guide_follow_acquire_confirm_sec` (default `0.8`)
+- `guide_follow_lost_confirm_sec` (default `1.5`)
+- `guide_follow_wait_display_text` (default `뒤따라와 주세요`)
 - `robot_yield_right_enabled` (default `true`)
 - `robot_yield_right_offset_m` (default `0.18`)
 - `robot_yield_right_forward_m` (default `0.20`)
