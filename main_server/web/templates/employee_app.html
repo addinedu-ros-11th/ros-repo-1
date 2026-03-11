@@ -20,7 +20,7 @@
                 <div class="res-form">
                     <input type="text" id="res-name" class="res-input" placeholder="방문객 성함">
                     <input type="text" id="res-purpose" class="res-input" placeholder="방문 목적">
-                    <input type="date" id="res-date" class="res-input">
+                    <input type="date" id="res-date" class="res-input" min="">
                     <input type="time" id="res-time" class="res-input"> 
                     <input type="text" id="res-phone" class="res-input" 
                         placeholder="연락처 (010-0000-0000)" maxlength="13" oninput="autoHyphen(this)">
@@ -906,6 +906,19 @@
 
         async function initPage() {
             console.log("🚀 페이지 초기화 시작");
+
+            // --- [추가] 과거 날짜 선택 방지 로직 시작 ---
+            const resDateInput = document.getElementById('res-date');
+            if (resDateInput) {
+                const now = new Date();
+                // 한국 시간(KST) 기준으로 YYYY-MM-DD 포맷 만들기
+                const offset = now.getTimezoneOffset() * 60000;
+                const today = new Date(now.getTime() - offset).toISOString().split('T')[0];
+                
+                resDateInput.min = today;  // 오늘 이전 날짜는 클릭 불가능하게 설정
+                resDateInput.value = today; // 기본값을 오늘로 설정 (사용자 편의성)
+            }
+            // --- [추가] 과거 날짜 선택 방지 로직 끝 ---
 
             const savedTab = 'visit-section';
 
