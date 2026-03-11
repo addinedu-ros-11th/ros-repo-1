@@ -45,7 +45,7 @@
             <div class="zone-management">
                 <h3>📋 설정된 금지구역 리스트</h3>
                 <table class="zone-table">
-                    <thead><tr><th>ID</th><th>구역 이름</th><th>좌표 정보</th><th>관리</th></tr></thead>
+                    <thead><tr><th>구역 이름</th><th>좌표 정보</th><th>관리</th></tr></thead>
                     <tbody id="zone-tbody"></tbody>
                 </table>
             </div>
@@ -349,7 +349,6 @@
                     const y2 = typeof zone.y2 === 'number' ? zone.y2.toFixed(2) : 'N/A';
 
                     tr.innerHTML = `
-                        <td>${zone.zone_id}</td>
                         <td><strong>${zone.name || 'Unnamed'}</strong></td>
                         <td>(${x1}, ${y1}) ~ (${x2}, ${y2})</td>
                         <td><button class="btn-delete" onclick="deleteZone(${zone.zone_id})">삭제</button></td>
@@ -546,32 +545,45 @@
                 // 승인 대기 목록 (PENDING만)
                 const pendingHtml = data.pending
                     .filter(v => v.status === 'PENDING') // 3중 방어: PENDING만 출력
-                    .map(v => `
-                        <tr>
-                            <td>${v.visitor}</td>
-                            <td>${v.purpose}</td>
-                            <td>${v.destination || '-'}</td>
-                            <td>${v.date}</td>
-                            <td>${v.host}</td>
-                            <td>
-                                <button class="btn-approve" onclick="updateStatus(${v.id}, 'APPROVED')">승인</button>
-                                <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">반려</button>
-                            </td>
-                        </tr>
-                    `).join('');
+                    .map(v => {
+                        // 날짜에서 시간 부분 제거 (YYYY-MM-DD만 추출)
+                        const formattedDate = v.date ? v.date.split(' ')[0] : '-';
+
+                        return `
+                            <tr>
+                                <td>${v.visitor}</td>
+                                <td>${v.purpose}</td>
+                                <td>${v.destination || '-'}</td>
+                                <td>${formattedDate}</td>
+                                <td>${v.host}</td>
+                                <td>
+                                    <button class="btn-approve" onclick="updateStatus(${v.id}, 'APPROVED')">승인</button>
+                                    <button class="btn-reject" onclick="updateStatus(${v.id}, 'REJECTED')">반려</button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
                 
                 pendingBody.innerHTML = pendingHtml || '<tr><td colspan="6">대기 중인 신청이 없습니다.</td></tr>';
 
                 // 확정 목록 (APPROVED만)
-                const confirmedHtml = data.confirmed.map(v => `
-                    <tr>
-                        <td>${v.date}</td>
-                        <td>${v.time || '-'}</td>
-                        <td>${v.destination || '-'}</td>
-                        <td>${v.host}</td>
-                        <td>${v.visitor}</td>
-                    </tr>
-                `).join('');
+                const confirmedHtml = data.confirmed.map(v => {
+                    // 날짜: "2026-03-04 00:00:00" -> "2026-03-04" (공백 기준으로 앞부분만 추출)
+                    const formattedDate = v.date ? v.date.split(' ')[0] : '-';
+                    
+                    // 시간: "10:00:00" -> "10:00" (마지막 :00 제거)
+                    const formattedTime = (v.time && v.time !== '-') ? v.time.substring(0, 5) : '-';
+
+                    return `
+                        <tr>
+                            <td>${formattedDate}</td>
+                            <td>${formattedTime}</td>
+                            <td>${v.destination || '-'}</td>
+                            <td>${v.host}</td>
+                            <td>${v.visitor}</td>
+                        </tr>
+                    `;
+                }).join('');
                 
                 confirmedBody.innerHTML = confirmedHtml || '<tr><td colspan="5">확정된 예약이 없습니다.</td></tr>';
 

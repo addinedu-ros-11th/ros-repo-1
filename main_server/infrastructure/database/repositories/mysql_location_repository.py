@@ -175,7 +175,24 @@ class MySQLLocationRepository(BaseRepository):
         return await self._execute(query, (user_pk, location_id, res_date, start_t, end_t), is_write=True)
     
     async def get_room_reservations_by_user(self, user_pk: int):
-        """특정 유저의 회의실 예약 현황 조회 (Locations 조인 및 status 포함)"""
+        """특정 유저의 회의실 예약 현황 조회 (조회 전 상태 업데이트 포함)"""
+        
+        # 1. 상태 업데이트 실행 (현재 시간 기준 실시간 갱신)
+        # CANCLE, EXPIRED 상태가 아닌 오늘 예약 데이터만 대상으로 함
+        update_query = """
+            UPDATE room_reservation 
+            SET status = CASE 
+                WHEN end_time <= CURTIME() AND reservation_date = CURDATE() THEN 'EXPIRED'
+                WHEN start_time <= CURTIME() AND status = 'PENDING' AND reservation_date = CURDATE() THEN 'CHECKED_IN'
+                ELSE status
+            END
+            WHERE user_id = %s 
+            AND reservation_date = CURDATE() 
+            AND status NOT IN ('CANCLE', 'EXPIRED')
+        """
+        await self._execute(update_query, (user_pk,), is_write=True)
+
+        # 2. 업데이트된 데이터 조회
         query = """
             SELECT 
                 r.reservation_id,
@@ -189,7 +206,6 @@ class MySQLLocationRepository(BaseRepository):
             WHERE r.user_id = %s
             ORDER BY r.reservation_date DESC, r.start_time DESC
         """
-        # BaseRepository의 _execute는 결과를 Dict 형태로 반환합니다.
         return await self._execute(query, (user_pk,))
 
     async def cancel_room_reservation(self, res_id: int, user_pk: int):
