@@ -100,8 +100,12 @@
         </div>
 
         <div class="panel combined-control-panel">
-            <div class="res-list-header">
+            <div class="res-list-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <div class="control-section-title" style="margin: 0;">🤖 로봇 업무 수행 현황</div>
+                <button type="button" class="btn-refresh" onclick="loadMyRobotTasks()" 
+                        >
+                    <span style="font-size: 1rem;"></span> 조회 🔄
+                </button>
             </div>
 
             <div class="table-wrapper">
@@ -232,17 +236,33 @@
             const tbody = document.getElementById('robot-task-body');
             if (!tbody) return;
 
+            // 조회 시작 시 사용자에게 피드백 제공
+            const refreshBtn = document.querySelector('.btn-robot-refresh');
+            if (refreshBtn) refreshBtn.style.opacity = '0.5';
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">데이터를 갱신 중입니다...</td></tr>';
+
             try {
                 const response = await fetch('/api/v1/employee/tasks/my');
                 if (!response.ok) throw new Error("Failed to fetch tasks");
                 
                 const tasks = await response.json();
 
+                // 오늘 날짜 구하기 (YYYY-MM-DD)
+                const now = new Date();
+                const offset = now.getTimezoneOffset() * 60000;
+                const todayStr = new Date(now.getTime() - offset).toISOString().split('T')[0];
+
                 const allowedTypes = ['SNACK_DELIVERY', 'ITEM_DELIVERY', 'MANUAL_MOVE'];
-                const filteredTasks = tasks.filter(t => allowedTypes.includes(t.task_type));
+                
+                // 필터링: 허용된 타입 + 오늘 날짜
+                const filteredTasks = tasks.filter(t => {
+                    const isAllowedType = allowedTypes.includes(t.task_type);
+                    const isToday = t.created_at && t.created_at.substring(0, 10) === todayStr;
+                    return isAllowedType && isToday;
+                });
 
                 if (filteredTasks.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">수행 중인 업무가 없습니다.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">오늘 수행된 업무가 없습니다.</td></tr>';
                     return;
                 }
 
@@ -282,18 +302,14 @@
                         `;
                     }
 
-                    // --- [핵심 수정 부분: 종료 시간 표시 로직] ---
                     const startTime = task.created_at || "-";
                     let endTime = "-";
 
                     if (task.completed_at && task.completed_at !== "-") {
-                        // 종료 시간이 실제로 존재하는 경우
                         endTime = task.completed_at;
                     } else if (task.status === 'CANCELLED') {
-                        // 종료 시간은 없지만 상태가 취소인 경우
                         endTime = "취소됨";
                     }
-                    // ------------------------------------------
 
                     row.innerHTML = `
                         <td class="col-time" style="text-align: center !important;">${startTime}</td>
@@ -305,6 +321,9 @@
                 });
             } catch (e) {
                 console.error("로봇 작업 목록 로드 실패:", e);
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red; padding:20px;">데이터 로드에 실패했습니다.</td></tr>';
+            } finally {
+                if (refreshBtn) refreshBtn.style.opacity = '1';
             }
         }
 
