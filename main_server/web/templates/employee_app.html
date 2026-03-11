@@ -327,6 +327,39 @@
             }
         }
 
+        async function updateTaskStatus(taskId, newStatus) {
+            // 백엔드 action_type 매핑: COMPLETED -> RECEIVE, CANCELLED -> CANCEL
+            const actionType = newStatus === 'COMPLETED' ? 'RECEIVE' : 'CANCEL';
+            const actionText = newStatus === 'COMPLETED' ? "수령 확인" : "취소";
+
+            if (!confirm(`정말로 이 업무를 ${actionText}하시겠습니까?`)) return;
+
+            try {
+                // 백엔드 경로: /api/v1/employee/confirm (프로젝트 루트 경로에 맞춰 확인 필요)
+                const response = await fetch('/api/v1/employee/confirm', {
+                    method: 'POST', // 백엔드가 @router.post로 되어 있음
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        task_id: taskId, 
+                        action_type: actionType 
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    alert(result.message || `${actionText} 처리가 완료되었습니다.`);
+                    await loadMyRobotTasks(); // 목록 새로고침
+                } else {
+                    alert(`오류 발생: ${result.message || '요청 처리에 실패했습니다.'}`);
+                }
+            } catch (e) {
+                console.error("업무 상태 업데이트 실패:", e);
+                alert("서버와 통신 중 오류가 발생했습니다.");
+            }
+        }
         // # ---------------------------------------------------------
         // # 3. 방문 예약 시스템 (Reservation System)
         // # ---------------------------------------------------------
