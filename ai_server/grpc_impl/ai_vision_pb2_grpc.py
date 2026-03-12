@@ -3,25 +3,28 @@
 import grpc
 import warnings
 
-import ai_vision_pb2 as ai__vision__pb2
+from . import ai_vision_pb2 as ai__vision__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = "1.78.0"
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+
+    _version_not_supported = first_version_is_lower(
+        GRPC_VERSION, GRPC_GENERATED_VERSION
+    )
 except ImportError:
     _version_not_supported = True
 
 if _version_not_supported:
     raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in ai_vision_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
+        f"The grpc package installed is at version {GRPC_VERSION},"
+        + " but the generated code in ai_vision_pb2_grpc.py depends on"
+        + f" grpcio>={GRPC_GENERATED_VERSION}."
+        + f" Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}"
+        + f" or downgrade your generated code using grpcio-tools<={GRPC_VERSION}."
     )
 
 
@@ -39,30 +42,35 @@ class VisionServiceStub(object):
             channel: A grpc.Channel.
         """
         self.DetectObjects = channel.unary_unary(
-                '/ai_vision.VisionService/DetectObjects',
-                request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__vision__pb2.ObjectDetectionResponse.FromString,
-                _registered_method=True)
+            "/ai_vision.VisionService/DetectObjects",
+            request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
+            response_deserializer=ai__vision__pb2.ObjectDetectionResponse.FromString,
+            _registered_method=True,
+        )
         self.RecognizeFaces = channel.unary_unary(
-                '/ai_vision.VisionService/RecognizeFaces',
-                request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__vision__pb2.FaceRecognitionResponse.FromString,
-                _registered_method=True)
+            "/ai_vision.VisionService/RecognizeFaces",
+            request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
+            response_deserializer=ai__vision__pb2.FaceRecognitionResponse.FromString,
+            _registered_method=True,
+        )
         self.DetectMultipleObjects = channel.unary_unary(
-                '/ai_vision.VisionService/DetectMultipleObjects',
-                request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
-                response_deserializer=ai__vision__pb2.MultiObjectDetectionResponse.FromString,
-                _registered_method=True)
+            "/ai_vision.VisionService/DetectMultipleObjects",
+            request_serializer=ai__vision__pb2.ImageRequest.SerializeToString,
+            response_deserializer=ai__vision__pb2.MultiObjectDetectionResponse.FromString,
+            _registered_method=True,
+        )
         self.StreamVisionResults = channel.unary_stream(
-                '/ai_vision.VisionService/StreamVisionResults',
-                request_serializer=ai__vision__pb2.Empty.SerializeToString,
-                response_deserializer=ai__vision__pb2.VisionResult.FromString,
-                _registered_method=True)
+            "/ai_vision.VisionService/StreamVisionResults",
+            request_serializer=ai__vision__pb2.Empty.SerializeToString,
+            response_deserializer=ai__vision__pb2.VisionResult.FromString,
+            _registered_method=True,
+        )
         self.UpdateInferenceState = channel.unary_unary(
-                '/ai_vision.VisionService/UpdateInferenceState',
-                request_serializer=ai__vision__pb2.InferenceStateRequest.SerializeToString,
-                response_deserializer=ai__vision__pb2.InferenceStateResponse.FromString,
-                _registered_method=True)
+            "/ai_vision.VisionService/UpdateInferenceState",
+            request_serializer=ai__vision__pb2.InferenceStateRequest.SerializeToString,
+            response_deserializer=ai__vision__pb2.InferenceStateResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class VisionServiceServicer(object):
@@ -73,76 +81,74 @@ class VisionServiceServicer(object):
     """
 
     def DetectObjects(self, request, context):
-        """객체 인식
-        """
+        """객체 인식"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def RecognizeFaces(self, request, context):
-        """얼굴 인식
-        """
+        """얼굴 인식"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def DetectMultipleObjects(self, request, context):
-        """복수 객체 인식
-        """
+        """복수 객체 인식"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def StreamVisionResults(self, request, context):
-        """실시간 비전 스트리밍
-        """
+        """실시간 비전 스트리밍"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def UpdateInferenceState(self, request, context):
-        """추론 상태 업데이트 (시나리오별 시작/중지)
-        """
+        """추론 상태 업데이트 (시나리오별 시작/중지)"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_VisionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'DetectObjects': grpc.unary_unary_rpc_method_handler(
-                    servicer.DetectObjects,
-                    request_deserializer=ai__vision__pb2.ImageRequest.FromString,
-                    response_serializer=ai__vision__pb2.ObjectDetectionResponse.SerializeToString,
-            ),
-            'RecognizeFaces': grpc.unary_unary_rpc_method_handler(
-                    servicer.RecognizeFaces,
-                    request_deserializer=ai__vision__pb2.ImageRequest.FromString,
-                    response_serializer=ai__vision__pb2.FaceRecognitionResponse.SerializeToString,
-            ),
-            'DetectMultipleObjects': grpc.unary_unary_rpc_method_handler(
-                    servicer.DetectMultipleObjects,
-                    request_deserializer=ai__vision__pb2.ImageRequest.FromString,
-                    response_serializer=ai__vision__pb2.MultiObjectDetectionResponse.SerializeToString,
-            ),
-            'StreamVisionResults': grpc.unary_stream_rpc_method_handler(
-                    servicer.StreamVisionResults,
-                    request_deserializer=ai__vision__pb2.Empty.FromString,
-                    response_serializer=ai__vision__pb2.VisionResult.SerializeToString,
-            ),
-            'UpdateInferenceState': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateInferenceState,
-                    request_deserializer=ai__vision__pb2.InferenceStateRequest.FromString,
-                    response_serializer=ai__vision__pb2.InferenceStateResponse.SerializeToString,
-            ),
+        "DetectObjects": grpc.unary_unary_rpc_method_handler(
+            servicer.DetectObjects,
+            request_deserializer=ai__vision__pb2.ImageRequest.FromString,
+            response_serializer=ai__vision__pb2.ObjectDetectionResponse.SerializeToString,
+        ),
+        "RecognizeFaces": grpc.unary_unary_rpc_method_handler(
+            servicer.RecognizeFaces,
+            request_deserializer=ai__vision__pb2.ImageRequest.FromString,
+            response_serializer=ai__vision__pb2.FaceRecognitionResponse.SerializeToString,
+        ),
+        "DetectMultipleObjects": grpc.unary_unary_rpc_method_handler(
+            servicer.DetectMultipleObjects,
+            request_deserializer=ai__vision__pb2.ImageRequest.FromString,
+            response_serializer=ai__vision__pb2.MultiObjectDetectionResponse.SerializeToString,
+        ),
+        "StreamVisionResults": grpc.unary_stream_rpc_method_handler(
+            servicer.StreamVisionResults,
+            request_deserializer=ai__vision__pb2.Empty.FromString,
+            response_serializer=ai__vision__pb2.VisionResult.SerializeToString,
+        ),
+        "UpdateInferenceState": grpc.unary_unary_rpc_method_handler(
+            servicer.UpdateInferenceState,
+            request_deserializer=ai__vision__pb2.InferenceStateRequest.FromString,
+            response_serializer=ai__vision__pb2.InferenceStateResponse.SerializeToString,
+        ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_vision.VisionService', rpc_method_handlers)
+        "ai_vision.VisionService", rpc_method_handlers
+    )
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_vision.VisionService', rpc_method_handlers)
+    server.add_registered_method_handlers(
+        "ai_vision.VisionService", rpc_method_handlers
+    )
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class VisionService(object):
     """============================================
     Vision Service (YOLOv8n) - Port 50052
@@ -151,20 +157,22 @@ class VisionService(object):
     """
 
     @staticmethod
-    def DetectObjects(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def DetectObjects(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_vision.VisionService/DetectObjects',
+            "/ai_vision.VisionService/DetectObjects",
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.ObjectDetectionResponse.FromString,
             options,
@@ -175,23 +183,26 @@ class VisionService(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def RecognizeFaces(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def RecognizeFaces(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_vision.VisionService/RecognizeFaces',
+            "/ai_vision.VisionService/RecognizeFaces",
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.FaceRecognitionResponse.FromString,
             options,
@@ -202,23 +213,26 @@ class VisionService(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def DetectMultipleObjects(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def DetectMultipleObjects(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_vision.VisionService/DetectMultipleObjects',
+            "/ai_vision.VisionService/DetectMultipleObjects",
             ai__vision__pb2.ImageRequest.SerializeToString,
             ai__vision__pb2.MultiObjectDetectionResponse.FromString,
             options,
@@ -229,23 +243,26 @@ class VisionService(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def StreamVisionResults(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def StreamVisionResults(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ai_vision.VisionService/StreamVisionResults',
+            "/ai_vision.VisionService/StreamVisionResults",
             ai__vision__pb2.Empty.SerializeToString,
             ai__vision__pb2.VisionResult.FromString,
             options,
@@ -256,23 +273,26 @@ class VisionService(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def UpdateInferenceState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def UpdateInferenceState(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ai_vision.VisionService/UpdateInferenceState',
+            "/ai_vision.VisionService/UpdateInferenceState",
             ai__vision__pb2.InferenceStateRequest.SerializeToString,
             ai__vision__pb2.InferenceStateResponse.FromString,
             options,
@@ -283,4 +303,5 @@ class VisionService(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
