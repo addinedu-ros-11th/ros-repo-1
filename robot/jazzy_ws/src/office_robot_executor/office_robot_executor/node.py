@@ -1334,6 +1334,12 @@ class OfficeRobotExecutor(Node):
 
     def _on_commands(self, msg: String) -> None:
         payload = self._parse_payload(msg.data)
+        if "_parse_error" in payload:
+            self.get_logger().warn(
+                "Ignoring malformed command payload "
+                f"(reason={payload.get('_parse_error')}, raw={payload.get('_raw')!r})."
+            )
+            return
         if not self._is_for_this_robot(payload):
             target_robot_id = payload.get("robot_id")
             target_robot_name = payload.get("robot_name")
@@ -5230,9 +5236,9 @@ class OfficeRobotExecutor(Node):
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            return {}
+            return {"_parse_error": "invalid_json", "_raw": raw}
         if not isinstance(parsed, dict):
-            return {}
+            return {"_parse_error": "non_dict_payload", "_raw": raw}
         return parsed
 
 
